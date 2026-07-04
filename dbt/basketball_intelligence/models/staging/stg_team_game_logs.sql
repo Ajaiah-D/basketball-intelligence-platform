@@ -1,0 +1,36 @@
+-- One row per team per game. Cleans and types the raw LeagueGameLog
+-- (team mode) response.
+
+select
+    cast(season_id as varchar)          as season_id,
+    cast(season as varchar)             as season,
+    cast(team_id as bigint)             as team_id,
+    cast(team_abbreviation as varchar)  as team_abbreviation,
+    cast(team_name as varchar)          as team_name,
+    cast(game_id as varchar)            as game_id,
+    cast(game_date as date)             as game_date,
+    cast(matchup as varchar)            as matchup,
+    matchup like '%@%'                  as is_away_game,
+    cast(wl as varchar)                 as win_loss,
+    wl = 'W'                            as is_win,
+    cast(min as integer)                as minutes_played,
+    cast(fgm as integer)                as field_goals_made,
+    cast(fga as integer)                as field_goals_attempted,
+    cast(fg_pct as double)              as field_goal_pct,
+    cast(fg3m as integer)               as three_pointers_made,
+    cast(fg3a as integer)               as three_pointers_attempted,
+    cast(fg3_pct as double)             as three_point_pct,
+    cast(ftm as integer)                as free_throws_made,
+    cast(fta as integer)                as free_throws_attempted,
+    cast(ft_pct as double)              as free_throw_pct,
+    cast(oreb as integer)               as offensive_rebounds,
+    cast(dreb as integer)               as defensive_rebounds,
+    cast(reb as integer)                as total_rebounds,
+    cast(ast as integer)                as assists,
+    cast(stl as integer)                as steals,
+    cast(blk as integer)                as blocks,
+    cast(tov as integer)                as turnovers,
+    cast(pf as integer)                 as personal_fouls,
+    cast(pts as integer)                as points,
+    cast(plus_minus as integer)         as plus_minus
+from {{ source('raw', 'team_game_logs') }}

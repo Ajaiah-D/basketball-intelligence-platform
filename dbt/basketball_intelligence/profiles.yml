@@ -1,0 +1,10 @@
+# Local profile checked into the repo (no secrets - it's a local file path).
+# Run dbt from this directory with:  dbt run --profiles-dir .
+basketball_intelligence:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative to this directory (dbt/basketball_intelligence/)
+      path: ../../warehouse/basketball.duckdb
+      threads: 4

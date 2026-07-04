@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_player_game_logs
+    description: One row per player per game, cleaned and typed.
+    columns:
+      - name: player_id
+        tests: [not_null]
+      - name: game_id
+        tests: [not_null]
+      - name: points
+        tests: [not_null]
+
+  - name: stg_team_game_logs
+    description: One row per team per game, cleaned and typed.
+    columns:
+      - name: team_id
+        tests: [not_null]
+      - name: game_id
+        tests: [not_null]
+
+  - name: stg_play_by_play
+    description: One row per play-by-play event for ingested games.
+    columns:
+      - name: game_id
+        tests: [not_null]
+      - name: action_number
+        tests: [not_null]
+
+  - name: stg_players
+    description: All-time player dimension.
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+
+  - name: stg_teams
+    description: NBA franchise dimension.
+    columns:
+      - name: team_id
+        tests: [not_null, unique]
+      - name: team_abbreviation
+        tests: [not_null, unique]
