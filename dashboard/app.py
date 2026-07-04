@@ -23,23 +23,32 @@ st.set_page_config(
 theme.inject(st)
 
 
+@st.cache_resource(show_spinner="First boot: downloading the warehouse (one time)...")
 def bootstrap_warehouse() -> None:
     """On cloud deploys the DuckDB file is not in the repo: download it
-    once from WAREHOUSE_URL (e.g. a GitHub Release asset)."""
+    once from WAREHOUSE_URL (e.g. a GitHub Release asset).
+
+    cache_resource serializes concurrent sessions - on cloud boot several
+    sessions start at once and racing downloads collide on the temp file."""
     url = config.warehouse_url()
-    if not url:
+    if not url or db.DB_PATH.exists():
         return
+    import os
+
     import requests
 
     db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = db.DB_PATH.with_suffix(".download")
-    with st.spinner("First boot: downloading the warehouse (one time)..."):
+    tmp = db.DB_PATH.with_suffix(f".download{os.getpid()}")
+    try:
         with requests.get(url, stream=True, timeout=300) as r:
             r.raise_for_status()
             with open(tmp, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
-    tmp.replace(db.DB_PATH)
+        if not db.DB_PATH.exists():
+            tmp.replace(db.DB_PATH)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 if not db.warehouse_exists():
