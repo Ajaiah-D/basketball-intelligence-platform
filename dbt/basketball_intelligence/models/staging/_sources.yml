@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw NBA data pulled from stats.nba.com via nba_api by
+      ingestion/nba_ingest.py and loaded by scripts/load_to_duckdb.py.
+      Tables mirror the API responses with original column names.
+    schema: raw
+    tables:
+      - name: player_game_logs
+        description: One row per player per game (LeagueGameLog, player mode).
+      - name: team_game_logs
+        description: One row per team per game (LeagueGameLog, team mode).
+      - name: play_by_play
+        description: One row per play-by-play event (PlayByPlayV3), subset of games.
+      - name: players
+        description: All-time player index (CommonAllPlayers).
+      - name: teams
+        description: The 30 NBA franchises (nba_api static data).

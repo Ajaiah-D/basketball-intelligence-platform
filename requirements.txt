@@ -1,0 +1,14 @@
+nba_api
+pandas
+duckdb
+dbt-duckdb
+streamlit
+plotly
+python-dotenv
+requests
+
+# NOTE (Python 3.14): after installing, run
+#   pip install --upgrade mashumaro
+# dbt-core pins mashumaro<3.15, which fails to import on Python 3.14;
+# mashumaro 3.22+ works fine with dbt despite the pin. It must be a
+# separate step - listing it here would make pip's resolver error out.
