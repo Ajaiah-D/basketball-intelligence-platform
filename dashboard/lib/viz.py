@@ -22,10 +22,13 @@ def _layout(**overrides) -> dict:
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=T.FONT, color=T.INK_2, size=12),
         margin=dict(l=8, r=8, t=28, b=8),
+        # the modebar is hidden, so a drag/pinch zoom would be unrecoverable -
+        # every chart is a fixed view (overriding axes must keep fixedrange)
+        dragmode=False,
         xaxis=dict(gridcolor=T.GRID, zerolinecolor=T.BASELINE, linecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED)),
+                   tickfont=dict(color=T.MUTED), fixedrange=True),
         yaxis=dict(gridcolor=T.GRID, zerolinecolor=T.BASELINE, linecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED)),
+                   tickfont=dict(color=T.MUTED), fixedrange=True),
         hoverlabel=dict(bgcolor=T.SURFACE, bordercolor=T.BORDER,
                         font=dict(family=T.FONT, color=T.INK)),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
@@ -59,6 +62,38 @@ def player_trend(games: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def career_trend(seasons_df: pd.DataFrame, stat: str, label: str) -> go.Figure:
+    """Per-season averages (context bars) + games-weighted career average
+    to date (emphasis line). seasons_df comes from db.player_season_breakdown."""
+    df = seasons_df.copy()
+    df[stat] = df[stat].fillna(0)
+    df["cum"] = (df[stat] * df["gp"]).cumsum() / df["gp"].cumsum()
+    fig = go.Figure()
+    fig.add_bar(
+        x=df["season"], y=df[stat], name=label,
+        marker=dict(color=T.BASELINE),
+        customdata=df[["team", "gp"]],
+        hovertemplate=("%{x} (%{customdata[0]}, %{customdata[1]} GP)<br>"
+                       "%{y:.1f} " + label + "<extra></extra>"),
+    )
+    fig.add_scatter(
+        x=df["season"], y=df["cum"], name="Career avg to date",
+        mode="lines", line=dict(color=T.ACCENT, width=2),
+        hovertemplate="Career avg: %{y:.1f}<extra></extra>",
+    )
+    last = df.iloc[-1]
+    fig.add_annotation(x=last["season"], y=last["cum"], text=f"{last['cum']:.1f}",
+                       showarrow=False, xshift=26, font=dict(color=T.ACCENT, size=12))
+    fig.update_layout(**_layout(
+        hovermode="x unified", bargap=0.45,
+        # season labels like "1984-85" parse as dates unless forced categorical
+        xaxis=dict(type="category", gridcolor=T.GRID, linecolor=T.BASELINE,
+                   tickfont=dict(color=T.MUTED), fixedrange=True,
+                   tickangle=-45 if len(df) > 14 else 0),
+    ))
+    return fig
+
+
 def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str) -> go.Figure:
     """Player shooting percentages vs league average - emphasis form.
     Player labels carry attempt volume so a hot % on tiny volume is
@@ -88,7 +123,8 @@ def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str)
                 hovertemplate="%{y}: %{x:.1f} on %{customdata:.1f} attempts/game<extra></extra>")
     fig.update_layout(**_layout(barmode="group", bargap=0.35,
                                 height=260, xaxis=dict(range=[0, 100], gridcolor=T.GRID,
-                                                       tickfont=dict(color=T.MUTED))))
+                                                       tickfont=dict(color=T.MUTED),
+                                                       fixedrange=True)))
     return fig
 
 
@@ -155,10 +191,10 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         hovermode="x unified", height=300,
         xaxis=dict(title=dict(text="Game time (min)", font=dict(color=T.MUTED)),
                    gridcolor="rgba(0,0,0,0)", zerolinecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED)),
+                   tickfont=dict(color=T.MUTED), fixedrange=True),
         yaxis=dict(title=dict(text=f"← {away}   margin   {home} →",
                               font=dict(color=T.MUTED)),
-                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED)),
+                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED), fixedrange=True),
     ))
     return fig
 

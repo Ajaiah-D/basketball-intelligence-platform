@@ -88,6 +88,70 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
     return q(_PLAYER_SEASON_SQL, (season, min_games))
 
 
+_PLAYER_CAREER_SQL = """
+    select
+        player_id,
+        any_value(player_name)                as player,
+        max_by(team_abbreviation, game_date)  as team,
+        count(distinct season)                as seasons,
+        min(season)                           as first_season,
+        max(season)                           as last_season,
+        count(*)                              as gp,
+        cast(max(points) as int)              as career_high,
+        cast(sum(points) as int)              as pts_total,
+        cast(sum(case when is_win then 1 else 0 end) as int) as wins,
+        round(avg(minutes_played), 1)         as mpg,
+        round(avg(points), 1)                 as ppg,
+        round(avg(total_rebounds), 1)         as rpg,
+        round(avg(assists), 1)                as apg,
+        round(avg(steals), 1)                 as spg,
+        round(avg(blocks), 1)                 as bpg,
+        round(avg(three_pointers_made), 1)    as tpg,
+        round(avg(field_goals_attempted), 1)  as fga_pg,
+        round(avg(three_pointers_attempted), 1) as tpa_pg,
+        round(avg(free_throws_attempted), 1)  as fta_pg,
+        cast(sum(field_goals_attempted) as int)     as fga_total,
+        cast(sum(three_pointers_attempted) as int)  as tpa_total,
+        cast(sum(free_throws_attempted) as int)     as fta_total,
+        round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
+        round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
+        round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct,
+        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)                            as ts_pct,
+        round(avg(plus_minus), 1)             as plus_minus
+    from main_staging.stg_player_game_logs
+    group by player_id
+    having count(*) >= ?
+"""
+
+
+def player_career_stats(min_games: int = 1) -> pd.DataFrame:
+    """One row per player pooled across every ingested season. `team` is the
+    most recent; percentages are computed from summed makes/attempts."""
+    return q(_PLAYER_CAREER_SQL, (min_games,))
+
+
+def player_season_breakdown(player_id: int) -> pd.DataFrame:
+    """Per-season averages for one player - drives the career trajectory chart."""
+    return q(
+        """
+        select
+            season,
+            max_by(team_abbreviation, game_date) as team,
+            count(*)                             as gp,
+            round(avg(points), 1)                as ppg,
+            round(avg(total_rebounds), 1)        as rpg,
+            round(avg(assists), 1)               as apg,
+            round(avg(three_pointers_made), 1)   as tpg
+        from main_staging.stg_player_game_logs
+        where player_id = ?
+        group by season
+        order by season
+        """,
+        (player_id,),
+    )
+
+
 def player_game_log(player_id: int, season: str) -> pd.DataFrame:
     return q(
         """

@@ -1,5 +1,7 @@
-"""Players - searchable season stats table + per-player detail view.
+"""Players - searchable stats table + per-player detail view.
 
+Scope toggle: one season, or Career (every ingested season pooled - the
+percentages are recomputed from summed makes/attempts, not averaged).
 Every percentage is shown next to its attempt volume so low-volume
 outliers (a center shooting 100% on three 3PA) are visible at a glance.
 """
@@ -14,20 +16,38 @@ TABLE_COLS = ["player", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg",
               "fg_pct", "fga_pg", "tpg", "tpa_pg", "fg3_pct", "ft_pct", "fta_pg",
               "ts_pct", "plus_minus"]
 
+TREND_STATS = {"PPG": "ppg", "RPG": "rpg", "APG": "apg", "3PM/g": "tpg"}
+
 
 def render() -> None:
     season = st.session_state.get("season") or db.latest_season()
-    st.markdown(
-        f'## Players &nbsp;{T.chip(season)}',
-        unsafe_allow_html=True,
-    )
 
-    stats = db.player_season_stats(season)
+    head = st.container()  # title renders here once the scope toggle is known
+    f0, f1, f2, f3 = st.columns([2, 2, 2, 3])
+    scope = f0.segmented_control("Scope", ["Season", "Career"], default="Season",
+                                 label_visibility="collapsed") or "Season"
+    career = scope == "Career"
+
+    if career:
+        stats = db.player_career_stats()
+        stats["span"] = stats["first_season"].where(
+            stats["seasons"] == 1,
+            stats["first_season"] + " to " + stats["last_season"])
+        min_gp = f2.slider("Min career games", 1, 1500, 200)
+    else:
+        stats = db.player_season_stats(season)
+        min_gp = f2.slider("Min games", 1, 82, 25)
+
+    with head:
+        st.markdown(
+            f'## Players &nbsp;'
+            f'{T.chip("All seasons &middot; career totals" if career else season)}',
+            unsafe_allow_html=True,
+        )
+
     teams = ["All teams"] + sorted(stats["team"].unique())
-
-    f1, f2, f3 = st.columns([2, 2, 3])
-    team = f1.selectbox("Team", teams, label_visibility="collapsed")
-    min_gp = f2.slider("Min games", 1, 82, 25)
+    team = f1.selectbox("Team", teams, label_visibility="collapsed",
+                        help="Career scope: a player's most recent team")
     search = f3.text_input("Search", placeholder="Search players...",
                            label_visibility="collapsed")
 
@@ -38,13 +58,19 @@ def render() -> None:
         view = view[view.player.str.contains(search, case=False, na=False)]
     view = view.sort_values("ppg", ascending=False)
 
+    table_cols = TABLE_COLS.copy()
+    if career:
+        table_cols[2:2] = ["seasons", "span"]
+
     st.dataframe(
-        view[TABLE_COLS],
+        view[table_cols],
         hide_index=True,
         height=430,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
             "team": st.column_config.TextColumn("Team", width="small"),
+            "seasons": st.column_config.NumberColumn("Yrs"),
+            "span": st.column_config.TextColumn("Span", width="medium"),
             "gp": st.column_config.NumberColumn("GP"),
             "mpg": st.column_config.NumberColumn("MIN", format="%.1f"),
             "ppg": st.column_config.NumberColumn("PTS", format="%.1f"),
@@ -67,8 +93,13 @@ def render() -> None:
             "plus_minus": st.column_config.NumberColumn("+/-", format="%.1f"),
         },
     )
-    st.caption("Click a column header to sort. Per-game averages; percentages are "
-               "season totals, shown next to their attempt volume (FGA / 3PA / FTA).")
+    if career:
+        st.caption("Career view pools every ingested season (1979-80 onward) - "
+                   "the sidebar season selector does not apply here. Percentages "
+                   "are computed from career totals, shown next to attempt volume.")
+    else:
+        st.caption("Click a column header to sort. Per-game averages; percentages are "
+                   "season totals, shown next to their attempt volume (FGA / 3PA / FTA).")
 
     st.markdown("#### Player detail")
     options = view if len(view) else stats
@@ -79,15 +110,17 @@ def render() -> None:
     if not pick:
         return
     row = stats[stats.player == pick].iloc[0]
-    games = db.player_game_log(int(row.player_id), season)
 
     tc = T.team_color(row.team)
+    chip_text = (f"{row.team} &middot; {row.seasons} seasons &middot; {row.gp} GP"
+                 if career else
+                 f"{row.team} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG")
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:14px;margin:.4rem 0 .8rem 0">'
         f'{media.avatar_html(int(row.player_id), row.player, size=84, ring=tc)}'
         f'<div><span style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em">'
         f'{row.player}</span><br>'
-        f'{T.chip(f"{row.team} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG", tc)}'
+        f'{T.chip(chip_text, tc)}'
         f'</div></div>',
         unsafe_allow_html=True,
     )
@@ -97,7 +130,7 @@ def render() -> None:
         return f"{v:.1f}{suffix}" if v == v else "-"
 
     for col, (label, val, sub) in zip(tiles, [
-        ("PPG", fmt(row.ppg), ""),
+        ("PPG", fmt(row.ppg), f"{row.pts_total:,} career pts" if career else ""),
         ("RPG", fmt(row.rpg), ""),
         ("APG", fmt(row.apg), ""),
         ("FG%", fmt(row.fg_pct), f"on {fmt(row.fga_pg)} FGA/g"),
@@ -107,9 +140,33 @@ def render() -> None:
         col.markdown(T.kpi(label, val, sub), unsafe_allow_html=True)
 
     if row.tpa_total and row.tpa_total < 50 and row.fg3_pct == row.fg3_pct:
+        when = "across a whole career" if career else "all season"
         st.caption(f"Note: {row.player}'s 3P% comes from only {row.tpa_total} "
-                   "attempts all season - treat it as noise, not a skill signal.")
+                   f"attempts {when} - treat it as noise, not a skill signal.")
 
+    if career:
+        bk = db.player_season_breakdown(int(row.player_id))
+        st.markdown("**Career trajectory** - bars are season averages, "
+                    "the line is the career average to date")
+        stat_label = st.segmented_control(
+            "Stat", list(TREND_STATS), default="PPG",
+            label_visibility="collapsed") or "PPG"
+        st.plotly_chart(viz.career_trend(bk, TREND_STATS[stat_label], stat_label),
+                        config=viz.PLOTLY_CONFIG, width="stretch")
+
+        s1, s2, s3, s4 = st.columns(4)
+        s1.markdown(T.kpi("Career high", f"{row.career_high}", "points in a game"),
+                    unsafe_allow_html=True)
+        s2.markdown(T.kpi("Seasons", f"{row.seasons}", row.span),
+                    unsafe_allow_html=True)
+        s3.markdown(T.kpi("Total points", f"{row.pts_total:,}"),
+                    unsafe_allow_html=True)
+        s4.markdown(T.kpi("Record in games",
+                          f"{row.wins}-{row.gp - row.wins}"),
+                    unsafe_allow_html=True)
+        return
+
+    games = db.player_game_log(int(row.player_id), season)
     c1, c2 = st.columns([3, 2])
     with c1:
         st.markdown("**Scoring trend**")
