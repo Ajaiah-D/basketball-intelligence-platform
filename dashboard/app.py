@@ -18,7 +18,7 @@ st.set_page_config(
     page_title="Basketball Intelligence",
     page_icon="🏀",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",  # desktop: open; phones: collapsed overlay
 )
 theme.inject(st)
 

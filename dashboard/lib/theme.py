@@ -187,6 +187,25 @@ table.bip-table tr:hover td {{ background: rgba(255,255,255,.025); }}
 table.bip-table td.tm {{ font-weight: 700; color: {INK}; }}
 table.bip-table td.pos {{ color: {GOOD}; font-weight: 700; }}
 table.bip-table td.neg {{ color: {CRITICAL}; font-weight: 700; }}
+
+/* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----
+   Desktop is untouched: these rules only exist on phone-width viewports.
+   Streamlit stacks every column full-width there; tile-shaped content
+   (KPI tiles, game score cards) reads better two-across. */
+@media (max-width: 640px) {{
+  .block-container {{ padding-left: .9rem; padding-right: .9rem; padding-top: .8rem; }}
+  div[data-testid="stColumn"]:has(.bip-kpi),
+  div[data-testid="stColumn"]:has(.bip-game) {{
+    min-width: calc(50% - .5rem) !important;
+    flex: 1 1 calc(50% - .5rem) !important;
+  }}
+  .bip-kpi-value {{ font-size: 1.4rem; }}
+  .bip-card {{ padding: .8rem .95rem; }}
+  .bip-hero {{ flex-wrap: wrap; padding: 1rem 1.1rem; }}
+  .bip-hero-title {{ font-size: 1.45rem; }}
+  .bip-hero-spot {{ text-align: left; }}
+  [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.45rem; }}
+}}
 </style>
 """
 
