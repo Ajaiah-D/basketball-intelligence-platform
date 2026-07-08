@@ -58,7 +58,7 @@ if not db.warehouse_exists():
         st.error(f"Warehouse download failed: {exc}")
 
 if not db.warehouse_exists():
-    st.error("Warehouse not found. Run the pipeline first — see README:\n\n"
+    st.error("Warehouse not found. Run the pipeline first (see README):\n\n"
              "1. `python ingestion/nba_ingest.py`\n"
              "2. `python scripts/load_to_duckdb.py`\n"
              "3. `dbt run --profiles-dir .` (from dbt/basketball_intelligence)\n\n"

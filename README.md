@@ -8,20 +8,20 @@ users can ask questions about players, teams, and contracts.
 
 ```
 stats.nba.com (via nba_api)
-        │  rate-limited ingestion
-        ▼
-data/raw/*.parquet                 ← immutable raw extracts
-        │  scripts/load_to_duckdb.py
-        ▼
-warehouse/basketball.duckdb        ← local DuckDB warehouse
-        │  raw schema (API mirrors)
-        ▼
+        |  rate-limited ingestion
+        v
+data/raw/*.parquet                 immutable raw extracts
+        |  scripts/load_to_duckdb.py
+        v
+warehouse/basketball.duckdb        local DuckDB warehouse
+        |  raw schema (API mirrors)
+        v
 dbt (dbt-duckdb)
-        ├─ staging       ← clean, rename, type raw tables (views)     ✅ built
-        ├─ intermediate  ← business logic, joins, derived stats       🚧 planned
-        └─ marts         ← analytics-ready tables for the dashboard   🚧 planned
-        ▼
-dashboard/ (Streamlit + Plotly)    ← dark FotMob-style stats app      ✅ built
+        - staging       clean, rename, type raw tables (views)     [built]
+        - intermediate  business logic, joins, derived stats       [planned]
+        - marts         analytics-ready tables for the dashboard   [planned]
+        v
+dashboard/ (Streamlit + Plotly)    dark FotMob-style stats app      [built]
 ```
 
 ## Data source
@@ -49,8 +49,8 @@ separate source in a future session.
 ## Project layout
 
 ```
-ingestion/nba_ingest.py        # pull NBA data → data/raw/*.parquet
-scripts/load_to_duckdb.py      # data/raw → warehouse/basketball.duckdb (raw schema)
+ingestion/nba_ingest.py        # pull NBA data into data/raw/*.parquet
+scripts/load_to_duckdb.py      # data/raw into warehouse/basketball.duckdb (raw schema)
 warehouse/                     # DuckDB database file (gitignored)
 dbt/basketball_intelligence/   # dbt project (staging / intermediate / marts)
 dashboard/app.py               # Streamlit app entry point
@@ -61,19 +61,19 @@ data/raw/                      # raw parquet extracts (gitignored)
 
 ## Dashboard
 
-`streamlit run dashboard/app.py` — a dark, FotMob-inspired stats app:
+`streamlit run dashboard/app.py` gives you a dark, FotMob-inspired stats app:
 
-- **Overview** — KPIs, league leaders, conference standings, latest games
-- **Players** — filterable season stats table; player detail with scoring
+- **Overview**: KPIs, league leaders, conference standings, latest games
+- **Players**: filterable season stats table; player detail with scoring
   trend (5-game rolling average) and shooting-vs-league comparison
-- **Teams** — full standings with last-5 form, team detail with per-game
+- **Teams**: full standings with last-5 form, team detail with per-game
   margin chart and top contributors
-- **Games** — results browser; game detail with box scores and, for games
+- **Games**: results browser; game detail with box scores and, for games
   with play-by-play ingested, a game-flow (score margin) chart
-- **Arcade** — games on top of the full history: *Higher or Lower* (which
+- **Arcade**: games on top of the full history. *Higher or Lower* (which
   player-season averaged more, streak scoring) and *Mystery Player*
   (identify a notable season from progressively revealed clues)
-- **Dev Lab** 🔒 — owner-only SQL workbench: schema browser, read-only
+- **Dev Lab** (owner-only): SQL workbench with schema browser, read-only
   queries, CSV/JSON/Parquet export, and a quick chart builder.
   Unlocked by `DEV_PASSWORD` in `.env` (copy `.env.example`); hide it
   entirely on public deploys with `DEV_LAB_ENABLED=false`.
@@ -132,7 +132,7 @@ group by 1 order by ppg desc limit 10;
 
 ## Status / roadmap
 
-- [x] Ingestion with rate limiting; 47 seasons backfilled (1979-80 → 2025-26,
+- [x] Ingestion with rate limiting; 47 seasons backfilled (1979-80 to 2025-26,
       ~1.09M player-game rows, ~106K team-game rows) plus play-by-play for
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
