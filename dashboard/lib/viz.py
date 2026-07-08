@@ -1,9 +1,8 @@
 """Plotly chart constructors, styled to the app theme.
 
-Chart rules applied throughout (from the dataviz method): one axis per
-chart, 2px lines, recessive hairline grid, categorical hues in fixed
-slot order, emphasis = accent + de-emphasis gray, diverging = blue/red
-around a zero baseline, hover tooltips on every mark.
+House chart rules: one axis per chart, 2px lines, recessive hairline grid,
+categorical hues in fixed slot order, emphasis = accent + de-emphasis gray,
+diverging = blue/red around a zero baseline, hover tooltips on every mark.
 """
 
 from __future__ import annotations
