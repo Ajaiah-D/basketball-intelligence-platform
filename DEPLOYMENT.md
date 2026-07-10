@@ -18,12 +18,14 @@ changes.
    too large for normal git). Check the size first, GitHub Release assets
    allow up to 2 GB:
    ```
-   gh release create data-v1 warehouse/basketball.duckdb --title "Warehouse 2026-07" --notes "47 seasons"
+   gh release create data-latest warehouse/basketball.duckdb --title "Warehouse (auto-refreshed)" --notes "Kept up to date by .github/workflows/refresh-data.yml"
    ```
-   Copy the asset's download URL. Re-run this with `data-v2`, `data-v3`...
-   whenever you refresh the data, then update the secret below.
+   Copy the asset's download URL. The `data-latest` tag is reused for every
+   future refresh (see below), so the URL you paste into the secret below
+   never has to change again.
    (If you prefer not to use Releases: Cloudflare R2 has a free 10 GB tier;
-   any URL that serves the file works.)
+   any URL that serves the file works, but the auto-refresh workflow below
+   assumes a GitHub Release.)
 
 3. **Create the app** at https://share.streamlit.io. Sign in with GitHub,
    "New app", pick the repo, set **Main file path** to `dashboard/app.py`.
@@ -31,7 +33,7 @@ changes.
 4. **Set secrets** (app, then Settings, then Secrets). This replaces `.env`
    in the cloud. Never commit either:
    ```toml
-   WAREHOUSE_URL = "https://github.com/<you>/<repo>/releases/download/data-v1/basketball.duckdb"
+   WAREHOUSE_URL = "https://github.com/<you>/<repo>/releases/download/data-latest/basketball.duckdb"
 
    # Either hide the Dev Lab entirely on the public app (recommended):
    DEV_LAB_ENABLED = "false"
@@ -64,6 +66,18 @@ changes.
   - Payments: Stripe Checkout links work fine from a Streamlit app; full
     accounts/subscriptions are the point where a custom frontend
     (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
-- **Data refresh cadence**: re-run the pipeline locally, publish a new
-  Release asset, update `WAREHOUSE_URL`, reboot the app. (Automating this
-  with GitHub Actions is a future session.)
+- **Data refresh cadence**: `.github/workflows/refresh-data.yml` runs the
+  pipeline on a schedule (Tuesdays by default, adjust the cron in that
+  file), re-publishes `basketball.duckdb` to the `data-latest` Release, and
+  stamps a version marker next to it. The live app checks that marker
+  hourly and re-downloads on its own when it changes, no manual reboot or
+  secret update needed. Trigger it manually any time from the Actions tab
+  ("Run workflow"), or with `gh workflow run refresh-data.yml`.
+
+## Checking data health
+
+`python scripts/health_check.py` reports whether the warehouse exists, row
+counts look sane, the most recent game isn't stale, and (unless
+`--skip-api`) whether stats.nba.com is still responding the way the
+ingestion script expects. Run it after a scheduled refresh, or hand it to
+an AI assistant pointed at this repo and ask it to check the data's health.
