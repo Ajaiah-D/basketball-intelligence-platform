@@ -23,16 +23,40 @@ st.set_page_config(
 theme.inject(st)
 
 
-@st.cache_resource(show_spinner="First boot: downloading the warehouse (one time)...")
+VERSION_PATH = db.DB_PATH.with_suffix(".version")
+
+
+def _remote_version(url: str) -> str | None:
+    import requests
+
+    version_url = url.rsplit("/", 1)[0] + "/version.txt"
+    try:
+        r = requests.get(version_url, timeout=10)
+        r.raise_for_status()
+        return r.text.strip()
+    except Exception:
+        return None
+
+
+@st.cache_resource(ttl=3600, show_spinner="Downloading the warehouse...")
 def bootstrap_warehouse() -> None:
-    """On cloud deploys the DuckDB file is not in the repo: download it
-    once from WAREHOUSE_URL (e.g. a GitHub Release asset).
+    """On cloud deploys the DuckDB file is not in the repo: download it from
+    WAREHOUSE_URL (e.g. a GitHub Release asset). Re-checked hourly (cache
+    ttl) against a small version.txt sitting next to the asset, so a fresh
+    weekly data refresh (see .github/workflows/refresh-data.yml) reaches the
+    live app without a manual reboot.
 
     cache_resource serializes concurrent sessions - on cloud boot several
     sessions start at once and racing downloads collide on the temp file."""
     url = config.warehouse_url()
-    if not url or db.DB_PATH.exists():
+    if not url:
         return
+
+    remote_version = _remote_version(url)
+    local_version = VERSION_PATH.read_text().strip() if VERSION_PATH.exists() else None
+    if db.DB_PATH.exists() and (remote_version is None or remote_version == local_version):
+        return
+
     import os
 
     import requests
@@ -45,17 +69,18 @@ def bootstrap_warehouse() -> None:
             with open(tmp, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
-        if not db.DB_PATH.exists():
-            tmp.replace(db.DB_PATH)
+        tmp.replace(db.DB_PATH)
+        db.q.clear()  # drop cached query results from the old file
+        if remote_version:
+            VERSION_PATH.write_text(remote_version)
     finally:
         tmp.unlink(missing_ok=True)
 
 
-if not db.warehouse_exists():
-    try:
-        bootstrap_warehouse()
-    except Exception as exc:
-        st.error(f"Warehouse download failed: {exc}")
+try:
+    bootstrap_warehouse()
+except Exception as exc:
+    st.error(f"Warehouse download failed: {exc}")
 
 if not db.warehouse_exists():
     st.error("Warehouse not found. Run the pipeline first (see README):\n\n"

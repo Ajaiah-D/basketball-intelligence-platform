@@ -5,6 +5,7 @@ __pycache__/
 data/raw/**/*.parquet
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
+warehouse/*.version
 dbt/**/target/
 dbt/**/dbt_packages/
 dbt/**/logs/
