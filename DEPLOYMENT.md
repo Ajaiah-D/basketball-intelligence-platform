@@ -81,3 +81,9 @@ counts look sane, the most recent game isn't stale, and (unless
 `--skip-api`) whether stats.nba.com is still responding the way the
 ingestion script expects. Run it after a scheduled refresh, or hand it to
 an AI assistant pointed at this repo and ask it to check the data's health.
+
+For a quick glance without pulling the full warehouse, the workflow also
+commits `data/last_updated.json` (timestamp, season range, row counts)
+back to the repo after every refresh that changed something. `gh api
+repos/<you>/<repo>/contents/data/last_updated.json` or `gh run list
+--workflow=refresh-data.yml` both work without a local checkout.

@@ -58,3 +58,18 @@ jobs:
               --notes "Kept up to date by .github/workflows/refresh-data.yml"
           gh release upload data-latest \
             warehouse/basketball.duckdb warehouse/version.txt --clobber
+
+      # The warehouse itself stays out of git (see the Release upload above);
+      # this is just a few lines of JSON so a refresh's outcome can be read
+      # straight off GitHub, or by an assistant running `gh api` against this
+      # path, without pulling the full file.
+      - name: Write status file
+        run: python scripts/write_metadata.py
+
+      - name: Commit status file if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/last_updated.json
+          git diff --cached --quiet || git commit -m "Update data/last_updated.json"
+          git push
