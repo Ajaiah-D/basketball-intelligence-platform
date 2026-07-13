@@ -1,0 +1,1 @@
+{"run_at": "2026-07-13T20:20:36+00:00", "steps": [{"step": "ingest", "ok": true, "seconds": 34.0}, {"step": "load_duckdb", "ok": true, "seconds": 2.9}, {"step": "dbt_run", "ok": true, "seconds": 9.5}, {"step": "dbt_test", "ok": true, "seconds": 3.8}, {"step": "write_metadata", "ok": true, "seconds": 0.2}, {"step": "publish_release", "ok": true, "seconds": 21.0}], "ok": true}

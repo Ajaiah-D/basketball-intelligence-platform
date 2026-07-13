@@ -18,13 +18,13 @@ changes.
    too large for normal git). Check the size first, GitHub Release assets
    allow up to 2 GB:
    ```
-   gh release create data-latest warehouse/basketball.duckdb --title "Warehouse (auto-refreshed)" --notes "Kept up to date by .github/workflows/refresh-data.yml"
+   gh release create data-v1 warehouse/basketball.duckdb --title "Warehouse" --notes "Kept up to date by scripts/weekly_refresh.py"
    ```
-   Copy the asset's download URL. The `data-latest` tag is reused for every
+   Copy the asset's download URL. The `data-v1` tag is reused for every
    future refresh (see below), so the URL you paste into the secret below
    never has to change again.
    (If you prefer not to use Releases: Cloudflare R2 has a free 10 GB tier;
-   any URL that serves the file works, but the auto-refresh workflow below
+   any URL that serves the file works, but the refresh script below
    assumes a GitHub Release.)
 
 3. **Create the app** at https://share.streamlit.io. Sign in with GitHub,
@@ -33,7 +33,7 @@ changes.
 4. **Set secrets** (app, then Settings, then Secrets). This replaces `.env`
    in the cloud. Never commit either:
    ```toml
-   WAREHOUSE_URL = "https://github.com/<you>/<repo>/releases/download/data-latest/basketball.duckdb"
+   WAREHOUSE_URL = "https://github.com/<you>/<repo>/releases/download/data-v1/basketball.duckdb"
 
    # Either hide the Dev Lab entirely on the public app (recommended):
    DEV_LAB_ENABLED = "false"
@@ -66,24 +66,36 @@ changes.
   - Payments: Stripe Checkout links work fine from a Streamlit app; full
     accounts/subscriptions are the point where a custom frontend
     (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
-- **Data refresh cadence**: `.github/workflows/refresh-data.yml` runs the
-  pipeline on a schedule (Tuesdays by default, adjust the cron in that
-  file), re-publishes `basketball.duckdb` to the `data-latest` Release, and
-  stamps a version marker next to it. The live app checks that marker
-  hourly and re-downloads on its own when it changes, no manual reboot or
-  secret update needed. Trigger it manually any time from the Actions tab
-  ("Run workflow"), or with `gh workflow run refresh-data.yml`.
+- **Data refresh cadence**: `scripts/weekly_refresh.py` runs the pipeline
+  end to end (ingest, DuckDB, dbt, republish to the `data-v1` Release) and
+  is meant to be triggered by a local Windows Task Scheduler job, not
+  GitHub Actions. stats.nba.com silently blocks requests from cloud/
+  datacenter IP ranges (AWS, Azure, GCP, and GitHub-hosted Actions runners
+  all fall in that bucket, confirmed by a failed test run: every request
+  timed out from GitHub's network but worked instantly from a home IP), so
+  the ingestion step has to run from a real residential connection. The
+  live app checks a version marker next to the Release asset hourly and
+  re-downloads on its own when it changes, no manual reboot needed.
+
+  To schedule it: Task Scheduler > Create Task > Trigger: Weekly, pick a
+  time the machine is reliably on > Action: start a program, program
+  `<repo>\.venv\Scripts\python.exe`, arguments
+  `scripts\weekly_refresh.py`, start-in the repo root.
 
 ## Checking data health
 
 `python scripts/health_check.py` reports whether the warehouse exists, row
-counts look sane, the most recent game isn't stale, and (unless
-`--skip-api`) whether stats.nba.com is still responding the way the
-ingestion script expects. Run it after a scheduled refresh, or hand it to
-an AI assistant pointed at this repo and ask it to check the data's health.
+counts look sane, the most recent game isn't stale, whether the last
+scheduled run succeeded, and (unless `--skip-api`) whether stats.nba.com
+is still responding the way the ingestion script expects. Run it any time,
+or hand it to an AI assistant pointed at this repo and ask it to check the
+data's health.
 
-For a quick glance without pulling the full warehouse, the workflow also
-commits `data/last_updated.json` (timestamp, season range, row counts)
-back to the repo after every refresh that changed something. `gh api
-repos/<you>/<repo>/contents/data/last_updated.json` or `gh run list
---workflow=refresh-data.yml` both work without a local checkout.
+For a quick glance without pulling the full warehouse: `weekly_refresh.py`
+commits `data/last_updated.json` (timestamp, season range, row counts) and
+`logs/refresh_runs.jsonl` (one JSON line per run: per-step ok/fail, timing,
+error tail on failure) back to the repo after every run. Both are plain
+git history, readable with `gh api
+repos/<you>/<repo>/contents/data/last_updated.json`, `git log --
+logs/refresh_runs.jsonl`, or a local checkout, no GitHub Actions or
+always-on service required.

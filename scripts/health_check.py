@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ import duckdb
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
+LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
 
 CHECKS_PASSED: list[str] = []
 CHECKS_FAILED: list[str] = []
@@ -102,6 +104,30 @@ def check_freshness() -> None:
         ok(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
 
 
+def check_last_run() -> None:
+    print("\nWeekly refresh job (scripts/weekly_refresh.py via Task Scheduler)")
+    if not LOG_PATH.exists():
+        fail(f"{LOG_PATH} does not exist - the scheduled job has never run")
+        return
+    lines = [line for line in LOG_PATH.read_text().splitlines() if line.strip()]
+    if not lines:
+        fail(f"{LOG_PATH} is empty")
+        return
+    last = json.loads(lines[-1])
+    run_at = datetime.fromisoformat(last["run_at"])
+    age_days = (datetime.now(timezone.utc) - run_at).days
+    if not last.get("ok"):
+        failed_step = next((s["step"] for s in last["steps"] if not s["ok"]), "unknown")
+        fail(f"last run ({last['run_at']}, {age_days}d ago) FAILED at step '{failed_step}'")
+    elif age_days > 10:
+        fail(f"last successful run was {last['run_at']} ({age_days}d ago) - "
+             "the scheduled job may have stopped running")
+    else:
+        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded, "
+           f"{len(last['steps'])} steps")
+    print(f"  ({len(lines)} run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
+
+
 def check_api(skip: bool) -> None:
     print("\nNBA API connectivity")
     if skip:
@@ -137,6 +163,7 @@ def main() -> None:
     check_warehouse_file()
     check_row_counts()
     check_freshness()
+    check_last_run()
     check_api(args.skip_api)
 
     print(f"\n{len(CHECKS_PASSED)} passed, {len(CHECKS_FAILED)} failed")
