@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -27,20 +28,31 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
 RELEASE_TAG = "data-v1"  # reused indefinitely so WAREHOUSE_URL never changes
 PYTHON = sys.executable
+# Task Scheduler launches this with the venv's python.exe directly (not an
+# activated shell), so the venv's Scripts/ dir isn't on child processes'
+# PATH - resolve dbt's full path the same way sys.executable resolves python.
+DBT = str(Path(PYTHON).parent / ("dbt.exe" if os.name == "nt" else "dbt"))
 
 
 def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
     print(f"-> {name}")
     started = datetime.now(timezone.utc)
-    result = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, capture_output=True, text=True)
-    ok = result.returncode == 0
+    try:
+        result = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, capture_output=True, text=True)
+        ok = result.returncode == 0
+        error = None if ok else (result.stderr or result.stdout)[-2000:]
+    except OSError as exc:
+        # e.g. the executable itself couldn't be found/launched - still a
+        # real failure worth logging, not a reason to crash silently.
+        ok = False
+        error = f"could not launch {cmd[0]!r}: {exc}"
     entry = {
         "step": name,
         "ok": ok,
         "seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 1),
     }
     if not ok:
-        entry["error"] = (result.stderr or result.stdout)[-2000:]
+        entry["error"] = error
     print(f"   {'OK' if ok else 'FAIL'} ({entry['seconds']}s)")
     return entry
 
@@ -56,8 +68,8 @@ def main() -> None:
     steps = [
         ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
         ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
-        ("dbt_run", ["dbt", "run", "--profiles-dir", "."], dbt_dir),
-        ("dbt_test", ["dbt", "test", "--profiles-dir", "."], dbt_dir),
+        ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
+        ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
         ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
     ]
 
