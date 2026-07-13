@@ -6,6 +6,7 @@ data/raw/**/*.parquet
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
 warehouse/*.version
+warehouse/version.txt
 dbt/**/target/
 dbt/**/dbt_packages/
 dbt/**/logs/
