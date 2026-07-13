@@ -77,10 +77,29 @@ changes.
   live app checks a version marker next to the Release asset hourly and
   re-downloads on its own when it changes, no manual reboot needed.
 
-  To schedule it: Task Scheduler > Create Task > Trigger: Weekly, pick a
-  time the machine is reliably on > Action: start a program, program
-  `<repo>\.venv\Scripts\python.exe`, arguments
-  `scripts\weekly_refresh.py`, start-in the repo root.
+  It's registered as a Windows Scheduled Task named
+  `BasketballIntelligence-WeeklyRefresh` (action: this repo's
+  `.venv\Scripts\python.exe scripts\weekly_refresh.py`, working directory
+  the repo root). **This task lives in Windows, not in git** - nothing in
+  the repo controls whether it's enabled, paused, or what time it fires.
+  Checking or changing it requires a shell on the machine it's registered
+  on (currently the user's desktop PC, always on):
+  ```powershell
+  Get-ScheduledTask -TaskName "BasketballIntelligence-WeeklyRefresh" | Get-ScheduledTaskInfo
+  # Change the trigger (e.g. re-pausing for the offseason, or a new time):
+  Set-ScheduledTask -TaskName "BasketballIntelligence-WeeklyRefresh" -Trigger (
+      New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At "2026-10-13T06:00:00")
+  ```
+  **Current state (set 2026-07-13):** paused for the offseason - the
+  weekly Tuesday 6 AM trigger's start boundary is pushed to
+  **2026-10-13** (second week of October, ahead of the 2026-27 season
+  opener), so it won't fire again until then. It stayed *enabled* rather
+  than disabled specifically so it resumes itself with no follow-up
+  needed - update the date above if the actual season start differs.
+
+  If this ever moves to a new machine (e.g. a mini PC), the Scheduled
+  Task has to be recreated there; nothing about it migrates with `git
+  clone`.
 
 ## Checking data health
 
