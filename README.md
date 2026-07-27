@@ -18,8 +18,7 @@ warehouse/basketball.duckdb        local DuckDB warehouse
         v
 dbt (dbt-duckdb)
         - staging       clean, rename, type raw tables (views)     [built]
-        - intermediate  business logic, joins, derived stats       [planned]
-        - marts         analytics-ready tables for the dashboard   [planned]
+        - marts         player and team season advanced metrics    [built]
         v
 dashboard/ (Streamlit + Plotly)    dark FotMob-style stats app      [built]
 ```
@@ -70,6 +69,11 @@ data/raw/                      # raw parquet extracts (gitignored)
   margin chart and top contributors
 - **Games**: results browser; game detail with box scores and, for games
   with play-by-play ingested, a game-flow (score margin) chart
+- **Advanced**: rate metrics (true shooting, usage, assist/rebound/steal/block
+  rates, game score) with a minutes floor, efficiency leaderboards, a
+  percentile profile per player, and a two-player head-to-head. Official NBA
+  figures are used where the league publishes them (1996-97 on) and box-score
+  derivations fill in earlier seasons
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
   player-season averaged more, streak scoring) and *Mystery Player*
   (identify a notable season from progressively revealed clues)
@@ -137,9 +141,12 @@ group by 1 order by ppg desc limit 10;
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging layer (5 models, 13 passing tests)
-- [ ] Intermediate models (per-possession stats, lineup data, game context)
-- [ ] Marts (player seasons, team seasons, matchup summaries)
+- [x] dbt staging layer (7 models) and marts (2 models), 23 passing tests
+- [x] Advanced metrics: per-possession ratings, usage and rate stats, four
+      factors. Official NBA advanced stats pulled for 1996-97 onward (one API
+      call per season); earlier seasons derived from box scores, and withheld
+      entirely before 1985-86 where the source has no rebound or turnover data
+- [ ] Lineup and on/off data (needs possession-level substitution parsing)
 - [ ] Contract/salary data source + models
 - [ ] Full Q&A dashboard (natural-language questions over marts)
 - [ ] Incremental ingestion (only new games) + scheduling

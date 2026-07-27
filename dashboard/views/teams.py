@@ -79,6 +79,26 @@ def render() -> None:
     st.plotly_chart(viz.team_margins(games), config=viz.PLOTLY_CONFIG,
                     width="stretch")
 
+    adv = db.team_advanced(season)
+    team_adv = adv[adv.team_id == row.team_id]
+    if not team_adv.empty and team_adv.iloc[0].offensive_rating == team_adv.iloc[0].offensive_rating:
+        a = team_adv.iloc[0]
+        st.markdown("**Efficiency** - points per 100 possessions, which removes "
+                    "pace so a fast team and a slow one compare fairly")
+        e1, e2, e3, e4 = st.columns(4)
+        e1.markdown(T.kpi("Offensive rating", f"{a.offensive_rating:.1f}",
+                          "points scored per 100"), unsafe_allow_html=True)
+        e2.markdown(T.kpi("Defensive rating", f"{a.defensive_rating:.1f}",
+                          "points allowed per 100"), unsafe_allow_html=True)
+        e3.markdown(T.kpi("Net rating", f"{a.net_rating:+.1f}"), unsafe_allow_html=True)
+        e4.markdown(T.kpi("Pace", f"{a.pace:.1f}", "possessions per 48 min"),
+                    unsafe_allow_html=True)
+
+        st.plotly_chart(viz.rating_quadrant(adv, highlight=row.team),
+                        config=viz.PLOTLY_CONFIG, width="stretch")
+        st.caption(f"Up and to the right is better; lines mark the league average. "
+                   f"Ratings for {season} are {a.ratings_source}.")
+
     st.markdown("**Top contributors**")
     roster = db.player_season_stats(season, min_games=10)
     roster = roster[roster.team == row.team].sort_values("ppg", ascending=False).head(8)

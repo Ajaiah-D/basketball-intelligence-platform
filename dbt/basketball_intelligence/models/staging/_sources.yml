@@ -12,6 +12,14 @@ sources:
         description: One row per player per game (LeagueGameLog, player mode).
       - name: team_game_logs
         description: One row per team per game (LeagueGameLog, team mode).
+      - name: player_advanced
+        description: >
+          Official advanced player stats per season (LeagueDashPlayerStats,
+          Advanced measure type). Only published from 1996-97 on.
+      - name: team_advanced
+        description: >
+          Official advanced team stats per season (LeagueDashTeamStats,
+          Advanced measure type). Only published from 1996-97 on.
       - name: play_by_play
         description: One row per play-by-play event (PlayByPlayV3), subset of games.
       - name: players

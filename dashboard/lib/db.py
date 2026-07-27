@@ -88,6 +88,19 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
     return q(_PLAYER_SEASON_SQL, (season, min_games))
 
 
+def qualification_threshold(stats: pd.DataFrame, full_season: int = 25) -> int:
+    """Minimum games to appear on a rate-stat leaderboard.
+
+    A fixed cut empties every leaderboard for the first weeks of a live
+    season (nobody has 25 games in November), so scale it to how far the
+    season has actually run - the same idea as the NBA's "share of team
+    games played" rule - and cap it at the full-season number.
+    """
+    if stats.empty:
+        return 0
+    return max(1, min(full_season, int(stats["gp"].max() * 0.6)))
+
+
 _PLAYER_CAREER_SQL = """
     select
         player_id,
@@ -283,6 +296,92 @@ def game_box_score(game_id: str) -> pd.DataFrame:
         """,
         (game_id,),
     )
+
+
+# --- Advanced metrics ----------------------------------------------------------
+
+# Label -> (column, higher_is_better, help text). Drives the Advanced page so
+# the metric list lives in one place instead of being restated per widget.
+ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
+    "TS%": ("true_shooting_pct", True,
+            "True shooting: points per shooting possession, counting 3s and free throws"),
+    "eFG%": ("effective_fg_pct", True,
+             "Effective FG%: field goal percentage with 3-pointers weighted 1.5x"),
+    "USG%": ("usage_pct", True,
+             "Usage: share of team possessions a player ends while on the floor"),
+    "AST%": ("assist_pct", True,
+             "Assist rate: share of teammate field goals a player assisted while on the floor"),
+    "REB%": ("rebound_pct", True,
+             "Rebound rate: share of available rebounds a player grabbed while on the floor"),
+    "TOV%": ("turnover_pct", False,
+             "Turnover rate: turnovers per 100 individual plays (lower is better)"),
+    "STL%": ("steal_pct", True, "Steals per opponent possession while on the floor"),
+    "BLK%": ("block_pct", True, "Share of opponent 2-point attempts blocked"),
+    "PTS/36": ("points_per_36", True, "Points per 36 minutes, pace of a starter's night"),
+    "PTS/100": ("points_per_100", True, "Points per 100 team possessions on the floor"),
+    "Game score": ("game_score", True,
+                   "Hollinger game score: one-number box score summary, ~10 is average"),
+    "Net rating": ("net_rating", True,
+                   "Team point differential per 100 possessions with the player on the floor "
+                   "(official NBA figure, 1996-97 on)"),
+    "PIE": ("player_impact_estimate", True,
+            "Player impact estimate: share of the game's total production "
+            "(official NBA figure, 1996-97 on)"),
+}
+
+
+def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
+    """Advanced metrics for one season. Rate stats are meaningless on tiny
+    samples (one made three is a 150% TS%), so callers pass a minutes floor."""
+    return q(
+        """
+        select * from main_marts.mart_player_season
+        where season = ? and minutes >= ?
+        """,
+        (season, min_minutes),
+    )
+
+
+def player_advanced_career(player_id: int) -> pd.DataFrame:
+    """Every season of advanced metrics for one player, oldest first."""
+    return q(
+        """
+        select * from main_marts.mart_player_season
+        where player_id = ? order by season
+        """,
+        (player_id,),
+    )
+
+
+def team_advanced(season: str) -> pd.DataFrame:
+    return q(
+        """
+        select * from main_marts.mart_team_season
+        where season = ? order by net_rating desc nulls last
+        """,
+        (season,),
+    )
+
+
+def advanced_seasons() -> list[str]:
+    """Seasons where the box score is complete enough for advanced metrics
+    (1985-86 on). Earlier seasons are missing whole columns at the source."""
+    return q(
+        """
+        select distinct season from main_marts.mart_player_season
+        where box_score_complete order by 1 desc
+        """
+    )["season"].tolist()
+
+
+def percentile_of(series: pd.Series, value: float, higher_is_better: bool = True) -> float | None:
+    """Where `value` sits in `series`, 0-100. Used to answer "is 36% from three
+    good" with a rank instead of a bare league average."""
+    clean = series.dropna()
+    if not len(clean) or value != value:
+        return None
+    pct = (clean < value).sum() / len(clean) * 100
+    return pct if higher_is_better else 100 - pct
 
 
 # --- Arcade -------------------------------------------------------------------

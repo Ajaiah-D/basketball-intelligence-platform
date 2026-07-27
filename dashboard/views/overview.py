@@ -18,6 +18,20 @@ def leaders_card(title: str, df, stat: str) -> str:
     return f'<div class="bip-card"><h4>{title}</h4>{"".join(rows)}</div>'
 
 
+def adv_leaders_card(title: str, df, stat: str) -> str:
+    """Same card as leaders_card, for the advanced mart's column names."""
+    rows = []
+    for i, r in enumerate(df.itertuples(), 1):
+        rows.append(
+            f'<div class="bip-row">{T.rank_badge(i)}'
+            f'<span class="bip-name">{r.player_name} '
+            f'<span class="bip-team" style="color:{T.team_color(r.team_abbreviation)}">'
+            f'{r.team_abbreviation}</span></span>'
+            f'<span class="bip-val">{getattr(r, stat):.1f}</span></div>'
+        )
+    return f'<div class="bip-card"><h4>{title}</h4>{"".join(rows)}</div>'
+
+
 def standings_mini(df) -> str:
     rows = []
     for i, r in enumerate(df.itertuples(), 1):
@@ -52,19 +66,29 @@ def render() -> None:
     stats = db.player_season_stats(season)
     pbp_n = len(db.pbp_game_ids())
 
-    top = stats[stats.gp >= 25].nlargest(1, "ppg").iloc[0]
-    tc = T.team_color(top.team)
+    # Early in a live season nobody has played enough games for a fixed cut,
+    # so the threshold scales with the season's progress (see db).
+    min_gp = db.qualification_threshold(stats)
+    qualified = stats[stats.gp >= min_gp]
+
+    leader = qualified.nlargest(1, "ppg")
+    spotlight = ""
+    if len(leader):
+        top = leader.iloc[0]
+        spotlight = (
+            f'<div class="bip-hero-spot">'
+            f'<div><div class="lbl">Scoring leader</div>'
+            f'<div class="name">{top.player}</div>'
+            f'<div class="val">{top.ppg:.1f} PPG</div></div>'
+            f'{media.avatar_html(int(top.player_id), top.player, size=86, ring=T.team_color(top.team))}'
+            f'</div>'
+        )
     st.markdown(
         f'<div class="bip-hero">'
         f'<div><div class="bip-hero-title">{season} Regular Season</div>'
         f'<div class="bip-hero-sub">{len(games):,} games &middot; '
         f'{len(stats):,} players &middot; league pulse, leaders and form</div></div>'
-        f'<div class="bip-hero-spot">'
-        f'<div><div class="lbl">Scoring leader</div>'
-        f'<div class="name">{top.player}</div>'
-        f'<div class="val">{top.ppg:.1f} PPG</div></div>'
-        f'{media.avatar_html(int(top.player_id), top.player, size=86, ring=tc)}'
-        f'</div></div>',
+        f'{spotlight}</div>',
         unsafe_allow_html=True,
     )
 
@@ -73,13 +97,14 @@ def render() -> None:
                 unsafe_allow_html=True)
     c2.markdown(T.kpi("Players", f"{len(stats):,}", accent=T.SERIES[1]),
                 unsafe_allow_html=True)
-    c3.markdown(T.kpi("Avg points / game", f"{(games.home_pts + games.away_pts).mean():.1f}",
+    avg_pts = (games.home_pts + games.away_pts).mean() if len(games) else float("nan")
+    c3.markdown(T.kpi("Avg points / game",
+                      f"{avg_pts:.1f}" if avg_pts == avg_pts else "-",
                       accent=T.SERIES[2]), unsafe_allow_html=True)
     c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", "latest season only",
                       accent=T.SERIES[4]), unsafe_allow_html=True)
 
     st.markdown("#### League leaders")
-    qualified = stats[stats.gp >= 25]
     l1, l2, l3, l4 = st.columns(4)
     l1.markdown(leaders_card("Points", qualified.nlargest(5, "ppg"), "ppg"),
                 unsafe_allow_html=True)
@@ -89,6 +114,27 @@ def render() -> None:
                 unsafe_allow_html=True)
     l4.markdown(leaders_card("3-pointers", qualified.nlargest(5, "tpg"), "tpg"),
                 unsafe_allow_html=True)
+    st.caption(f"Per-game averages, minimum {min_gp} games played.")
+
+    # Counting stats alone reward volume, so give efficiency its own row.
+    adv = db.player_advanced(season)
+    if not adv.empty:
+        floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
+        eff = adv[adv.minutes >= floor]
+        if len(eff) >= 5:
+            st.markdown("#### Efficiency leaders")
+            e1, e2, e3, e4 = st.columns(4)
+            e1.markdown(adv_leaders_card("True shooting",
+                                         eff.nlargest(5, "true_shooting_pct"),
+                                         "true_shooting_pct"), unsafe_allow_html=True)
+            e2.markdown(adv_leaders_card("Usage", eff.nlargest(5, "usage_pct"),
+                                         "usage_pct"), unsafe_allow_html=True)
+            e3.markdown(adv_leaders_card("Game score", eff.nlargest(5, "game_score"),
+                                         "game_score"), unsafe_allow_html=True)
+            e4.markdown(adv_leaders_card("Rebound rate", eff.nlargest(5, "rebound_pct"),
+                                         "rebound_pct"), unsafe_allow_html=True)
+            st.caption(f"Rate stats, minimum {floor} minutes. "
+                       "Full detail on the Advanced page.")
 
     st.markdown("#### Standings")
     standings = db.standings(season)

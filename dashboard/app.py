@@ -90,7 +90,15 @@ if not db.warehouse_exists():
              "On a cloud deploy, set the `WAREHOUSE_URL` secret instead.")
     st.stop()
 
-from dashboard.views import arcade, dev_lab, games, overview, players, teams  # noqa: E402
+from dashboard.views import (  # noqa: E402
+    advanced,
+    arcade,
+    dev_lab,
+    games,
+    overview,
+    players,
+    teams,
+)
 
 nav = {
     "Explore": [
@@ -102,6 +110,8 @@ nav = {
                 url_path="teams"),
         st.Page(games.render, title="Games", icon=":material/sports_basketball:",
                 url_path="games"),
+        st.Page(advanced.render, title="Advanced", icon=":material/insights:",
+                url_path="advanced"),
         st.Page(arcade.render, title="Arcade", icon=":material/stadia_controller:",
                 url_path="arcade"),
     ],

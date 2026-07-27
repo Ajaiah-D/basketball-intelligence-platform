@@ -3,6 +3,7 @@
 Pulls, for a given season:
   - Player-level box score game logs   (one API call)
   - Team-level box score game logs     (one API call)
+  - Advanced player and team stats     (one API call each, 1996-97 onward)
   - Play-by-play events                (one API call PER GAME - rate limited)
   - Player index and team dimension    (one API call + static data)
 
@@ -35,10 +36,21 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
-from nba_api.stats.endpoints import commonallplayers, leaguegamelog, playbyplayv3
+from nba_api.stats.endpoints import (
+    commonallplayers,
+    leaguedashplayerstats,
+    leaguedashteamstats,
+    leaguegamelog,
+    playbyplayv3,
+)
 from nba_api.stats.static import teams as static_teams
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+
+# The NBA only publishes advanced box score stats (ratings, usage, PIE) from
+# 1996-97 on; earlier seasons return zero rows. Everything before that is
+# covered by the metrics dbt derives from raw box scores instead.
+ADVANCED_FIRST_SEASON = "1996-97"
 
 # --- Rate limiting -----------------------------------------------------------
 # stats.nba.com has no published limits; community experience is that bursts
@@ -145,6 +157,41 @@ def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def has_advanced_stats(season: str) -> bool:
+    return int(season[:4]) >= int(ADVANCED_FIRST_SEASON[:4])
+
+
+def fetch_player_advanced(season: str) -> pd.DataFrame:
+    """Official advanced player stats: OFF/DEF/NET rating, USG%, TS%, AST%,
+    REB%, PACE, PIE. One call per season."""
+    log.info("Fetching advanced player stats for %s ...", season)
+    df = call_endpoint(
+        leaguedashplayerstats.LeagueDashPlayerStats,
+        season=season,
+        measure_type_detailed_defense="Advanced",
+        per_mode_detailed="PerGame",
+        season_type_all_star="Regular Season",
+    )
+    df["season"] = season
+    log.info("  %d advanced player rows", len(df))
+    return df
+
+
+def fetch_team_advanced(season: str) -> pd.DataFrame:
+    """Official advanced team stats: ratings, pace, four-factor components."""
+    log.info("Fetching advanced team stats for %s ...", season)
+    df = call_endpoint(
+        leaguedashteamstats.LeagueDashTeamStats,
+        season=season,
+        measure_type_detailed_defense="Advanced",
+        per_mode_detailed="PerGame",
+        season_type_all_star="Regular Season",
+    )
+    df["season"] = season
+    log.info("  %d advanced team rows", len(df))
+    return df
+
+
 def fetch_players(season: str) -> pd.DataFrame:
     log.info("Fetching player index ...")
     df = call_endpoint(
@@ -198,15 +245,33 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
     log.info("Ingesting %d season(s): %s .. %s", len(seasons), seasons[0], latest)
     team_logs_latest = None
     for i, season in enumerate(seasons, 1):
-        if not force and season_done("player_game_logs", season) \
-                and season_done("team_game_logs", season) and season != latest:
+        # The latest season is always refreshed (it is still being played);
+        # older seasons only fetch the datasets they are actually missing, so
+        # adding a new dataset later does not re-pull everything else.
+        stale = force or season == latest
+
+        def needed(name: str) -> bool:
+            return stale or not season_done(name, season)
+
+        wants_advanced = has_advanced_stats(season) and needed("player_advanced")
+        if not (needed("player_game_logs") or needed("team_game_logs") or wants_advanced):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
         log.info("[%d/%d] %s", i, len(seasons), season)
-        write_parquet(fetch_player_game_logs(season), "player_game_logs", season)
-        team_logs = fetch_team_game_logs(season)
-        write_parquet(team_logs, "team_game_logs", season)
-        if season == latest:
+
+        team_logs = None
+        if needed("player_game_logs"):
+            write_parquet(fetch_player_game_logs(season), "player_game_logs", season)
+        if needed("team_game_logs"):
+            team_logs = fetch_team_game_logs(season)
+            write_parquet(team_logs, "team_game_logs", season)
+        if wants_advanced:
+            write_parquet(fetch_player_advanced(season), "player_advanced", season)
+            write_parquet(fetch_team_advanced(season), "team_advanced", season)
+        elif not has_advanced_stats(season):
+            log.info("  no official advanced stats before %s - dbt derives them "
+                     "from box scores instead", ADVANCED_FIRST_SEASON)
+        if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 
     # Play-by-play only for the latest requested season (1 API call per game).

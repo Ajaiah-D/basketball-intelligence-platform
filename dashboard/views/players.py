@@ -19,6 +19,31 @@ TABLE_COLS = ["player", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg",
 TREND_STATS = {"PPG": "ppg", "RPG": "rpg", "APG": "apg", "3PM/g": "tpg"}
 
 
+# Shooting percentiles are measured against players who actually shoot that
+# often. A league average answers "above or below"; it cannot tell you that
+# 36% from three is roughly league-median while 40% is near the top.
+SHOOTING_RANKS = [
+    ("FG%", "fg_pct", "fga_total", 300),
+    ("3P%", "fg3_pct", "tpa_total", 100),
+    ("FT%", "ft_pct", "fta_total", 100),
+    ("TS%", "ts_pct", "fga_total", 300),
+]
+
+
+def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
+    pool = db.player_season_stats(season)
+    out = []
+    for label, pct_col, vol_col, min_vol in SHOOTING_RANKS:
+        value = row.get(pct_col)
+        if value is None or value != value or row.get(vol_col, 0) < min_vol:
+            continue
+        qualified = pool[pool[vol_col] >= min_vol][pct_col]
+        rank = db.percentile_of(qualified, value, higher_is_better=True)
+        if rank is not None:
+            out.append((label, rank, value))
+    return out
+
+
 def render() -> None:
     season = st.session_state.get("season") or db.latest_season()
 
@@ -177,6 +202,15 @@ def render() -> None:
         st.plotly_chart(
             viz.shooting_profile(row, db.league_shooting_averages(season), row.player),
             config=viz.PLOTLY_CONFIG, width="stretch")
+        st.caption("League bars are volume-weighted (total makes / total attempts "
+                   "across every player), the same basis the NBA uses.")
+
+    ranks = shooting_percentiles(season, row)
+    if ranks:
+        st.markdown("**Where that ranks** - percentile among players with 100+ "
+                    "attempts, which is the context a league average alone leaves out")
+        st.plotly_chart(viz.percentile_bars(ranks), config=viz.PLOTLY_CONFIG,
+                        width="stretch")
 
     home = games[~games.is_away_game]
     away = games[games.is_away_game]

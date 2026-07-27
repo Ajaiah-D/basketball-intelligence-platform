@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: mart_player_season
+    description: >
+      One row per player per season with advanced rate metrics. Derived from
+      box scores for every complete season (1985-86 on); official NBA figures
+      are used where published (1996-97 on). Metrics that depend on columns
+      the source lacks before 1985-86 are null rather than estimated from a
+      partial season.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: games_played
+        tests: [not_null]
+      - name: box_score_complete
+        tests: [not_null]
+
+  - name: mart_team_season
+    description: >
+      One row per team per season: efficiency ratings, pace and the four
+      factors. Published NBA ratings where they exist (1996-97 on), box-score
+      estimates for 1985-86 to 1995-96, and null before that, since the source
+      has no rebound or turnover tracking to estimate from.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: ratings_source
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - NBA official
+                - estimated from box score
+                - not available before 1985-86
