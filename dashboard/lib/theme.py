@@ -3,9 +3,15 @@ the validated dark-mode steps from the dataviz reference palette. Team
 colors are brand-adjacent hues tuned for legibility on the dark surface
 (identity accents on UI chrome, not chart series colors)."""
 
-# Categorical series slots (dark-surface steps, fixed order - never cycle)
-SERIES = ["#3987e5", "#199e70", "#c98500", "#008300",
-          "#9085e9", "#e66767", "#d55181", "#d95926"]
+# Categorical series slots (dark-surface steps, fixed order - never cycle).
+# This is the reference palette's own slot order: blue, orange, aqua,
+# yellow, magenta, green, violet, red. An earlier shuffle of these same
+# eight colours put red next to magenta and green next to yellow, pairs too
+# close to tell apart (the red/magenta pair measured a perceptual distance
+# of 7.8 against a floor of 15, so even full-colour vision struggled). The
+# order is what makes adjacent slots legible, so keep it.
+SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500",
+          "#d55181", "#008300", "#9085e9", "#e66767"]
 
 ACCENT = SERIES[0]          # blue - primary/emphasis hue
 DIVERGE_POS = "#3987e5"     # diverging pair: blue <-> red
