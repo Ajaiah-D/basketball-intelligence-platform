@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -31,6 +31,15 @@ CHECKS_FAILED: list[str] = []
 def ok(msg: str) -> None:
     CHECKS_PASSED.append(msg)
     print(f"  OK   {msg}")
+
+
+def in_offseason(today: date | None = None) -> bool:
+    """Roughly mid-April to mid-October, when no regular season games are
+    played. Stale data and an idle refresh job are the correct state then,
+    not a problem, and a check that cries wolf all summer is a check nobody
+    reads by the time the season starts."""
+    today = today or date.today()
+    return (today.month, today.day) > (4, 20) and (today.month, today.day) < (10, 15)
 
 
 def fail(msg: str) -> None:
@@ -98,7 +107,9 @@ def check_freshness() -> None:
     days_old = (datetime.now().date() - latest).days
     # During the regular season new games land every 1-3 days; give it a
     # generous week of slack before flagging the pipeline as stalled.
-    if days_old > 7:
+    if in_offseason():
+        ok(f"most recent game is {latest} ({days_old} days ago), expected in the offseason")
+    elif days_old > 7:
         fail(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
     else:
         ok(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
@@ -119,6 +130,9 @@ def check_last_run() -> None:
     if not last.get("ok"):
         failed_step = next((s["step"] for s in last["steps"] if not s["ok"]), "unknown")
         fail(f"last run ({last['run_at']}, {age_days}d ago) FAILED at step '{failed_step}'")
+    elif in_offseason():
+        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded; the weekly job "
+           "is idle until the season starts")
     elif age_days > 10:
         fail(f"last successful run was {last['run_at']} ({age_days}d ago) - "
              "the scheduled job may have stopped running")

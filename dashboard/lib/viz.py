@@ -120,10 +120,18 @@ def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str)
                 textposition="outside", textfont=dict(color=T.INK),
                 customdata=attempts,
                 hovertemplate="%{y}: %{x:.1f} on %{customdata:.1f} attempts/game<extra></extra>")
+    # Outside labels need room past the longest bar or they get clipped: a
+    # 90% free throw shooter would otherwise have its label run off a 0-100
+    # axis. Headroom scales with the values actually plotted.
+    top = max([v for v in pvals + lvals if pd.notna(v)], default=100)
     fig.update_layout(**_layout(barmode="group", bargap=0.35,
-                                height=260, xaxis=dict(range=[0, 100], gridcolor=T.GRID,
-                                                       tickfont=dict(color=T.MUTED),
-                                                       fixedrange=True)))
+                                height=260,
+                                xaxis=dict(range=[0, top * 1.55], gridcolor=T.GRID,
+                                           tickfont=dict(color=T.MUTED),
+                                           tickvals=[0, 25, 50, 75, 100],
+                                           fixedrange=True, automargin=True),
+                                yaxis=dict(tickfont=dict(color=T.INK_2),
+                                           fixedrange=True, automargin=True)))
     return fig
 
 
@@ -264,6 +272,148 @@ def shot_chart(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         legend=dict(orientation="h", yanchor="top", y=-0.02, x=0.5, xanchor="center",
                     font=dict(color=T.INK_2)),
         margin=dict(l=8, r=8, t=8, b=8),
+    ))
+    return fig
+
+
+def rating_quadrant(teams: pd.DataFrame, highlight: str | None = None) -> go.Figure:
+    """Offence against defence, every team in one view. Defensive rating is
+    inverted so that up and right is always better and the four quadrants
+    read without a legend. Emphasis form: the selected team takes the accent,
+    everyone else recedes to the baseline gray."""
+    df = teams.dropna(subset=["offensive_rating", "defensive_rating"]).copy()
+    if df.empty:
+        return _empty("No efficiency data for this season")
+
+    x_mid = df["offensive_rating"].mean()
+    y_mid = df["defensive_rating"].mean()
+    is_pick = df["team_abbreviation"] == highlight
+    colors = [T.ACCENT if p else T.BASELINE for p in is_pick]
+    sizes = [15 if p else 10 for p in is_pick]
+
+    fig = go.Figure()
+    # Quadrant dividers sit at the league average, so position is read
+    # relative to the league rather than to an arbitrary zero. They use the
+    # baseline colour, not the grid colour, or they are indistinguishable
+    # from ordinary gridlines and the quadrants stop reading as quadrants.
+    fig.add_vline(x=x_mid, line_color=T.BASELINE, line_width=1)
+    fig.add_hline(y=y_mid, line_color=T.BASELINE, line_width=1)
+    fig.add_annotation(x=x_mid, y=df["defensive_rating"].min(), text="league average",
+                       showarrow=False, yshift=10, xshift=42,
+                       font=dict(color=T.MUTED, size=10))
+    fig.add_scatter(
+        x=df["offensive_rating"], y=df["defensive_rating"],
+        mode="markers+text",
+        text=df["team_abbreviation"],
+        textposition="top center",
+        textfont=dict(color=T.INK_2, size=9),
+        marker=dict(color=colors, size=sizes,
+                    line=dict(color=T.SURFACE, width=2)),  # 2px surface ring
+        customdata=df[["team_name", "net_rating", "pace"]],
+        hovertemplate=("%{customdata[0]}<br>Offence %{x:.1f} · Defence %{y:.1f}"
+                       "<br>Net %{customdata[1]:+.1f} · Pace %{customdata[2]:.1f}"
+                       "<extra></extra>"),
+        showlegend=False,
+    )
+    fig.update_layout(**_layout(
+        height=420,
+        xaxis=dict(title=dict(text="Offensive rating (points scored per 100)",
+                              font=dict(color=T.MUTED)),
+                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED), fixedrange=True,
+                   automargin=True),
+        # Reversed so better defence (fewer points allowed) is higher up
+        yaxis=dict(title=dict(text="Defensive rating (points allowed per 100)",
+                              font=dict(color=T.MUTED)),
+                   autorange="reversed",
+                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED), fixedrange=True,
+                   automargin=True),
+    ))
+    return fig
+
+
+def percentile_bars(rows: list[tuple[str, float, float]]) -> go.Figure:
+    """Where a player ranks among qualified peers, one row per metric.
+    Each bar is a percentile (0-100), so metrics on different scales share
+    one axis honestly. The raw value rides along as the label, because a
+    percentile alone hides whether 90th means 38% or 44%."""
+    if not rows:
+        return _empty("Not enough qualified players to rank against")
+    labels = [r[0] for r in rows]
+    pcts = [r[1] for r in rows]
+    raws = [r[2] for r in rows]
+
+    fig = go.Figure()
+    fig.add_bar(
+        y=labels, x=pcts, orientation="h",
+        marker=dict(color=T.ACCENT, cornerradius=4),
+        text=[f"{v:.1f}  ({p:.0f}th)" for v, p in zip(raws, pcts)],
+        textposition="outside", textfont=dict(color=T.INK_2, size=11),
+        hovertemplate="%{y}: %{customdata:.1f}, better than %{x:.0f}% of qualified players<extra></extra>",
+        customdata=raws,
+        showlegend=False,
+    )
+    fig.add_vline(x=50, line_color=T.BASELINE, line_width=1)
+    fig.update_layout(**_layout(
+        height=max(200, 42 * len(rows)), bargap=0.35,
+        # Headroom past 100 so the outside labels are never clipped
+        xaxis=dict(range=[0, 148], gridcolor=T.GRID, tickfont=dict(color=T.MUTED),
+                   fixedrange=True, tickvals=[0, 25, 50, 75, 100],
+                   title=dict(text="Percentile among qualified players",
+                              font=dict(color=T.MUTED)), automargin=True),
+        yaxis=dict(tickfont=dict(color=T.INK_2), fixedrange=True,
+                   autorange="reversed", automargin=True),
+    ))
+    return fig
+
+
+def compare_dumbbell(metrics: list[str], a_vals: list[float], b_vals: list[float],
+                     a_name: str, b_name: str) -> go.Figure:
+    """Two players across the same metrics, as percentiles so one axis works
+    for all of them. The connecting line makes the gap the thing you read
+    first, which a pair of bars does not."""
+    if not metrics:
+        return _empty("No shared metrics to compare")
+    fig = go.Figure()
+    for m, a, b in zip(metrics, a_vals, b_vals):
+        fig.add_scatter(
+            x=[a, b], y=[m, m], mode="lines",
+            line=dict(color=T.BASELINE, width=2),
+            hoverinfo="skip", showlegend=False,
+        )
+    for vals, name, color in ((a_vals, a_name, T.SERIES[0]),
+                              (b_vals, b_name, T.SERIES[1])):
+        fig.add_scatter(
+            x=vals, y=metrics, mode="markers", name=name,
+            marker=dict(color=color, size=12,
+                        line=dict(color=T.SURFACE, width=2)),
+            hovertemplate="%{y}: %{x:.0f}th percentile<extra>" + name + "</extra>",
+        )
+    # Median marker uses the baseline colour so it separates from the
+    # ordinary gridlines at 25 and 75.
+    fig.add_vline(x=50, line_color=T.BASELINE, line_width=1)
+    fig.update_layout(**_layout(
+        height=max(240, 46 * len(metrics)),
+        xaxis=dict(range=[0, 100], gridcolor=T.GRID, tickfont=dict(color=T.MUTED),
+                   fixedrange=True, tickvals=[0, 25, 50, 75, 100],
+                   title=dict(text="Percentile among qualified players",
+                              font=dict(color=T.MUTED)), automargin=True),
+        yaxis=dict(tickfont=dict(color=T.INK_2), fixedrange=True,
+                   autorange="reversed", automargin=True),
+    ))
+    return fig
+
+
+def _empty(message: str) -> go.Figure:
+    """Placeholder so a view with no data renders a sentence instead of an
+    empty axis box."""
+    fig = go.Figure()
+    fig.add_annotation(text=message, showarrow=False,
+                       font=dict(color=T.MUTED, size=13),
+                       xref="paper", yref="paper", x=0.5, y=0.5)
+    fig.update_layout(**_layout(
+        height=200,
+        xaxis=dict(visible=False, fixedrange=True),
+        yaxis=dict(visible=False, fixedrange=True),
     ))
     return fig
 
