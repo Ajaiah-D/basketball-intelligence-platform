@@ -24,10 +24,14 @@ def _layout(**overrides) -> dict:
         # the modebar is hidden, so a drag/pinch zoom would be unrecoverable -
         # every chart is a fixed view (overriding axes must keep fixedrange)
         dragmode=False,
+        # automargin lets plotly reserve room for tick labels and titles. The
+        # explicit margin above otherwise wins and clips them: without this a
+        # y axis reading 10..50 renders as a column of "0"s. Any chart that
+        # replaces these axis dicts wholesale has to set it again.
         xaxis=dict(gridcolor=T.GRID, zerolinecolor=T.BASELINE, linecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED), fixedrange=True),
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True),
         yaxis=dict(gridcolor=T.GRID, zerolinecolor=T.BASELINE, linecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED), fixedrange=True),
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True),
         hoverlabel=dict(bgcolor=T.SURFACE, bordercolor=T.BORDER,
                         font=dict(family=T.FONT, color=T.INK)),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
@@ -39,9 +43,18 @@ def _layout(**overrides) -> dict:
 
 
 def player_trend(games: pd.DataFrame) -> go.Figure:
-    """Points per game (context bars) + 5-game rolling average (emphasis line)."""
+    """Points per game (context bars) + 5-game rolling average (emphasis line),
+    against the season average as a reference.
+
+    The rolling line only starts once there are five games behind it. With
+    min_periods=1 the first point was just that game's score wearing a
+    "5-game average" label, which reads as a wild early swing that never
+    actually happened."""
     df = games.copy()
-    df["roll"] = df["points"].rolling(5, min_periods=1).mean()
+    window = min(5, len(df))
+    df["roll"] = df["points"].rolling(window, min_periods=window).mean()
+    season_avg = df["points"].mean()
+
     fig = go.Figure()
     fig.add_bar(
         x=df["game_date"], y=df["points"], name="Points",
@@ -49,32 +62,71 @@ def player_trend(games: pd.DataFrame) -> go.Figure:
         hovertemplate="%{x|%b %d} vs %{customdata}<br>%{y} pts<extra></extra>",
         customdata=df["matchup"].str[-3:],
     )
-    fig.add_scatter(
-        x=df["game_date"], y=df["roll"], name="5-game avg",
-        mode="lines", line=dict(color=T.ACCENT, width=2),
-        hovertemplate="5-game avg: %{y:.1f}<extra></extra>",
+    # A flat season average turns the rolling line into a story: this is
+    # where the player was running hot or cold relative to their own year.
+    fig.add_hline(y=season_avg, line_color=T.MUTED, line_width=1, line_dash="dot")
+    # Annotation x values go through a stricter serializer than the traces
+    # do, and a pandas Timestamp is not JSON serializable there.
+    fig.add_annotation(
+        x=df["game_date"].iloc[0].to_pydatetime(), y=season_avg,
+        text=f"season avg {season_avg:.1f}",
+        showarrow=False, yshift=10, xanchor="left",
+        font=dict(color=T.MUTED, size=10),
     )
-    last = df.iloc[-1]
-    fig.add_annotation(x=last["game_date"], y=last["roll"], text=f"{last['roll']:.1f}",
-                       showarrow=False, xshift=22, font=dict(color=T.ACCENT, size=12))
+    fig.add_scatter(
+        x=df["game_date"], y=df["roll"], name=f"{window}-game avg",
+        mode="lines", line=dict(color=T.ACCENT, width=2),
+        connectgaps=False,
+        hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
+    )
+    if df["roll"].notna().any():
+        last = df.dropna(subset=["roll"]).iloc[-1]
+        fig.add_annotation(x=last["game_date"].to_pydatetime(), y=last["roll"],
+                           text=f"{last['roll']:.1f}",
+                           showarrow=False, xshift=22, font=dict(color=T.ACCENT, size=12))
     fig.update_layout(**_layout(hovermode="x unified", bargap=0.45))
     return fig
 
 
-def career_trend(seasons_df: pd.DataFrame, stat: str, label: str) -> go.Figure:
-    """Per-season averages (context bars) + games-weighted career average
-    to date (emphasis line). seasons_df comes from db.player_season_breakdown."""
+def career_trend(seasons_df: pd.DataFrame, stat: str, label: str,
+                 weight: str = "gp", as_rate: bool = False) -> go.Figure:
+    """Per-season values (context bars) + weighted career average to date
+    (emphasis line). seasons_df comes from db.player_season_breakdown.
+
+    `weight` is what the running average is weighted by. Games played is
+    right for per-game stats; a percentage like TS% has to be weighted by
+    the attempts behind it, or a 20-game season counts the same as an
+    80-game one. Seasons where the stat is missing (the source has no field
+    goal attempts before 1985-86) are dropped rather than shown as zero,
+    which would draw a career-long collapse that never happened.
+
+    `as_rate` switches the season values from bars to dots. A percentage
+    lives in a narrow band (a career of true shooting might run 51 to 64),
+    and a bar has to start at zero or it misstates the magnitude, which
+    leaves the whole story squeezed into the top of the panel. Dots carry no
+    length to misread, so the axis can close in on the range instead."""
     df = seasons_df.copy()
-    df[stat] = df[stat].fillna(0)
-    df["cum"] = (df[stat] * df["gp"]).cumsum() / df["gp"].cumsum()
+    df = df[df[stat].notna()]
+    if df.empty:
+        return _empty(f"No {label} data for these seasons")
+    w = df[weight] if weight in df else df["gp"]
+    df["cum"] = (df[stat] * w).cumsum() / w.cumsum()
     fig = go.Figure()
-    fig.add_bar(
-        x=df["season"], y=df[stat], name=label,
-        marker=dict(color=T.BASELINE),
-        customdata=df[["team", "gp"]],
-        hovertemplate=("%{x} (%{customdata[0]}, %{customdata[1]} GP)<br>"
-                       "%{y:.1f} " + label + "<extra></extra>"),
-    )
+    hover = ("%{x} (%{customdata[0]}, %{customdata[1]} GP)<br>"
+             "%{y:.1f} " + label + "<extra></extra>")
+    if as_rate:
+        fig.add_scatter(
+            x=df["season"], y=df[stat], name=label, mode="markers",
+            marker=dict(color=T.BASELINE, size=10,
+                        line=dict(color=T.SURFACE, width=2)),
+            customdata=df[["team", "gp"]], hovertemplate=hover,
+        )
+    else:
+        fig.add_bar(
+            x=df["season"], y=df[stat], name=label,
+            marker=dict(color=T.BASELINE),
+            customdata=df[["team", "gp"]], hovertemplate=hover,
+        )
     fig.add_scatter(
         x=df["season"], y=df["cum"], name="Career avg to date",
         mode="lines", line=dict(color=T.ACCENT, width=2),
@@ -83,13 +135,21 @@ def career_trend(seasons_df: pd.DataFrame, stat: str, label: str) -> go.Figure:
     last = df.iloc[-1]
     fig.add_annotation(x=last["season"], y=last["cum"], text=f"{last['cum']:.1f}",
                        showarrow=False, xshift=26, font=dict(color=T.ACCENT, size=12))
-    fig.update_layout(**_layout(
+    layout = dict(
         hovermode="x unified", bargap=0.45,
         # season labels like "1984-85" parse as dates unless forced categorical
         xaxis=dict(type="category", gridcolor=T.GRID, linecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED), fixedrange=True,
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True,
                    tickangle=-45 if len(df) > 14 else 0),
-    ))
+    )
+    if as_rate:
+        lo = min(df[stat].min(), df["cum"].min())
+        hi = max(df[stat].max(), df["cum"].max())
+        pad = max(2.0, (hi - lo) * 0.25)
+        layout["yaxis"] = dict(range=[lo - pad, hi + pad], gridcolor=T.GRID,
+                               tickfont=dict(color=T.MUTED), fixedrange=True,
+                               automargin=True, ticksuffix="%")
+    fig.update_layout(**_layout(**layout))
     return fig
 
 
@@ -198,10 +258,11 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         hovermode="x unified", height=300,
         xaxis=dict(title=dict(text="Game time (min)", font=dict(color=T.MUTED)),
                    gridcolor="rgba(0,0,0,0)", zerolinecolor=T.BASELINE,
-                   tickfont=dict(color=T.MUTED), fixedrange=True),
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True),
         yaxis=dict(title=dict(text=f"← {away}   margin   {home} →",
                               font=dict(color=T.MUTED)),
-                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED), fixedrange=True),
+                   gridcolor=T.GRID, tickfont=dict(color=T.MUTED), fixedrange=True,
+                   automargin=True),
     ))
     return fig
 
@@ -442,6 +503,6 @@ def quick_chart(df: pd.DataFrame, kind: str, x: str, y: str,
                             marker=dict(color=c, size=9))
     fig.update_layout(**_layout(height=420, showlegend=bool(color),
                                 bargap=0.3 if kind == "bar" else 0))
-    fig.update_xaxes(title=dict(text=x, font=dict(color=T.MUTED)))
-    fig.update_yaxes(title=dict(text=y, font=dict(color=T.MUTED)))
+    fig.update_xaxes(title=dict(text=x, font=dict(color=T.MUTED)), automargin=True)
+    fig.update_yaxes(title=dict(text=y, font=dict(color=T.MUTED)), automargin=True)
     return fig

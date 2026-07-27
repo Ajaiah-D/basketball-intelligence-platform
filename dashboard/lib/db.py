@@ -145,7 +145,12 @@ def player_career_stats(min_games: int = 1) -> pd.DataFrame:
 
 
 def player_season_breakdown(player_id: int) -> pd.DataFrame:
-    """Per-season averages for one player - drives the career trajectory chart."""
+    """Per-season averages for one player - drives the career trajectory chart.
+
+    `shot_poss` (shooting possessions) is the correct weight for averaging
+    TS% across seasons: a games-played weight would treat a low-volume year
+    as equal to a high-volume one.
+    """
     return q(
         """
         select
@@ -155,7 +160,11 @@ def player_season_breakdown(player_id: int) -> pd.DataFrame:
             round(avg(points), 1)                as ppg,
             round(avg(total_rebounds), 1)        as rpg,
             round(avg(assists), 1)               as apg,
-            round(avg(three_pointers_made), 1)   as tpg
+            round(avg(three_pointers_made), 1)   as tpg,
+            round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1) as ts_pct,
+            sum(field_goals_attempted) + 0.44 * sum(free_throws_attempted)
+                                                 as shot_poss
         from main_staging.stg_player_game_logs
         where player_id = ?
         group by season
