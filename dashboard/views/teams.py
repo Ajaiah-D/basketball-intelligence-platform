@@ -79,6 +79,10 @@ def render() -> None:
     st.plotly_chart(viz.team_margins(games), config=viz.PLOTLY_CONFIG,
                     width="stretch")
 
+    # Efficiency block is additive; a warehouse without the marts should
+    # still render standings, margins and the roster table.
+    if not db.marts_available():
+        return
     adv = db.team_advanced(season)
     team_adv = adv[adv.team_id == row.team_id]
     if not team_adv.empty and team_adv.iloc[0].offensive_rating == team_adv.iloc[0].offensive_rating:

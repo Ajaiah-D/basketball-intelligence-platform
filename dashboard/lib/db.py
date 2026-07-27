@@ -339,6 +339,23 @@ ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
 }
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def marts_available() -> bool:
+    """Whether dbt's marts are in the warehouse.
+
+    The advanced views query `main_marts`, and a warehouse published before
+    those models existed (or one where dbt has not been run) raises a
+    catalog error that propagates out of the page and takes the whole app
+    down with it. Callers check this first and show a message instead.
+    """
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from main_marts.mart_player_season limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
 def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
     """Advanced metrics for one season. Rate stats are meaningless on tiny
     samples (one made three is a 150% TS%), so callers pass a minutes floor."""
