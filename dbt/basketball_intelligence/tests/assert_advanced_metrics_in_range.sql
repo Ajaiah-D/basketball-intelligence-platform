@@ -3,22 +3,28 @@
 -- where the source is missing whole columns. Any row here means a metric is
 -- being computed from data that is not actually there.
 --
--- Team-seasons are checked unconditionally. Players are checked only above
--- 500 minutes, since tiny samples produce legitimately extreme rates (one
--- made three-pointer on the season is a 150% true shooting percentage).
+-- Both sides need a sample-size floor, or this fails on legitimate data in
+-- the opening weeks of a season and takes the weekly refresh down with it
+-- (weekly_refresh.py stops at the first failed step and never publishes).
+-- Measured against 2025-26: one team finished its first game on a 137
+-- offensive rating, and a single made three-pointer is a 150% true
+-- shooting percentage. Ten team games and 500 player minutes are past the
+-- point where either can happen.
 
 select 'team ' || metric as check, season, entity, value
 from (
     select season, team_abbreviation as entity, 'offensive_rating' as metric,
            offensive_rating as value from {{ ref('mart_team_season') }}
+    where games_played >= 10
     union all
     select season, team_abbreviation, 'defensive_rating', defensive_rating
-    from {{ ref('mart_team_season') }}
+    from {{ ref('mart_team_season') }} where games_played >= 10
     union all
-    select season, team_abbreviation, 'pace', pace from {{ ref('mart_team_season') }}
+    select season, team_abbreviation, 'pace', pace
+    from {{ ref('mart_team_season') }} where games_played >= 10
     union all
     select season, team_abbreviation, 'effective_fg_pct', effective_fg_pct
-    from {{ ref('mart_team_season') }}
+    from {{ ref('mart_team_season') }} where games_played >= 10
 )
 where value is not null
   and (
