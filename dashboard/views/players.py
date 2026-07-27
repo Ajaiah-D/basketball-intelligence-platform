@@ -16,7 +16,16 @@ TABLE_COLS = ["player", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg",
               "fg_pct", "fga_pg", "tpg", "tpa_pg", "fg3_pct", "ft_pct", "fta_pg",
               "ts_pct", "plus_minus"]
 
-TREND_STATS = {"PPG": "ppg", "RPG": "rpg", "APG": "apg", "3PM/g": "tpg"}
+# label -> (column, running-average weight, is it a rate). Counting stats
+# weight by games and draw as bars; TS% weights by the shot volume behind it
+# and draws as dots, since a percentage does not belong on a zero baseline.
+TREND_STATS = {
+    "PPG": ("ppg", "gp", False),
+    "RPG": ("rpg", "gp", False),
+    "APG": ("apg", "gp", False),
+    "3PM/g": ("tpg", "gp", False),
+    "TS%": ("ts_pct", "shot_poss", True),
+}
 
 
 # Shooting percentiles are measured against players who actually shoot that
@@ -176,8 +185,16 @@ def render() -> None:
         stat_label = st.segmented_control(
             "Stat", list(TREND_STATS), default="PPG",
             label_visibility="collapsed") or "PPG"
-        st.plotly_chart(viz.career_trend(bk, TREND_STATS[stat_label], stat_label),
-                        config=viz.PLOTLY_CONFIG, width="stretch")
+        stat_col, weight_col, is_rate = TREND_STATS[stat_label]
+        st.plotly_chart(
+            viz.career_trend(bk, stat_col, stat_label, weight=weight_col,
+                             as_rate=is_rate),
+            config=viz.PLOTLY_CONFIG, width="stretch")
+        if stat_label == "TS%":
+            st.caption("True shooting weights the running average by shot volume, "
+                       "so a short season does not count the same as a full one. "
+                       "Any season the source has no attempt totals for is left "
+                       "out rather than drawn as zero.")
 
         s1, s2, s3, s4 = st.columns(4)
         s1.markdown(T.kpi("Career high", f"{row.career_high}", "points in a game"),
