@@ -1,5 +1,6 @@
 """Overview - league pulse: KPIs, leaders, standings snapshot, recent games."""
 
+import pandas as pd
 import streamlit as st
 
 from dashboard.lib import db, media
@@ -117,7 +118,9 @@ def render() -> None:
     st.caption(f"Per-game averages, minimum {min_gp} games played.")
 
     # Counting stats alone reward volume, so give efficiency its own row.
-    adv = db.player_advanced(season)
+    # Skipped silently when the warehouse has no marts: this is a bonus
+    # section, not a reason for the landing page to fail.
+    adv = db.player_advanced(season) if db.marts_available() else pd.DataFrame()
     if not adv.empty:
         floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
         eff = adv[adv.minutes >= floor]

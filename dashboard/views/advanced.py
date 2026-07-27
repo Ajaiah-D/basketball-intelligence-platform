@@ -73,9 +73,22 @@ def leader_card(title: str, df, col: str, fmt: str = "{:.1f}") -> str:
 
 def render() -> None:
     season = st.session_state.get("season") or db.latest_season()
-    available = db.advanced_seasons()
 
     st.markdown(f'## Advanced &nbsp;{T.chip(season)}', unsafe_allow_html=True)
+
+    # The warehouse can predate these models (an older published copy, or a
+    # local build where dbt has not run). Say so here rather than letting a
+    # catalog error escape and take down every other page with it.
+    if not db.marts_available():
+        st.info(
+            "Advanced metrics are not in this copy of the warehouse yet. "
+            "Rebuild it with `dbt run --profiles-dir .` from "
+            "`dbt/basketball_intelligence`, or, on a cloud deploy, wait for "
+            "the next refresh to publish an updated warehouse."
+        )
+        return
+
+    available = db.advanced_seasons()
 
     if season not in available:
         st.info(
