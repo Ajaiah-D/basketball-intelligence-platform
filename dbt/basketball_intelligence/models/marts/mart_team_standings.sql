@@ -10,6 +10,18 @@
 -- db.conference() for callers that want the mapping in Python, but this
 -- mart is now the source of truth.
 --
+-- Both lists are explicit and there is no else branch, on purpose. The
+-- ported version defaulted anything unmatched to 'West', which silently
+-- misfiled three abbreviations the sets never listed: PHL (Philadelphia
+-- 76ers, 1979-80 through 1995-96, 1394 games) landed in the West, and GOS
+-- (Golden State) and SAN (San Antonio, same 17 seasons - not one, and
+-- West in every season they have existed) were only right by luck. All
+-- three are the same team_id as their modern code (PHI, GSW, SAS) and are
+-- now listed alongside it. An abbreviation matching neither list now
+-- yields a null conference, which fails
+-- assert_standings_conference_is_assigned, so the next unlisted code
+-- breaks a build instead of quietly defaulting.
+--
 -- Tiebreak: the app previously ordered standings by `pct desc, net desc`,
 -- which breaks a win-percentage tie on point differential alone. The
 -- NBA's actual first tiebreaker is head-to-head record, so this orders by
@@ -59,9 +71,13 @@ conference_lookup as (
         case
             when team_abbreviation in (
                 'ATL', 'BOS', 'BKN', 'NJN', 'CHA', 'CHH', 'CHI', 'CLE', 'DET', 'IND',
-                'MIA', 'MIL', 'NYK', 'ORL', 'PHI', 'TOR', 'WAS', 'WSB'
+                'MIA', 'MIL', 'NYK', 'ORL', 'PHI', 'PHL', 'TOR', 'WAS', 'WSB'
             ) then 'East'
-            else 'West'
+            when team_abbreviation in (
+                'DAL', 'DEN', 'GSW', 'GOS', 'HOU', 'LAC', 'SDC', 'LAL', 'MEM', 'VAN',
+                'MIN', 'NOP', 'NOH', 'NOK', 'OKC', 'SEA', 'PHX', 'POR', 'SAC', 'KCK',
+                'SAS', 'SAN', 'UTA', 'UTH'
+            ) then 'West'
         end as conference
     from team_game
 ),
