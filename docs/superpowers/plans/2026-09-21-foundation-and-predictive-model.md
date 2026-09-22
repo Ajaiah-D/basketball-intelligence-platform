@@ -1928,11 +1928,125 @@ to accuracy because a confident wrong model looks fine on accuracy alone."
 
 Cheap now that Tasks 1-10 created a test suite; it was expensive only while the tests did not exist.
 
-**Files:** Create `.github/workflows/tests.yml` and `data/fixtures/` (one season of parquet, about 900 KB); modify `.gitignore`.
+The blocker that killed `.github/workflows/refresh-data.yml` (added `22f7850`, deleted `94a69ea`) was the ingest step alone — stats.nba.com blocks datacenter IPs, per `DEPLOYMENT.md:72-78`. `load_to_duckdb.py`, `dbt build` and pytest make no external calls, so this workflow is unaffected. **Do not add an ingest step.**
 
-The blocker that killed `.github/workflows/refresh-data.yml` (added `22f7850`, deleted `94a69ea`) was the ingest step alone — stats.nba.com blocks datacenter IPs, per `DEPLOYMENT.md:72-78`. `load_to_duckdb.py`, `dbt build` and pytest make no external calls, so this workflow is unaffected.
+**Fixture scope, checked against every test file's actual data dependency, not guessed:** a single season is not enough. `tests/test_db_metrics.py` needs 1979-80 and 1984-85 specifically (the incomplete-box-score era-guard tests) plus 2024-25 (the complete-era cross-check against the mart). `tests/test_features.py` needs `main_marts.mart_game_features`, which dbt builds from whatever seasons of `team_game_logs`/`player_game_logs` exist — every window in it partitions by `(season, team_id)`, so seasons do not need to be contiguous for the windows or for Elo (which only cares about game order, not date gaps between seasons). A full unqualified `dbt build` also needs `raw.schedule` and `raw.play_by_play` to exist, or `stg_schedule`/`stg_play_by_play` fail to build with a missing-source error — neither table is read by the committed pytest suite (`test_predict.py` uses an in-memory DuckDB it builds itself), but `dbt build` still needs their sources present.
 
-Commit the 2024-25 parquet files as fixtures (add a negation rule to `.gitignore`, which currently excludes `data/raw/**/*.parquet`), build a small warehouse in CI from them, then run `dbt build` and pytest. **Do not add an ingest step.** Note that `tests/conftest.py` skips when the warehouse is absent, so CI must build the fixture warehouse before pytest runs or the suite will silently pass with everything skipped — assert a nonzero collected count.
+**Files:**
+- Create: `.github/workflows/tests.yml`
+- Create: `data/fixtures/` — copies of these exact files (verified present, ~2.6 MB total):
+  - `players.parquet`, `teams.parquet` (dimension tables, no season partitioning)
+  - `player_game_logs/{1979-80,1984-85,2024-25}.parquet`
+  - `team_game_logs/{1979-80,1984-85,2024-25}.parquet`
+  - `player_advanced/2024-25.parquet`, `team_advanced/2024-25.parquet` (pre-1996-97 has none, correctly)
+  - `play_by_play/2025-26.parquet` (whatever season is currently ingested — check `ls data/raw/play_by_play/` and use what's there, not necessarily 2025-26)
+  - `schedule/2026-27.parquet` (whatever season is currently ingested — check `ls data/raw/schedule/` and use what's there)
+- Modify: `.gitignore` (currently excludes `data/raw/**/*.parquet` with no negation)
+
+- [ ] **Step 1: Copy the fixture files**
+
+Run (adjust the play_by_play/schedule season names if `ls` shows something different from the above):
+
+```bash
+mkdir -p data/fixtures/player_game_logs data/fixtures/team_game_logs data/fixtures/player_advanced data/fixtures/team_advanced data/fixtures/play_by_play data/fixtures/schedule
+cp data/raw/players.parquet data/raw/teams.parquet data/fixtures/
+cp data/raw/player_game_logs/1979-80.parquet data/raw/player_game_logs/1984-85.parquet data/raw/player_game_logs/2024-25.parquet data/fixtures/player_game_logs/
+cp data/raw/team_game_logs/1979-80.parquet data/raw/team_game_logs/1984-85.parquet data/raw/team_game_logs/2024-25.parquet data/fixtures/team_game_logs/
+cp data/raw/player_advanced/2024-25.parquet data/fixtures/player_advanced/
+cp data/raw/team_advanced/2024-25.parquet data/fixtures/team_advanced/
+cp data/raw/play_by_play/*.parquet data/fixtures/play_by_play/
+cp data/raw/schedule/*.parquet data/fixtures/schedule/
+du -sh data/fixtures/
+```
+
+Expected: under 5 MB total.
+
+- [ ] **Step 2: Allow the fixtures directory past the raw-data ignore rule**
+
+Add to `.gitignore`, directly after the existing `data/raw/**/*.parquet` line:
+
+```
+!data/fixtures/**/*.parquet
+```
+
+Verify: `git check-ignore -v data/fixtures/players.parquet` should print nothing (not ignored) — if it prints a match, the negation didn't take (check that no earlier broader rule like a bare `*.parquet` is shadowing it).
+
+- [ ] **Step 3: Write the workflow**
+
+`.github/workflows/tests.yml`:
+
+```yaml
+name: Tests
+
+# dbt build + pytest only, against committed parquet fixtures. No live API
+# calls: stats.nba.com blocks GitHub-hosted runners' IPs (confirmed by a
+# failed test run - see DEPLOYMENT.md), so ingestion/nba_ingest.py never
+# runs here. Real data refreshes stay a local, residential-IP job.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Build a warehouse from the committed fixtures
+        run: |
+          mkdir -p data/raw
+          cp -r data/fixtures/* data/raw/
+          python scripts/load_to_duckdb.py
+
+      - name: dbt build
+        working-directory: dbt/basketball_intelligence
+        run: |
+          dbt run --profiles-dir .
+          dbt test --profiles-dir .
+
+      - name: pytest
+        run: pytest tests/ -v --tb=short
+```
+
+Note: Python 3.12 here, not 3.14 — the repo's own `requirements.txt` comment documents a Python-3.14-specific `mashumaro` workaround needed locally; using 3.12 in CI sidesteps that entirely rather than reproducing it in a workflow. If this turns out to be wrong (a real 3.14-only code path), switch to 3.12 plus the documented mashumaro fix instead of skipping the issue.
+
+- [ ] **Step 4: Verify locally before trusting CI**
+
+Run the same three commands the workflow runs, from the real repo root:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+cp -r data/fixtures/* data/raw/   # only if data/raw is otherwise empty locally, or back it up first
+.venv/Scripts/python.exe scripts/load_to_duckdb.py
+cd dbt/basketball_intelligence && ../../.venv/Scripts/dbt.exe run --profiles-dir . && ../../.venv/Scripts/dbt.exe test --profiles-dir .
+cd ../.. && .venv/Scripts/python.exe -m pytest tests/ -v
+```
+
+**If you have real data already in `data/raw/` locally, do not overwrite it carelessly** — copy fixtures into a separate scratch directory and point `RAW_DIR` there instead, or accept that this verification pass temporarily shadows local files that are gitignored anyway (nothing here touches tracked files) and re-run the real `ingestion/nba_ingest.py` pipeline afterward to restore the full local warehouse if needed.
+
+Expected: `dbt run`/`dbt test` complete without a missing-source error; pytest collects and passes all tests that don't require warehouse content absent from the fixture set. **A collected count of 0 is a failure, not a pass** — assert this explicitly, e.g. `pytest tests/ -v | tee /tmp/pytest.out && grep -qE '[1-9][0-9]* passed' /tmp/pytest.out`, since `tests/conftest.py`'s `con` fixture skips (not fails) when the warehouse is absent, and a workflow that silently collects 0 real assertions is worse than no CI at all.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add .github/workflows/tests.yml data/fixtures/ .gitignore
+git commit -m "Add CI for dbt build and pytest against committed fixtures
+
+No ingest step - stats.nba.com blocks GitHub-hosted runner IPs, confirmed
+by the failed test run that killed the original refresh-data.yml. Fixtures
+cover three player/team-game-log seasons (1979-80, 1984-85, 2024-25, one
+per box-score-completeness era the test suite actually checks), one
+advanced-stats season, and one season each of play-by-play and schedule
+so an unqualified dbt build has every source table it needs."
+```
 
 ### Task 12: README rewrite
 
