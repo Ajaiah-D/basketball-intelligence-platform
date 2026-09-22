@@ -2069,9 +2069,47 @@ Add the six screenshots from `site_pictures/` into the README (a "Screenshots" o
 
 ### Task 13: Architecture decision records
 
+There is no existing `docs/adr/` directory or ADR convention in this repo — this is a new pattern, so consistency across the six records matters more than usual.
+
 **Files:** Create `docs/adr/0001-duckdb-over-postgres.md` through `0006-known-limitations.md`.
 
-One record per decision: DuckDB over Postgres; Streamlit over a custom frontend (cross-reference `docs/frontend-migration-options.md`, which already holds the measurements and the deferral rationale); GitHub Release asset for data distribution; local Task Scheduler over GitHub Actions (cite the IP-block evidence in `DEPLOYMENT.md:72-78`); the 1979-80 start date (the full three-point era); and known limitations — single-desktop dependency for the refresh, and monetization blocked on data licensing.
+Use this template for every record (the standard lightweight ADR format — adapt section content, keep the section names and order identical across all six):
+
+```markdown
+# <NNNN>. <Title>
+
+**Status:** Accepted
+
+## Context
+
+<What situation forced this decision. 2-4 sentences.>
+
+## Decision
+
+<What was chosen, stated plainly.>
+
+## Consequences
+
+<What this makes easier, what it makes harder, and what would have to
+change for this decision to be revisited. Be honest about trade-offs
+rather than one-sided.>
+```
+
+One record per decision, with the specific facts to ground each one (verify each against the cited file before writing — these are accurate as of this plan being written, but the repo may have changed):
+
+- **`0001-duckdb-over-postgres.md`** — zero-server single-file OLAP that ships as a GitHub Release asset (no hosted database to provision, pay for, or keep alive); the trade-off is no concurrent writers and no network access from outside the process that opened the file. Reference: `warehouse/basketball.duckdb`, 47 seasons, ~89 MB.
+
+- **`0002-streamlit-over-custom-frontend.md`** — speed to a polished solo product over a custom React/FastAPI stack. **Do not re-derive the analysis** — `docs/frontend-migration-options.md` already has the benchmarks (warm DuckDB queries run 1.2-8.4 ms; the actual felt latency is free-tier cold start and Streamlit's per-interaction rerun, not the Python data layer) and the full options comparison. Summarize its conclusion and link to it rather than repeating the numbers.
+
+- **`0003-github-release-asset-for-data.md`** — the DuckDB file is gitignored (git is a poor fit for an 89 MB binary that fully replaces itself on every refresh) and distributed as a GitHub Release asset instead; the app downloads it on first boot. Reference: `dashboard/app.py`'s `bootstrap_warehouse()`, the `data-v1` tag reused indefinitely (`scripts/weekly_refresh.py:29`, `DEPLOYMENT.md:21-36`).
+
+- **`0004-local-task-scheduler-over-github-actions.md`** — a GitHub Actions workflow for the data refresh (`.github/workflows/refresh-data.yml`) was built, tested, and deleted (commits `22f7850` through `94a69ea`) after stats.nba.com was confirmed to silently block datacenter/cloud IP ranges including GitHub-hosted runners — "confirmed by a failed test run: every request timed out from GitHub's network but worked instantly from a home IP" (`DEPLOYMENT.md:72-78`). The refresh now runs as a Windows Scheduled Task on the user's desktop. Note honestly in Consequences: this makes the refresh depend on one specific machine being on and connected, which is also covered in `0006-known-limitations.md` — cross-reference rather than duplicate the full explanation.
+
+- **`0005-1979-80-start-date.md`** — 1979-80 is the first season of the NBA's three-point line, chosen as the backfill start so the platform covers the complete three-point era rather than an arbitrary cutoff. Trade-off: box scores are incomplete before 1985-86 (no field goal attempts, rebounds, or assists in 1979-80 specifically), which is why `mart_player_season.sql`/`mart_team_season.sql` carry an explicit `box_score_complete` flag and withhold derived metrics rather than compute them from partial data. Reference: `README.md:139` ("47 seasons backfilled (1979-80 to 2025-26)"), the `box_score_complete` guard comments in both mart models.
+
+- **`0006-known-limitations.md`** — two limitations, stated plainly rather than softened:
+  1. **Single-desktop dependency.** The weekly refresh only runs if one specific Windows machine is on, connected, and has the Scheduled Task enabled — there is no redundancy, and nothing in the repo alerts anyone if a refresh silently stops happening (`data/last_updated.json` and `logs/refresh_runs.jsonl` record outcomes but nothing currently watches them). Losing that machine pauses all data freshness until it's restored or the pipeline is moved elsewhere.
+  2. **Monetization is constrained by the data source's terms, not by a formal license.** The data comes from stats.nba.com, an *unofficial* API accessed via `nba_api` (README.md:28) — there is no data license, formal or informal, only the general expectation that heavy/commercial use of an unofficial, throttled endpoint is not what it's meant for (`DEPLOYMENT.md:61`: "Terms allow hobby/portfolio use; it is not meant for a commercial product"). This is a real constraint on any future monetization plan, but it is a terms-of-use risk to manage, not a licensing agreement to renegotiate — phrase it that way rather than implying a formal license exists.
 
 ### Task 14: Standings mart and the two UI fixes
 
