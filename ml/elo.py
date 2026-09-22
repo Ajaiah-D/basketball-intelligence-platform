@@ -46,6 +46,10 @@ def compute_elo(
     ml/features.py's matching query against fct_team_game), not here, since
     this function only sees home_won and has no access to the actual score.
 
+    Callers converting these ratings to a win probability must add
+    home_advantage themselves, and must suppress it for is_neutral_site
+    games, exactly as this function does internally.
+
     Returns game_id, home_elo_pre, away_elo_pre.
     """
     ordered = games.sort_values(["game_date", "game_id"])
