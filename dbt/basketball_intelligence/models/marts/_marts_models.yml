@@ -54,3 +54,22 @@ models:
         tests: [not_null]
       - name: margin
         tests: [not_null]
+
+  - name: mart_game_features
+    description: >
+      One row per game with the features a model may use before tip-off.
+      Every rolling window excludes the game's own row, so nothing here
+      depends on the result being predicted; margin and home_won are carried
+      as targets, never as features. Opening-night games are kept with null
+      form rather than dropped, since the cold start is a case the model has
+      to handle. Excludes the one no-contest game in the warehouse (a
+      cancelled 2013 game recorded as a 0-0 final) from every window. The
+      singular test assert_no_future_data_in_features re-derives a sample of
+      these values independently rather than trusting the window frames.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: season
+        tests: [not_null]
+      - name: game_date
+        tests: [not_null]
