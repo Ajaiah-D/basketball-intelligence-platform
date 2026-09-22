@@ -40,3 +40,41 @@ models:
         tests: [not_null, unique]
       - name: team_abbreviation
         tests: [not_null, unique]
+
+  - name: stg_player_advanced
+    description: >
+      Official NBA advanced player stats, one row per player per season.
+      The league only publishes these from 1996-97, so rows do not exist
+      for earlier seasons and the marts derive substitutes from box scores.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+
+  - name: stg_team_advanced
+    description: >
+      Official NBA advanced team stats, one row per team per season,
+      1996-97 onward. Supplies the published ratings that mart_team_season
+      prefers over its own box-score estimates.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+
+  - name: stg_schedule
+    description: >
+      Published schedule including unplayed games, from ScheduleLeagueV2.
+      The game-log endpoints only return finished games, so this is the
+      only source for a future slate. is_regular_season excludes preseason
+      and other non-regular game types from a game_status = 1 slate.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: home_team_id
+        tests: [not_null]
+      - name: away_team_id
+        tests: [not_null]
+      - name: is_regular_season
+        tests: [not_null]

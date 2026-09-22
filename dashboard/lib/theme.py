@@ -148,9 +148,9 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 .bip-rank.r1 {{ background: linear-gradient(135deg, #f6c65b, #b8860b); color: #141414; }}
 .bip-rank.r2 {{ background: linear-gradient(135deg, #d9d9d9, #8f8f8f); color: #141414; }}
 .bip-rank.r3 {{ background: linear-gradient(135deg, #e0a370, #8c5a2b); color: #141414; }}
-.bip-name {{ flex: 1; font-weight: 600; font-size: .88rem; color: {INK};
+.bip-name {{ flex: 1; min-width: 0; font-weight: 600; font-size: .88rem; color: {INK};
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-.bip-team {{ color: {MUTED}; font-size: .72rem; font-weight: 700; }}
+.bip-team {{ flex: none; color: {MUTED}; font-size: .72rem; font-weight: 700; }}
 .bip-val  {{ font-weight: 800; font-size: .95rem; color: {INK}; font-variant-numeric: tabular-nums; }}
 .bip-row:first-of-type .bip-val {{ color: #f6c65b; }}
 

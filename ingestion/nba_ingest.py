@@ -42,6 +42,7 @@ from nba_api.stats.endpoints import (
     leaguedashteamstats,
     leaguegamelog,
     playbyplayv3,
+    scheduleleaguev2,
 )
 from nba_api.stats.static import teams as static_teams
 
@@ -192,6 +193,22 @@ def fetch_team_advanced(season: str) -> pd.DataFrame:
     return df
 
 
+def fetch_schedule(season: str) -> pd.DataFrame:
+    """The full published schedule including unplayed games.
+
+    LeagueGameLog only returns games that have finished, so predicting a
+    future slate needs this instead. The NBA publishes the next season's
+    schedule in August, so this returns rows before the season starts.
+    """
+    df = call_endpoint(
+        scheduleleaguev2.ScheduleLeagueV2,
+        season=season,
+        league_id="00",
+    )
+    log.info("Fetched %d scheduled games for %s", len(df), season)
+    return df
+
+
 def fetch_players(season: str) -> pd.DataFrame:
     log.info("Fetching player index ...")
     df = call_endpoint(
@@ -254,7 +271,15 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
             return stale or not season_done(name, season)
 
         wants_advanced = has_advanced_stats(season) and needed("player_advanced")
-        if not (needed("player_game_logs") or needed("team_game_logs") or wants_advanced):
+        # Schedule uses the same needed() gate as everything else, so it is
+        # already covered by `stale`: the published schedule for the current
+        # season changes (postponements, rescheduling), and `stale` is True
+        # for the latest season regardless of what season_done() says. Do
+        # not special-case it into always-fetch outside of needed() - that
+        # would just duplicate the guarantee `stale` already gives.
+        wants_schedule = needed("schedule")
+        if not (needed("player_game_logs") or needed("team_game_logs") or wants_advanced
+                or wants_schedule):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
         log.info("[%d/%d] %s", i, len(seasons), season)
@@ -271,6 +296,8 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
         elif not has_advanced_stats(season):
             log.info("  no official advanced stats before %s - dbt derives them "
                      "from box scores instead", ADVANCED_FIRST_SEASON)
+        if wants_schedule:
+            write_parquet(fetch_schedule(season), "schedule", season)
         if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 

@@ -12,8 +12,8 @@ def leaders_card(title: str, df, stat: str) -> str:
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'
-            f'<span class="bip-name">{r.player} '
-            f'<span class="bip-team" style="color:{T.team_color(r.team)}">{r.team}</span></span>'
+            f'<span class="bip-name">{r.player}</span>'
+            f'<span class="bip-team" style="color:{T.team_color(r.team)}">{r.team}</span>'
             f'<span class="bip-val">{getattr(r, stat):.1f}</span></div>'
         )
     return f'<div class="bip-card"><h4>{title}</h4>{"".join(rows)}</div>'
@@ -25,9 +25,9 @@ def adv_leaders_card(title: str, df, stat: str) -> str:
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'
-            f'<span class="bip-name">{r.player_name} '
+            f'<span class="bip-name">{r.player_name}</span>'
             f'<span class="bip-team" style="color:{T.team_color(r.team_abbreviation)}">'
-            f'{r.team_abbreviation}</span></span>'
+            f'{r.team_abbreviation}</span>'
             f'<span class="bip-val">{getattr(r, stat):.1f}</span></div>'
         )
     return f'<div class="bip-card"><h4>{title}</h4>{"".join(rows)}</div>'

@@ -97,6 +97,7 @@ from dashboard.views import (  # noqa: E402
     games,
     overview,
     players,
+    predictions,
     teams,
 )
 
@@ -114,6 +115,8 @@ nav = {
                 url_path="advanced"),
         st.Page(arcade.render, title="Arcade", icon=":material/stadia_controller:",
                 url_path="arcade"),
+        st.Page(predictions.render, title="Predictions", icon=":material/query_stats:",
+                url_path="predictions"),
     ],
 }
 if config.dev_lab_enabled():

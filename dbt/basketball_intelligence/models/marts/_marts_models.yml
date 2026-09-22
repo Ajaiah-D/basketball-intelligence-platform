@@ -37,3 +37,59 @@ models:
                 - NBA official
                 - estimated from box score
                 - not available before 1985-86
+
+  - name: fct_team_game
+    description: >
+      One row per game, oriented home versus away, with margin.
+      is_neutral_site is true only when the source data marks both teams as
+      away in the matchup string - this catches recent NBA Cup and
+      international games but misses the entire 2020 Orlando bubble (88
+      games) and pre-2024-25 international games, where the feed still
+      assigned a nominal home team. The grain every game-level model
+      builds on.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: season
+        tests: [not_null]
+      - name: margin
+        tests: [not_null]
+
+  - name: mart_team_standings
+    description: >
+      One row per team per season: won-loss record, scoring differential, a
+      head-to-head tiebreak and the last-five form string. Ordered by
+      win_pct, then head-to-head record against the other teams tied on
+      win_pct in the same season and conference, then point differential.
+      This is a simplification of the NBA's actual tiebreaker rules, not
+      an implementation of them - the real rulebook goes on to division
+      record, conference record and several further steps not modeled
+      here. See the model's own comment for the exact gaps.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: team_name
+        tests: [not_null]
+      - name: games_played
+        tests: [not_null]
+
+  - name: mart_game_features
+    description: >
+      One row per game with the features a model may use before tip-off.
+      Every rolling window excludes the game's own row, so nothing here
+      depends on the result being predicted; margin and home_won are carried
+      as targets, never as features. Opening-night games are kept with null
+      form rather than dropped, since the cold start is a case the model has
+      to handle. Excludes the one no-contest game in the warehouse (a
+      cancelled 2013 game recorded as a 0-0 final) from every window. The
+      singular test assert_no_future_data_in_features re-derives a sample of
+      these values independently rather than trusting the window frames.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: season
+        tests: [not_null]
+      - name: game_date
+        tests: [not_null]
