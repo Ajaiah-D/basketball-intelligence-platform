@@ -37,3 +37,15 @@ models:
                 - NBA official
                 - estimated from box score
                 - not available before 1985-86
+
+  - name: fct_team_game
+    description: >
+      One row per game, oriented home versus away, with margin and a
+      neutral-site flag. The grain every game-level model builds on.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: season
+        tests: [not_null]
+      - name: margin
+        tests: [not_null]
