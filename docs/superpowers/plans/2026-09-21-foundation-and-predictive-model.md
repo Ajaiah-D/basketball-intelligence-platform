@@ -2122,7 +2122,9 @@ These are grouped because the standings tiebreak and the standings mart touch th
 - Modify: `dashboard/lib/db.py` (`standings()`), `dashboard/lib/theme.py:151-152`, `dashboard/views/advanced.py:61-72`, `dashboard/views/overview.py:22`
 
 **Interfaces:**
-- Produces: `main_marts.mart_team_standings` — `season, team_id, team_abbreviation, conference, games_played, wins, losses, win_pct, points_per_game, opp_points_per_game, net_points, form`.
+- Produces: `main_marts.mart_team_standings` — `season, team_id, team_abbreviation, team_name, conference, games_played, wins, losses, win_pct, points_per_game, opp_points_per_game, net_points, form`. `team_name` is required, not optional — `dashboard/views/teams.py` uses it directly for display and as a selectbox key (`standings["team_name"]`), so the mart must carry it or that page breaks.
+
+**A gap in this spec worth knowing before writing the mart:** `int_team_game_opponent` (Task 4) does not carry the raw `win_loss` ('W'/'L') column the current `form` string is built from via `string_agg(win_loss, ...)` — it only has the boolean `is_win`. Do not modify `int_team_game_opponent.sql` (an already-reviewed Task 4 file) to add it; instead derive the same string inline in the mart with `string_agg(case when is_win then 'W' else 'L' end, '' order by game_date desc)`, which produces an identical result from what's already there.
 
 - [ ] **Step 1: Move the conference map into dbt**
 
