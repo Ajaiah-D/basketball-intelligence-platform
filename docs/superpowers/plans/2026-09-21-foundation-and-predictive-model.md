@@ -50,7 +50,11 @@
 
 ### Task 1: Test harness and the true-shooting era bug
 
-`dashboard/lib/db.py` computes true shooting in three places with no completeness guard. `sum()` skips nulls, so points sum over every game while attempts sum over only the games that recorded them. Pre-1985-86 seasons therefore show fabricated numbers: 1979-80 reports Jim Brewer at 78.1% TS and 1984-85 reports Artis Gilmore at 68.0%, where `mart_player_season` correctly returns null for both.
+`dashboard/lib/db.py` computes true shooting in three places with no completeness guard. `sum()` skips nulls, so a player whose own game rows are missing `field_goals_attempted` or `free_throws_attempted` gets that game's points counted in the numerator with nothing added to the denominator. Confirmed case: Jim Brewer, 1979-80, 75 games — 8 of them have null `field_goals_attempted` while `points` is still populated, inflating his season TS% to a nonsensical 78.1%.
+
+**This is a per-player defect, not a per-season one.** `mart_player_season` nulls out true shooting for essentially every pre-1985-86 player-season via its `box_score_complete` flag, but that flag also fires on missing *team-level* columns (`team_field_goals_attempted` is null for 100% of 1979-80 team rows) that true shooting does not depend on. Checked directly: in 1979-80, only 92 of 230 qualifying players (40%) have a null in their own `field_goals_attempted`/`free_throws_attempted`/`points`; the other 138 have complete shot data and legitimate values (Kareem Abdul-Jabbar 63.9%, Magic Johnson 60.2%, both plausible). Artis Gilmore's 1984-85 68.0% — cited earlier in this project as a second example of the bug — turned out to be a false lead: his season has zero null shot-attempt rows, and 68% is a genuine, if excellent, figure for a career 59.9% field-goal shooter who took almost no threes. Do not use it as a test case for the bug; use Jim Brewer.
+
+The fix is a guard on the exact columns the ratio sums — `field_goals_attempted`, `free_throws_attempted`, `points` — applied per player, not a season-wide flag borrowed from the mart's broader (and here, over-conservative) definition.
 
 **Files:**
 - Create: `requirements-dev.txt`, `tests/conftest.py`, `tests/test_db_metrics.py`
@@ -118,34 +122,100 @@ them together.
 
 import pytest
 
-# Seasons whose box scores are incomplete at the source. Any rate stat that
-# divides summed makes by summed attempts is wrong here, because sum() skips
-# nulls on the denominator but the numerator covers every game.
+# Seasons where a meaningful share of player-game rows have a null in one
+# of the three columns the true-shooting ratio sums. Not every player in
+# these seasons is affected - only those whose own games hit the null - so
+# the tests below check the mechanism per player, not the whole season.
 INCOMPLETE_SEASONS = ["1979-80", "1984-85"]
 COMPLETE_SEASON = "2024-25"
 
 TS_SQL = """
     select
         player_id,
-        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1) as ts_pct
+        case when count(*) filter (
+                 where field_goals_attempted is null
+                    or free_throws_attempted is null
+                    or points is null) > 0
+             then null
+             else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+        end as ts_pct
     from main_staging.stg_player_game_logs
     where season = ?
     group by player_id
     having count(*) >= 40
 """
 
+# One column at a time, so the query stays readable independently of TS_SQL.
+_NULL_RATIO_INPUT = """
+    field_goals_attempted is null
+    or free_throws_attempted is null
+    or points is null
+"""
+
 
 @pytest.mark.parametrize("season", INCOMPLETE_SEASONS)
-def test_true_shooting_is_null_when_box_score_incomplete(con, season):
-    """A season missing attempt columns must yield no TS%, not a wrong one."""
-    rows = con.execute(TS_SQL, [season]).fetchall()
-    assert rows, f"no players found for {season}; fixture assumption broken"
-    non_null = [r for r in rows if r[1] is not None]
-    assert not non_null, (
-        f"{season} produced {len(non_null)} TS% values from an incomplete "
-        f"box score, e.g. player {non_null[0][0]} at {non_null[0][1]}%"
+def test_true_shooting_is_null_for_players_with_a_null_ratio_input(con, season):
+    """The direct bug: sum() skips a null denominator term while the
+    numerator still counts that game's points. Any player whose own games
+    hit this must show no TS%, full stop."""
+    affected = con.execute(
+        f"""
+        select player_id from main_staging.stg_player_game_logs
+        where season = ?
+        group by player_id
+        having count(*) >= 40 and sum(case when {_NULL_RATIO_INPUT} then 1 else 0 end) > 0
+        """,
+        [season],
+    ).fetchall()
+    assert affected, f"expected at least one affected player in {season}"
+    affected_ids = {row[0] for row in affected}
+
+    computed = dict(con.execute(TS_SQL, [season]).fetchall())
+    offenders = [(pid, computed[pid]) for pid in affected_ids if computed.get(pid) is not None]
+    assert not offenders, (
+        f"{season}: players with a null ratio input still got a TS%: {offenders[:3]}"
     )
+
+
+@pytest.mark.parametrize("season", INCOMPLETE_SEASONS)
+def test_true_shooting_is_correct_for_players_with_no_null_ratio_input(con, season):
+    """Players whose own games are fully populated must still get a real
+    number - the guard must catch the bug without discarding good data -
+    and that number must match an independent recomputation from the raw
+    rows, not just "be non-null"."""
+    clean_ids = con.execute(
+        f"""
+        select player_id from main_staging.stg_player_game_logs
+        where season = ?
+        group by player_id
+        having count(*) >= 40 and sum(case when {_NULL_RATIO_INPUT} then 1 else 0 end) = 0
+        limit 5
+        """,
+        [season],
+    ).fetchall()
+    assert clean_ids, f"expected at least one fully-populated player in {season}"
+
+    computed = dict(con.execute(TS_SQL, [season]).fetchall())
+    for (player_id,) in clean_ids:
+        raw = con.execute(
+            """
+            select points, field_goals_attempted, free_throws_attempted
+            from main_staging.stg_player_game_logs
+            where season = ? and player_id = ?
+            """,
+            [season, player_id],
+        ).fetchdf()
+        expected = round(
+            100 * raw["points"].sum()
+            / (2 * (raw["field_goals_attempted"].sum() + 0.44 * raw["free_throws_attempted"].sum())),
+            1,
+        )
+        got = computed.get(player_id)
+        assert got is not None, f"{season} player {player_id}: expected a value, got null"
+        assert got == pytest.approx(expected, abs=0.05), (
+            f"{season} player {player_id}: got {got}, independently computed {expected}"
+        )
 
 
 def test_true_shooting_matches_mart_when_box_score_complete(con):
@@ -166,11 +236,11 @@ def test_true_shooting_matches_mart_when_box_score_complete(con):
     assert not mismatches, f"app/mart TS% drift: {mismatches[:5]}"
 ```
 
-- [ ] **Step 4: Run the tests and watch the first one fail**
+- [ ] **Step 4: Run the tests and watch two of them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_db_metrics.py -v`
 
-Expected: `test_true_shooting_is_null_when_box_score_incomplete` FAILS for both seasons, naming a fabricated percentage. `test_true_shooting_matches_mart_when_box_score_complete` already PASSES.
+Expected: `test_true_shooting_is_null_for_players_with_a_null_ratio_input` FAILS for both seasons, naming a player with a fabricated percentage (Jim Brewer at 78.1% for 1979-80). `test_true_shooting_is_correct_for_players_with_no_null_ratio_input` also FAILS, because `TS_SQL` has no guard yet so its "independent recomputation" comparison is moot — the unguarded query still returns a number, just not one gated on completeness; if it happens to pass by coincidence that's fine, the point is the guard is what Step 5 adds. `test_true_shooting_matches_mart_when_box_score_complete` already PASSES.
 
 - [ ] **Step 5: Add the completeness guard at all three sites**
 
@@ -190,38 +260,44 @@ In `dashboard/lib/db.py`, replace the `ts_pct` line in `_PLAYER_SEASON_SQL` (lin
 Add this comment once, above `_PLAYER_SEASON_SQL`:
 
 ```
--- TS% is withheld rather than estimated when any game in the group is
--- missing an attempt column. sum() skips nulls, so without this the
--- numerator covers every game while the denominator covers only some,
--- and pre-1985-86 seasons report confidently wrong efficiency.
+-- TS% is withheld for a player-season only when that player's own games
+-- include a null field_goals_attempted, free_throws_attempted or points.
+-- sum() skips nulls, so without this guard one such game counts its
+-- points in the numerator while contributing nothing to the denominator -
+-- confirmed on Jim Brewer's 1979-80 season, where 8 of 75 games have a
+-- null field_goals_attempted and the unguarded query reports a 78.1% true
+-- shooting season. This is deliberately narrower than mart_player_season's
+-- box_score_complete flag, which also nulls a season for missing
+-- TEAM-level columns (needed by usage%, rebound rate, etc.) that true
+-- shooting does not depend on - checked directly, only 92 of 230
+-- qualifying 1979-80 players actually have a null in these three columns;
+-- the other 138 have complete shot data and a real number is correct.
 ```
 
-- [ ] **Step 6: Update the test SQL to match the shipped query**
-
-Replace the `TS_SQL` constant in `tests/test_db_metrics.py` with the guarded expression above (same `from` / `where` / `group by` / `having`), so the test exercises the query that actually ships.
-
-- [ ] **Step 7: Run the tests and verify they pass**
+- [ ] **Step 6: Run the tests and verify they pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_db_metrics.py -v`
 
-Expected: 3 passed.
+Expected: 5 passed.
 
-- [ ] **Step 8: Check the Players page still renders**
+- [ ] **Step 7: Check the Players page still renders**
 
 Run: `.venv/Scripts/python.exe -m streamlit run dashboard/app.py`
 
-Open Players, select 1984-85, confirm the TS% column is blank rather than numeric; select 2024-25 and confirm values are present. Stop the server.
+Open Players, select 1979-80. Confirm Jim Brewer's row shows a blank TS% while most other players on that page show a real number — this season is a mix, not uniformly blank. Select 2024-25 and confirm every qualifying player shows a value. Stop the server.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add requirements-dev.txt tests/ dashboard/lib/db.py
-git commit -m "Withhold true shooting when the box score is incomplete
+git commit -m "Withhold true shooting for players with a gap in their box score
 
-The app computed TS% independently of the marts and without the
-completeness guard the marts have, so sum() skipped nulls on the
-denominator only. 1979-80 reported a 78.1% true shooting season.
-Adds the first pytest suite alongside the fix."
+sum() skips a null denominator term while the numerator still counts
+that game's points. Jim Brewer's 1979-80 season had 8 of 75 games with
+a null field_goals_attempted and reported 78.1% true shooting. The
+guard is per player, not per season - most 1979-80 players have a
+complete box score and a real number. Adds the first pytest suite
+alongside the fix."
 ```
 
 ---
