@@ -52,6 +52,18 @@ def latest_season() -> str:
 
 # --- Player stats -------------------------------------------------------------
 
+# TS% is withheld for a player-season only when that player's own games
+# include a null field_goals_attempted, free_throws_attempted or points.
+# sum() skips nulls, so without this guard one such game counts its
+# points in the numerator while contributing nothing to the denominator -
+# confirmed on Jim Brewer's 1979-80 season, where 8 of 75 games have a
+# null field_goals_attempted and the unguarded query reports a 78.1% true
+# shooting season. This is deliberately narrower than mart_player_season's
+# box_score_complete flag, which also nulls a season for missing
+# TEAM-level columns (needed by usage%, rebound rate, etc.) that true
+# shooting does not depend on - checked directly, only 92 of 230
+# qualifying 1979-80 players actually have a null in these three columns;
+# the other 138 have complete shot data and a real number is correct.
 _PLAYER_SEASON_SQL = """
     select
         player_id,
@@ -74,8 +86,14 @@ _PLAYER_SEASON_SQL = """
         round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
         round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
         round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct,
-        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)                            as ts_pct,
+        case when count(*) filter (
+                 where field_goals_attempted is null
+                    or free_throws_attempted is null
+                    or points is null) > 0
+             then null
+             else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+        end                                   as ts_pct,
         round(avg(plus_minus), 1)             as plus_minus
     from main_staging.stg_player_game_logs
     where season = ?
@@ -129,8 +147,14 @@ _PLAYER_CAREER_SQL = """
         round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
         round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
         round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct,
-        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)                            as ts_pct,
+        case when count(*) filter (
+                 where field_goals_attempted is null
+                    or free_throws_attempted is null
+                    or points is null) > 0
+             then null
+             else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+        end                                   as ts_pct,
         round(avg(plus_minus), 1)             as plus_minus
     from main_staging.stg_player_game_logs
     group by player_id
@@ -161,8 +185,14 @@ def player_season_breakdown(player_id: int) -> pd.DataFrame:
             round(avg(total_rebounds), 1)        as rpg,
             round(avg(assists), 1)               as apg,
             round(avg(three_pointers_made), 1)   as tpg,
-            round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1) as ts_pct,
+            case when count(*) filter (
+                     where field_goals_attempted is null
+                        or free_throws_attempted is null
+                        or points is null) > 0
+                 then null
+                 else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                      + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+            end                                   as ts_pct,
             sum(field_goals_attempted) + 0.44 * sum(free_throws_attempted)
                                                  as shot_poss
         from main_staging.stg_player_game_logs
