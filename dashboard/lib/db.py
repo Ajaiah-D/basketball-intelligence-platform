@@ -233,6 +233,45 @@ def league_shooting_averages(season: str) -> pd.Series:
 # --- Teams / games -------------------------------------------------------------
 
 def standings(season: str) -> pd.DataFrame:
+    """Standings for one season: record, scoring splits, conference and the
+    last-five form string, ordered for playoff seeding.
+
+    Reads dbt's mart_team_standings, which carries a real (if simplified -
+    see the model's own comment) head-to-head tiebreak ahead of point
+    differential and is the one place the conference map now lives. Falls
+    back to computing directly from the staging views - the mart's exact
+    logic before it existed - when the mart isn't in the warehouse yet (an
+    older published copy, or a local build where dbt hasn't run). This
+    function has no marts_available() guard of its own callers, and
+    Overview and Teams call it unconditionally, so it must degrade itself
+    rather than let a catalog error take either page down.
+    """
+    try:
+        df = q(
+            """
+            select
+                team_id,
+                team_abbreviation as team,
+                team_name,
+                games_played       as gp,
+                wins                as w,
+                losses              as l,
+                win_pct             as pct,
+                points_per_game     as ppg,
+                opp_points_per_game as opp_ppg,
+                net_points          as net,
+                conference          as conf,
+                form
+            from main_marts.mart_team_standings
+            where season = ?
+            order by win_pct desc, head_to_head desc, net_points desc, team_abbreviation asc
+            """,
+            (season,),
+        )
+        return df
+    except duckdb.CatalogException:
+        pass
+
     df = q(
         """
         with paired as (
