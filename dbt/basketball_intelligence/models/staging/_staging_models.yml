@@ -62,3 +62,16 @@ models:
         tests: [not_null]
       - name: team_id
         tests: [not_null]
+
+  - name: stg_schedule
+    description: >
+      Published schedule including unplayed games, from ScheduleLeagueV2.
+      The game-log endpoints only return finished games, so this is the
+      only source for a future slate.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: home_team_id
+        tests: [not_null]
+      - name: away_team_id
+        tests: [not_null]
