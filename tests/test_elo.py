@@ -97,11 +97,24 @@ def test_neutral_site_games_get_no_home_advantage():
 def test_missing_is_neutral_site_column_defaults_to_all_regular_games():
     """Callers that don't pass the column (e.g. an older caller, or a test
     fixture with no neutral games) must get today's regular behavior, not
-    an error."""
+    an error.
+
+    Not raising is not enough: a single game's pre-game rating is 1500/1500
+    whatever home-court term applies, so it cannot tell a correct default
+    from an inverted guard. Use a second game for the same team to observe
+    the post-game rating, and pin it to the real-home-win value - i.e. the
+    +100 term was applied, not suppressed.
+    """
     games = pd.DataFrame({
-        "game_id": ["1"], "season": ["2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01"]),
-        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+        "game_id": ["1", "2"],
+        "season": ["2000-01", "2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01", "2000-11-03"]),
+        "home_team_id": [10, 10],
+        "away_team_id": [20, 30],
+        "home_won": [True, False],
     })
     out = compute_elo(games)  # must not raise
-    assert len(out) == 1
+    assert len(out) == 2
+    assert out.set_index("game_id").loc["2", "home_elo_pre"] == pytest.approx(
+        1500.0 + 20 * (1.0 - expected_score(1600.0, 1500.0))
+    )
