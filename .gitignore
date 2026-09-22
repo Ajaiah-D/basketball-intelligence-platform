@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 data/raw/**/*.parquet
+!data/fixtures/**/*.parquet
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
 warehouse/*.version
