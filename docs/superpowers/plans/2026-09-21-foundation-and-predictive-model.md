@@ -2052,9 +2052,20 @@ so an unqualified dbt build has every source table it needs."
 
 **Files:** Modify `README.md`; commit `site_pictures/` and `docs/`.
 
-Add the live link and the six screenshots already sitting in `site_pictures/`. Fix the page list to include Advanced. Replace "(eventually) serve a public dashboard" (line 4) and "the placeholder dashboard" (line 124) with what actually shipped. Drop or explicitly park the natural-language-Q&A and contracts vision. Name the data source for net rating and PIE.
+**Files:**
+- Modify: `README.md`
+- Create (git add, untracked so far): `site_pictures/` (six screenshots already on disk), `docs/frontend-migration-options.md`, `docs/superpowers/` (this plan and its specs — commit these too, they're the project's own record and untracked)
 
-Reconcile the release tag: the deleted workflow published to `data-latest` while `DEPLOYMENT.md` documents `data-v1`. Pick one and correct the other.
+**Exact text to replace, checked against the file as it stands (do not assume these are still accurate if the file has changed since — re-read it first):**
+- `README.md:4` — `"...(eventually) serve a public dashboard where users can ask questions about players, teams, and contracts."` — replace with what actually shipped: a live public dashboard with Overview, Players, Teams, Games, Advanced, Arcade, and a password-gated Dev Lab (compiled out of public deploys). Either drop the "ask questions" (natural-language Q&A) and "contracts" language entirely, or move it to an explicit "not built / parked" note — do not leave it reading as a current or near-term feature.
+- `README.md:124` — `"# 5. (Optional) Explore in the placeholder dashboard"` — it is not a placeholder; replace with language matching what it actually is (a full public dashboard).
+- There is currently no live link anywhere in the README (checked: no `streamlit.app` occurrence). Add one near the top, under the title — the live URL is `basketball-intelligence-platform.streamlit.app` (verify this is still correct before publishing; if the app has moved or been renamed, use the current URL instead).
+- Add a page list matching what's actually in `dashboard/app.py`'s navigation, including Advanced (currently undocumented in the README).
+- Name the data source for net rating and PIE: the official NBA `LeagueDashPlayerStats`/advanced-stats endpoints via `nba_api`, 1996-97 onward (see `stg_player_advanced.sql`'s and `mart_player_season.sql`'s comments for the exact framing already used in-repo — match that voice rather than inventing new phrasing).
+
+**Not a live discrepancy, despite how an earlier draft of this plan described it:** `DEPLOYMENT.md` and `scripts/weekly_refresh.py:29` both already say `data-v1`, consistently. The `data-latest` tag only ever appears in the now-deleted `.github/workflows/refresh-data.yml`, visible in git history (`git show 22f7850:.github/workflows/refresh-data.yml`) but not in any file currently tracked. No reconciliation is needed in this task; if you want to note the historical `data-latest` naming as context, that belongs in Task 13's ADR on the GitHub Release asset decision, not as a README fix.
+
+Add the six screenshots from `site_pictures/` into the README (a "Screenshots" or similar section), matching their actual filenames (`image1_basketball_iq.png` through `image6_basketball_iq.png` — check they're still named this way and pick a sensible order/captions based on what each one actually shows).
 
 ### Task 13: Architecture decision records
 
