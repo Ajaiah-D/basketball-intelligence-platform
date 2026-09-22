@@ -21,9 +21,11 @@ def render() -> None:
         st.info("No upcoming games on the schedule right now.")
     else:
         st.caption(
-            "Win probability is for the home team. Early in a season no team "
-            "has current-season form yet, so these lean almost entirely on "
-            "carried-over ratings and are correspondingly less reliable."
+            "Win probability is for the home team. Predictions currently "
+            "rely only on Elo ratings; rolling-form features (recent "
+            "record, rest days) are not yet computed for future games, so "
+            "treat these as a first pass rather than the model's full "
+            "intended accuracy."
         )
         st.dataframe(upcoming, hide_index=True, use_container_width=True)
 

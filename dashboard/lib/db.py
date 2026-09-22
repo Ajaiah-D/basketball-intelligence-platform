@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -425,23 +426,70 @@ def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
     )
 
 
+# Same join ml.evaluate.settled_predictions() uses: only the earliest
+# prediction per game (grading a later re-run would let a model be scored
+# on a prediction made after the result was known), joined to the actual
+# result. Duplicated here rather than imported - see prediction_track_record's
+# docstring for why.
+_SETTLED_PREDICTIONS_SQL = """
+    with first_prediction as (
+        select *, row_number() over (
+            partition by game_id order by predicted_at
+        ) as attempt
+        from predictions
+    )
+    select p.predicted_margin, p.win_probability, f.margin, f.home_won
+    from first_prediction p
+    join main_marts.fct_team_game f on f.game_id = p.game_id
+    where p.attempt = 1
+"""
+
+
 def prediction_track_record() -> dict:
-    """The model's public accuracy record.
+    """The model's public accuracy record: accuracy, Brier score, margin
+    MAE and n, computed directly here with plain pandas/numpy.
+
+    Deliberately does NOT import ml.evaluate or ml.train, even though
+    ml.evaluate.track_record() computes the identical numbers. ml.train
+    imports scipy and sklearn at module level, and those are dev-only
+    dependencies (see requirements-dev.txt) - Streamlit Community Cloud's
+    build only installs requirements.txt, which does not have them. This
+    module previously imported ml.evaluate here, which meant the app
+    crashed with ModuleNotFoundError the moment a real predictions table
+    existed in a warehouse published to the cloud deploy - the exact
+    "must degrade gracefully" case this function exists for. The three
+    lines of metric math below are cheap enough to duplicate rather than
+    drag a training-dependency import into a dashboard image for.
 
     Returns {"n": 0} when nothing has settled yet, including when the
     predictions table (or a mart it joins against) does not exist - the
     page must degrade the same gentle way predictions_available() does
-    rather than let a catalog error escape.
+    rather than let a catalog error escape. Only catches CatalogException
+    (the real "table doesn't exist" condition) - a BinderException from
+    schema drift, a ConversionException, or an IOException from a
+    truncated download must still surface as a real error rather than
+    silently reading as "no predictions yet".
     """
     if not predictions_available():
         return {"n": 0}
-    from ml.evaluate import track_record
-
     try:
-        with duckdb.connect(str(DB_PATH), read_only=True) as con:
-            return track_record(con)
-    except duckdb.Error:
+        settled = q(_SETTLED_PREDICTIONS_SQL)
+    except duckdb.CatalogException:
         return {"n": 0}
+    if settled.empty:
+        return {"n": 0}
+
+    home_won = settled["home_won"].astype(bool).to_numpy()
+    win_probability = settled["win_probability"].astype(float).to_numpy()
+    predicted_margin = settled["predicted_margin"].astype(float).to_numpy()
+    margin = settled["margin"].astype(float).to_numpy()
+
+    return {
+        "accuracy": float(((win_probability > 0.5) == home_won).mean()),
+        "brier": float(np.mean((win_probability - home_won.astype(float)) ** 2)),
+        "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
+        "n": int(len(settled)),
+    }
 
 
 def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
