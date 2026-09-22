@@ -5,6 +5,13 @@
 -- drops them entirely. Rank instead: the true home side ranks first when
 -- one exists, and neutral games still produce exactly one deterministic
 -- row, flagged as neutral.
+--
+-- is_neutral_site is true only when the source marks both sides away -
+-- it misses games that were genuinely neutral-site but got a nominal
+-- home team from the feed anyway, including the entire 2020 Orlando
+-- bubble (88 games) and pre-2024-25 international games. Do not treat
+-- this flag as "every neutral-site game"; see fct_team_game's model
+-- description in _marts_models.yml for the exact gap.
 
 with ranked as (
     select
