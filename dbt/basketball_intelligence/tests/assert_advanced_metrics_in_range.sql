@@ -53,3 +53,26 @@ where value is not null
     or (metric = 'usage_pct' and (value < 0 or value > 60))
     or (metric = 'rebound_pct' and (value < 0 or value > 40))
   )
+
+union all
+
+-- Published rates must look like percentages. A value outside these bounds
+-- means the source changed shape or a cast silently truncated. Same
+-- sample-size reasoning as above: a early-season row can be genuinely
+-- extreme without being wrong.
+select 'stg_' || model || ' ' || metric, season, entity, value
+from (
+    select season, cast(player_id as varchar) as entity, 'usage_pct' as metric,
+           usage_pct as value, 'player_advanced' as model
+    from {{ ref('stg_player_advanced') }}
+    where games_played * minutes_per_game >= 500
+    union all
+    select season, cast(team_id as varchar), 'pace', pace, 'team_advanced'
+    from {{ ref('stg_team_advanced') }}
+    where games_played >= 10
+)
+where value is not null
+  and (
+       (metric = 'usage_pct' and (value < 0 or value > 60))
+    or (metric = 'pace' and (value < 80 or value > 120))
+  )

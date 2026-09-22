@@ -1,0 +1,38 @@
+name: Tests
+
+# dbt build + pytest only, against committed parquet fixtures. No live API
+# calls: stats.nba.com blocks GitHub-hosted runners' IPs (confirmed by a
+# failed test run - see DEPLOYMENT.md), so ingestion/nba_ingest.py never
+# runs here. Real data refreshes stay a local, residential-IP job.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Build a warehouse from the committed fixtures
+        run: |
+          mkdir -p data/raw
+          cp -r data/fixtures/* data/raw/
+          python scripts/load_to_duckdb.py
+
+      - name: dbt build
+        working-directory: dbt/basketball_intelligence
+        run: |
+          dbt run --profiles-dir .
+          dbt test --profiles-dir .
+
+      - name: pytest
+        run: pytest tests/ -v --tb=short

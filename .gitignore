@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 data/raw/**/*.parquet
+!data/fixtures/**/*.parquet
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
 warehouse/*.version
@@ -12,3 +13,4 @@ dbt/**/dbt_packages/
 dbt/**/logs/
 dbt/**/.user.yml
 .streamlit/secrets.toml
+.superpowers/

@@ -1,0 +1,5 @@
+# Dev and CI only - not installed in the deployed image.
+pytest
+scikit-learn
+scipy
+pyarrow

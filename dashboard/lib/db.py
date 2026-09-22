@@ -7,19 +7,34 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 import streamlit as st
 
 DB_PATH = Path(__file__).resolve().parents[2] / "warehouse" / "basketball.duckdb"
 
 # nba_api's static team data has no conference field, so map it here.
-# Covers current franchises; historical abbreviations fall back to East
-# only if listed (SEA/VAN etc. handled below).
+# Covers current franchises plus historical/relocated abbreviations.
+#
+# dbt's mart_team_standings is the source of truth for the mapping and
+# carries the same two lists; these must stay in step with it. They are
+# kept here because conference() has a live caller that never touches the
+# mart - views/arcade.py builds its clue text from it - and because
+# standings() needs the mapping in its no-mart fallback path.
+#
+# PHL, GOS and SAN are the modern PHI/GSW/SAS franchises under the
+# abbreviations the source data uses for 1979-80 through 1995-96. They
+# were missing from both lists, and because conference() defaulted
+# anything unlisted to West, a 1980s 76er was reported as a Western
+# Conference player for 17 seasons of data. Anything added here must be
+# added to mart_team_standings.sql too, where
+# assert_standings_conference_is_assigned now fails the build on an
+# unlisted abbreviation.
 EAST = {"ATL", "BOS", "BKN", "NJN", "CHA", "CHH", "CHI", "CLE", "DET", "IND",
-        "MIA", "MIL", "NYK", "ORL", "PHI", "TOR", "WAS", "WSB"}
-WEST = {"DAL", "DEN", "GSW", "HOU", "LAC", "SDC", "LAL", "MEM", "VAN", "MIN",
-        "NOP", "NOH", "NOK", "OKC", "SEA", "PHX", "POR", "SAC", "KCK", "SAS",
-        "UTA", "UTH"}
+        "MIA", "MIL", "NYK", "ORL", "PHI", "PHL", "TOR", "WAS", "WSB"}
+WEST = {"DAL", "DEN", "GSW", "GOS", "HOU", "LAC", "SDC", "LAL", "MEM", "VAN",
+        "MIN", "NOP", "NOH", "NOK", "OKC", "SEA", "PHX", "POR", "SAC", "KCK",
+        "SAS", "SAN", "UTA", "UTH"}
 
 
 def conference(team_abbr: str) -> str:
@@ -52,6 +67,18 @@ def latest_season() -> str:
 
 # --- Player stats -------------------------------------------------------------
 
+# TS% is withheld for a player-season only when that player's own games
+# include a null field_goals_attempted, free_throws_attempted or points.
+# sum() skips nulls, so without this guard one such game counts its
+# points in the numerator while contributing nothing to the denominator -
+# confirmed on Jim Brewer's 1979-80 season, where 8 of 75 games have a
+# null field_goals_attempted and the unguarded query reports a 78.1% true
+# shooting season. This is deliberately narrower than mart_player_season's
+# box_score_complete flag, which also nulls a season for missing
+# TEAM-level columns (needed by usage%, rebound rate, etc.) that true
+# shooting does not depend on - checked directly, only 92 of 230
+# qualifying 1979-80 players actually have a null in these three columns;
+# the other 138 have complete shot data and a real number is correct.
 _PLAYER_SEASON_SQL = """
     select
         player_id,
@@ -74,8 +101,14 @@ _PLAYER_SEASON_SQL = """
         round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
         round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
         round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct,
-        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)                            as ts_pct,
+        case when count(*) filter (
+                 where field_goals_attempted is null
+                    or free_throws_attempted is null
+                    or points is null) > 0
+             then null
+             else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+        end                                   as ts_pct,
         round(avg(plus_minus), 1)             as plus_minus
     from main_staging.stg_player_game_logs
     where season = ?
@@ -129,8 +162,14 @@ _PLAYER_CAREER_SQL = """
         round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
         round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
         round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct,
-        round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-              + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)                            as ts_pct,
+        case when count(*) filter (
+                 where field_goals_attempted is null
+                    or free_throws_attempted is null
+                    or points is null) > 0
+             then null
+             else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+        end                                   as ts_pct,
         round(avg(plus_minus), 1)             as plus_minus
     from main_staging.stg_player_game_logs
     group by player_id
@@ -161,8 +200,14 @@ def player_season_breakdown(player_id: int) -> pd.DataFrame:
             round(avg(total_rebounds), 1)        as rpg,
             round(avg(assists), 1)               as apg,
             round(avg(three_pointers_made), 1)   as tpg,
-            round(sum(points) / nullif(2 * (sum(field_goals_attempted)
-                  + 0.44 * sum(free_throws_attempted)), 0) * 100, 1) as ts_pct,
+            case when count(*) filter (
+                     where field_goals_attempted is null
+                        or free_throws_attempted is null
+                        or points is null) > 0
+                 then null
+                 else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
+                      + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
+            end                                   as ts_pct,
             sum(field_goals_attempted) + 0.44 * sum(free_throws_attempted)
                                                  as shot_poss
         from main_staging.stg_player_game_logs
@@ -202,6 +247,45 @@ def league_shooting_averages(season: str) -> pd.Series:
 # --- Teams / games -------------------------------------------------------------
 
 def standings(season: str) -> pd.DataFrame:
+    """Standings for one season: record, scoring splits, conference and the
+    last-five form string, ordered for playoff seeding.
+
+    Reads dbt's mart_team_standings, which carries a real (if simplified -
+    see the model's own comment) head-to-head tiebreak ahead of point
+    differential and is the one place the conference map now lives. Falls
+    back to computing directly from the staging views - the mart's exact
+    logic before it existed - when the mart isn't in the warehouse yet (an
+    older published copy, or a local build where dbt hasn't run). This
+    function has no marts_available() guard of its own callers, and
+    Overview and Teams call it unconditionally, so it must degrade itself
+    rather than let a catalog error take either page down.
+    """
+    try:
+        df = q(
+            """
+            select
+                team_id,
+                team_abbreviation as team,
+                team_name,
+                games_played       as gp,
+                wins                as w,
+                losses              as l,
+                win_pct             as pct,
+                points_per_game     as ppg,
+                opp_points_per_game as opp_ppg,
+                net_points          as net,
+                conference          as conf,
+                form
+            from main_marts.mart_team_standings
+            where season = ?
+            order by win_pct desc, head_to_head desc, net_points desc, team_abbreviation asc
+            """,
+            (season,),
+        )
+        return df
+    except duckdb.CatalogException:
+        pass
+
     df = q(
         """
         with paired as (
@@ -354,6 +438,116 @@ def marts_available() -> bool:
         return True
     except (duckdb.Error, OSError):
         return False
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def predictions_available() -> bool:
+    """Whether any predictions have been written yet.
+
+    The table only exists after ml/predict.py has run at least once. A
+    warehouse published before that raises a catalog error that would take
+    the whole app down, so the page checks first - same pattern as
+    marts_available().
+    """
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from predictions limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
+    """The most recent prediction for each not-yet-played game."""
+    return q(
+        """
+        with latest as (
+            select *, row_number() over (
+                partition by game_id order by predicted_at desc
+            ) as recency
+            from predictions
+        )
+        select l.game_id, l.game_date, l.win_probability, l.predicted_margin,
+               s.home_team_abbreviation, s.away_team_abbreviation
+        from latest l
+        join main_staging.stg_schedule s on s.game_id = l.game_id
+        where l.recency = 1 and s.game_status = 1
+        order by l.game_date, l.game_id
+        limit ?
+        """,
+        (limit,),
+    )
+
+
+# Same join ml.evaluate.settled_predictions() uses: only the earliest
+# prediction per game (grading a later re-run would let a model be scored
+# on a prediction made after the result was known), joined to the actual
+# result. Duplicated here rather than imported - see prediction_track_record's
+# docstring for why.
+_SETTLED_PREDICTIONS_SQL = """
+    with first_prediction as (
+        select *, row_number() over (
+            partition by game_id order by predicted_at
+        ) as attempt
+        from predictions
+    )
+    select p.predicted_margin, p.win_probability, f.margin, f.home_won
+    from first_prediction p
+    join main_marts.fct_team_game f on f.game_id = p.game_id
+    where p.attempt = 1
+      -- Same no-contest exclusion the rest of the pipeline applies: a
+      -- cancelled game recorded as a 0-0 final is not a result, and
+      -- grading a prediction for it would show a miss on the public
+      -- track record for a game that never happened.
+      and not (f.home_points = 0 and f.away_points = 0)
+"""
+
+
+def prediction_track_record() -> dict:
+    """The model's public accuracy record: accuracy, Brier score, margin
+    MAE and n, computed directly here with plain pandas/numpy.
+
+    Deliberately does NOT import ml.evaluate or ml.train, even though
+    ml.evaluate.track_record() computes the identical numbers. ml.train
+    imports scipy and sklearn at module level, and those are dev-only
+    dependencies (see requirements-dev.txt) - Streamlit Community Cloud's
+    build only installs requirements.txt, which does not have them. This
+    module previously imported ml.evaluate here, which meant the app
+    crashed with ModuleNotFoundError the moment a real predictions table
+    existed in a warehouse published to the cloud deploy - the exact
+    "must degrade gracefully" case this function exists for. The three
+    lines of metric math below are cheap enough to duplicate rather than
+    drag a training-dependency import into a dashboard image for.
+
+    Returns {"n": 0} when nothing has settled yet, including when the
+    predictions table (or a mart it joins against) does not exist - the
+    page must degrade the same gentle way predictions_available() does
+    rather than let a catalog error escape. Only catches CatalogException
+    (the real "table doesn't exist" condition) - a BinderException from
+    schema drift, a ConversionException, or an IOException from a
+    truncated download must still surface as a real error rather than
+    silently reading as "no predictions yet".
+    """
+    if not predictions_available():
+        return {"n": 0}
+    try:
+        settled = q(_SETTLED_PREDICTIONS_SQL)
+    except duckdb.CatalogException:
+        return {"n": 0}
+    if settled.empty:
+        return {"n": 0}
+
+    home_won = settled["home_won"].astype(bool).to_numpy()
+    win_probability = settled["win_probability"].astype(float).to_numpy()
+    predicted_margin = settled["predicted_margin"].astype(float).to_numpy()
+    margin = settled["margin"].astype(float).to_numpy()
+
+    return {
+        "accuracy": float(((win_probability > 0.5) == home_won).mean()),
+        "brier": float(np.mean((win_probability - home_won.astype(float)) ** 2)),
+        "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
+        "n": int(len(settled)),
+    }
 
 
 def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:

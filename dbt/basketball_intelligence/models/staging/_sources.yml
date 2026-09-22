@@ -26,3 +26,8 @@ sources:
         description: All-time player index (CommonAllPlayers).
       - name: teams
         description: The 30 NBA franchises (nba_api static data).
+      - name: schedule
+        description: >
+          Full published schedule including unplayed games (ScheduleLeagueV2).
+          Re-fetched every run for the current season since postponements and
+          rescheduling change it.

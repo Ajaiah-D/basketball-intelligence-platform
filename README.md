@@ -1,8 +1,35 @@
 # Basketball Intelligence Platform 🏀
 
+**Live dashboard:** https://basketball-intelligence-platform.streamlit.app
+
 A local-first NBA data platform: ingest official NBA stats, warehouse them in
-DuckDB, model them with dbt, and (eventually) serve a public dashboard where
-users can ask questions about players, teams, and contracts.
+DuckDB, model them with dbt, and serve a public dashboard covering players,
+teams, games, and advanced stats across 47 seasons of NBA history.
+Natural-language Q&A and contract/salary data are not built; see
+Status / roadmap below.
+
+## Screenshots
+
+**Overview** - KPIs, league and efficiency leaders, conference standings
+![Overview](site_pictures/image1_basketball_iq.png)
+
+**Players** - season stats table; player detail with scoring trend and
+shooting-vs-league comparison
+![Players](site_pictures/image3_basketball_iq.png)
+
+**Teams** - standings with last-5 form; team detail with a per-game margin
+chart
+![Teams](site_pictures/image2_basketball_iq.png)
+
+**Games** - game detail with a score-margin flow chart and shot chart
+![Games](site_pictures/image4_basketball_iq.png)
+
+**Advanced** - efficiency leaderboards and a per-player percentile profile
+![Advanced](site_pictures/image6_basketball_iq.png)
+
+**Arcade** - Higher or Lower, one of two games built on the full season
+history
+![Arcade](site_pictures/image5_basketball_iq.png)
 
 ## Architecture
 
@@ -35,6 +62,13 @@ All data comes from the **unofficial stats.nba.com API** via the
 | Play-by-play | `PlayByPlayV3` | event | **1 per game** |
 | Player index | `CommonAllPlayers` | player (all-time) | 1 |
 | Teams | `nba_api` static data | franchise | 0 |
+| Player advanced stats | `LeagueDashPlayerStats` (Advanced) | player x season | 1 per season |
+
+Net rating and PIE are the NBA's own official advanced stats (the
+`LeagueDashPlayerStats` endpoint, Advanced measure type), available from
+1996-97 onward. Earlier seasons derive the equivalent rate stats from box
+scores instead - see `stg_player_advanced.sql` and `mart_player_season.sql`
+for the exact cutoffs.
 
 Because the API is unofficial and throttles aggressive clients, every request
 goes through a rate limiter (≥1.5s between calls) with exponential-backoff
@@ -77,6 +111,10 @@ data/raw/                      # raw parquet extracts (gitignored)
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
   player-season averaged more, streak scoring) and *Mystery Player*
   (identify a notable season from progressively revealed clues)
+- **Predictions**: upcoming games with a home-team win probability, plus
+  the model's public track record. Currently Elo ratings only - rolling-form
+  features (recent record, rest days) aren't computed for future games yet,
+  so treat it as a first pass rather than the model's intended accuracy
 - **Dev Lab** (owner-only): SQL workbench with schema browser, read-only
   queries, CSV/JSON/Parquet export, and a quick chart builder.
   Unlocked by `DEV_PASSWORD` in `.env` (copy `.env.example`); hide it
@@ -121,7 +159,7 @@ dbt run --profiles-dir .
 dbt test --profiles-dir .
 cd ..\..
 
-# 5. (Optional) Explore in the placeholder dashboard
+# 5. (Optional) Explore locally in the dashboard (same app as the live deploy)
 streamlit run dashboard\app.py
 ```
 
