@@ -712,6 +712,66 @@ def test_ratings_regress_toward_the_mean_between_seasons():
     full = compute_elo(games, carry=1.0).set_index("game_id")
     full_gain = full.loc["2", "home_elo_pre"] - 1500.0
     assert 0 < gain < full_gain, "carry must shrink the rating toward 1500"
+
+
+def test_neutral_site_games_get_no_home_advantage():
+    """fct_team_game assigns a neutral game's 'home' side by an arbitrary
+    tiebreak (lower team_id), not a real home court. Applying the +100
+    home-court term there would fabricate an advantage neither team has -
+    confirmed as a real case in Task 4 (10 NBA Cup / international games).
+
+    Isolate the effect on a single game: team 10 beats team 20 as the
+    Elo-assigned "home" side, both starting at 1500. A real home win is
+    expected to win more often (home + 100 vs away), so it earns a smaller
+    rating bump than a neutral win (both sides plain 1500) for the same K.
+    """
+    base_game = {
+        "game_id": ["1"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01"]),
+        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+    }
+    # compute_elo only returns pre-game ratings, so to observe a post-game
+    # rating, read the PRE-game rating of a second game for the same team.
+    second_game = {
+        "game_id": ["2"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-03"]),
+        "home_team_id": [10], "away_team_id": [30], "home_won": [False],
+        "is_neutral_site": [False],
+    }
+    neutral_then_second = compute_elo(pd.concat(
+        [pd.DataFrame({**base_game, "is_neutral_site": [True]}), pd.DataFrame(second_game)],
+        ignore_index=True,
+    ))
+    home_then_second = compute_elo(pd.concat(
+        [pd.DataFrame({**base_game, "is_neutral_site": [False]}), pd.DataFrame(second_game)],
+        ignore_index=True,
+    ))
+    rating_after_neutral_win = neutral_then_second.set_index("game_id").loc["2", "home_elo_pre"]
+    rating_after_real_home_win = home_then_second.set_index("game_id").loc["2", "home_elo_pre"]
+
+    assert rating_after_neutral_win == pytest.approx(1500.0 + 20 * (1.0 - 0.5))
+    assert rating_after_real_home_win == pytest.approx(
+        1500.0 + 20 * (1.0 - expected_score(1600.0, 1500.0))
+    )
+    assert rating_after_neutral_win > rating_after_real_home_win, (
+        "a neutral win (expected 50/50) must earn a bigger rating bump than "
+        "a real home win (expected to win more often) for the same K - if "
+        "these are equal, the home-court term was not suppressed for the "
+        "neutral game"
+    )
+
+
+def test_missing_is_neutral_site_column_defaults_to_all_regular_games():
+    """Callers that don't pass the column (e.g. an older caller, or a test
+    fixture with no neutral games) must get today's regular behavior, not
+    an error."""
+    games = pd.DataFrame({
+        "game_id": ["1"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01"]),
+        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+    })
+    out = compute_elo(games)  # must not raise
+    assert len(out) == 1
 ```
 
 - [ ] **Step 2: Run and verify they fail**
@@ -757,9 +817,26 @@ def compute_elo(
     """Pre-game Elo for every game, oldest first.
 
     `games` needs game_id, season, game_date, home_team_id, away_team_id and
-    home_won. Returns game_id, home_elo_pre, away_elo_pre.
+    home_won. An optional is_neutral_site column (treated as all-False when
+    the column is absent) suppresses the home-court term for that game -
+    fct_team_game assigns a neutral game's "home" side by an arbitrary
+    tiebreak (lower team_id), not a real home court, so applying +100 there
+    would fabricate an advantage neither team has (confirmed real case:
+    10 NBA Cup / international games in the current warehouse).
+
+    `games` must already exclude no-contest fixtures before being passed
+    in - a cancelled game recorded as a 0-0 final (confirmed instance:
+    game_id 0021201214, 2013-04-16 BOS @ IND, postponed after the Boston
+    Marathon bombing) is not a real result and would corrupt both teams'
+    ratings around that date if included. The filter lives in the SQL that
+    builds `games` (mart_game_features.sql's valid_games CTE and
+    ml/features.py's matching query against fct_team_game), not here, since
+    this function only sees home_won and has no access to the actual score.
+
+    Returns game_id, home_elo_pre, away_elo_pre.
     """
     ordered = games.sort_values(["game_date", "game_id"])
+    has_neutral_flag = "is_neutral_site" in ordered.columns
     ratings: dict[int, float] = {}
     current_season: str | None = None
     rows = []
@@ -777,7 +854,9 @@ def compute_elo(
         away = ratings.get(game.away_team_id, BASE_RATING)
         rows.append((game.game_id, home, away))
 
-        expected_home = expected_score(home + home_advantage, away)
+        is_neutral = has_neutral_flag and bool(game.is_neutral_site)
+        game_home_advantage = 0.0 if is_neutral else home_advantage
+        expected_home = expected_score(home + game_home_advantage, away)
         actual_home = 1.0 if game.home_won else 0.0
         adjustment = k * (actual_home - expected_home)
         ratings[game.home_team_id] = home + adjustment
@@ -792,7 +871,7 @@ Create an empty `ml/__init__.py`.
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_elo.py -v`
 
-Expected: 4 passed.
+Expected: 6 passed.
 
 - [ ] **Step 5: Sanity-check Elo against real history**
 
@@ -801,9 +880,20 @@ Expected: 4 passed.
 import duckdb
 from ml.elo import compute_elo, expected_score
 con = duckdb.connect('warehouse/basketball.duckdb', read_only=True)
-g = con.execute('select game_id, season, game_date, home_team_id, away_team_id, home_won from main_marts.fct_team_game order by game_date').df()
+# Task 4 found one no-contest game in the warehouse: 0021201214
+# (2013-04-16 BOS @ IND, postponed after the Boston Marathon bombing,
+# recorded as a 0-0 final). Excluded generally by score rather than by
+# hardcoded game_id, since a future season could have another.
+g = con.execute('''
+    select game_id, season, game_date, home_team_id, away_team_id,
+           home_won, is_neutral_site
+    from main_marts.fct_team_game
+    where not (home_points = 0 and away_points = 0)
+    order by game_date
+''').df()
 e = compute_elo(g).merge(g, on='game_id')
-e['p'] = [expected_score(h + 100, a) for h, a in zip(e.home_elo_pre, e.away_elo_pre)]
+e['home_advantage_applied'] = (~e.is_neutral_site) * 100
+e['p'] = [expected_score(h + ha, a) for h, a, ha in zip(e.home_elo_pre, e.away_elo_pre, e.home_advantage_applied)]
 recent = e[e.season >= '1996-97']
 acc = ((recent.p > 0.5) == recent.home_won).mean()
 print(f'Elo-only accuracy 1996-97+: {acc:.4f} over {len(recent)} games')
@@ -819,7 +909,10 @@ git add ml/ tests/test_elo.py
 git commit -m "Add sequential Elo ratings with between-season regression
 
 Emitted as pre-game ratings only, so nothing downstream can accidentally
-read a rating that already contains the result it is predicting."
+read a rating that already contains the result it is predicting. The
+home-court term is suppressed for neutral-site games, since
+fct_team_game assigns those a 'home' side by an arbitrary tiebreak
+rather than a real home court."
 ```
 
 ---
@@ -848,16 +941,29 @@ read a rating that already contains the result it is predicting."
 -- assert_no_future_data_in_features re-derives a sample independently
 -- rather than trusting the frames by eye.
 
-with long as (
+with valid_games as (
+    -- Excludes no-contest fixtures: Task 4 found one cancelled game
+    -- recorded as a 0-0 final (game_id 0021201214, 2013-04-16 BOS @ IND,
+    -- postponed after the Boston Marathon bombing). It never happened, so
+    -- it must not feed anyone's rolling form or Elo. Filtered by score
+    -- rather than by hardcoded game_id, since a future season could have
+    -- another. Every reference to fct_team_game below goes through this
+    -- CTE, not the model directly, so the exclusion can't be missed in
+    -- one branch and not another.
+    select * from {{ ref('fct_team_game') }}
+    where not (home_points = 0 and away_points = 0)
+),
+
+long as (
     -- Back to two rows per game so each team's history is its own window.
     select game_id, season, game_date, home_team_id as team_id,
            away_team_id as opp_team_id, margin as team_margin,
            home_won as team_won, true as at_home
-    from {{ ref('fct_team_game') }}
+    from valid_games
     union all
     select game_id, season, game_date, away_team_id, home_team_id,
            -margin, not home_won, false
-    from {{ ref('fct_team_game') }}
+    from valid_games
 ),
 
 team_form as (
@@ -907,7 +1013,7 @@ select
     -- Targets. Never features.
     f.margin,
     f.home_won
-from {{ ref('fct_team_game') }} f
+from valid_games f
 join team_form h on h.game_id = f.game_id and h.at_home
 join team_form a on a.game_id = f.game_id and not a.at_home
 ```
@@ -987,10 +1093,17 @@ def build_feature_frame(con) -> pd.DataFrame:
     features = con.execute(
         "select * from main_marts.mart_game_features order by game_date, game_id"
     ).df()
+    # Same no-contest exclusion as mart_game_features.sql's valid_games CTE
+    # (a cancelled game recorded as a 0-0 final must not feed Elo either),
+    # and is_neutral_site is included so compute_elo can suppress the
+    # home-court term for the games fct_team_game flagged as neutral.
     games = con.execute(
         """
-        select game_id, season, game_date, home_team_id, away_team_id, home_won
-        from main_marts.fct_team_game order by game_date, game_id
+        select game_id, season, game_date, home_team_id, away_team_id,
+               home_won, is_neutral_site
+        from main_marts.fct_team_game
+        where not (home_points = 0 and away_points = 0)
+        order by game_date, game_id
         """
     ).df()
     elo = compute_elo(games)
@@ -1030,8 +1143,16 @@ def test_targets_are_not_features():
 
 
 def test_one_row_per_game(frame, con):
+    """One row per real game - real meaning excluding the one known
+    no-contest fixture (a cancelled game recorded as a 0-0 final), which
+    mart_game_features.sql deliberately drops via its valid_games CTE."""
     assert frame["game_id"].is_unique
-    total = con.execute("select count(*) from main_marts.fct_team_game").fetchone()[0]
+    total = con.execute(
+        """
+        select count(*) from main_marts.fct_team_game
+        where not (home_points = 0 and away_points = 0)
+        """
+    ).fetchone()[0]
     assert len(frame) == total
 
 
@@ -1063,7 +1184,9 @@ git commit -m "Build the pre-tipoff feature table
 Every window excludes the current row, and a singular test re-derives a
 sample independently so the exclusion cannot silently break. Opening-night
 games are kept with null form rather than dropped - the cold start is the
-case the model most needs to handle."
+case the model most needs to handle. Excludes the one no-contest game in
+the warehouse (a cancelled 2013 game recorded as a 0-0 final) from every
+window and from Elo, filtered by score rather than by its game_id."
 ```
 
 ---
