@@ -1837,7 +1837,7 @@ from dashboard.lib import theme as T
 
 
 def render() -> None:
-    st.markdown(T.section_header("Predictions"), unsafe_allow_html=True)
+    st.markdown("## Predictions", unsafe_allow_html=True)
 
     if not db.predictions_available():
         st.info(
@@ -1857,7 +1857,7 @@ def render() -> None:
         )
         st.dataframe(upcoming, hide_index=True, use_container_width=True)
 
-    st.markdown(T.section_header("Track record"), unsafe_allow_html=True)
+    st.markdown("#### Track record", unsafe_allow_html=True)
     record = db.prediction_track_record()
     if record.get("n", 0) == 0:
         st.info("No predictions have been settled yet. Check back after the "
@@ -1874,7 +1874,7 @@ def render() -> None:
                       "average points off"), unsafe_allow_html=True)
 ```
 
-Add a `db.prediction_track_record()` wrapper that calls `ml.evaluate.track_record()` against a read-only connection and returns `{"n": 0}` when the table is missing. Match the exact `theme` helper names in use — read `dashboard/lib/theme.py` and `dashboard/views/advanced.py` first; `T.kpi` and `T.section_header` are the names used elsewhere but confirm before relying on them.
+Add a `db.prediction_track_record()` wrapper that calls `ml.evaluate.track_record()` against a read-only connection and returns `{"n": 0}` when the table is missing. `T.kpi` is confirmed to exist (`dashboard/lib/theme.py:230`) and is used above exactly as elsewhere. There is no `T.section_header` helper anywhere in this codebase — confirmed by checking `theme.py`'s full function list; `dashboard/views/advanced.py` uses plain `st.markdown('## Page title', unsafe_allow_html=True)` for the page header and `st.markdown('#### Section name')` for sub-sections (no `unsafe_allow_html` needed on those, since they carry no HTML), which is what the snippet above now uses. Do not invent a `T.section_header` call.
 
 Register the page in `dashboard/app.py` alongside the others.
 
