@@ -431,25 +431,34 @@ Append to `models:` in `_staging_models.yml`:
 
 - [ ] **Step 2: Add range assertions to the existing singular test**
 
-Read `dbt/basketball_intelligence/tests/assert_advanced_metrics_in_range.sql` first and match its existing `select` list exactly — column names and arity must line up for `union all`. Then append two branches asserting `stg_player_advanced.usage_pct` falls in `[0, 60]` and `stg_team_advanced.pace` falls in `[80, 120]`, each skipping nulls:
+Read `dbt/basketball_intelligence/tests/assert_advanced_metrics_in_range.sql` first. Its actual shape (confirmed by reading the file — do not assume): each top-level branch is 4 columns, `check, season, entity, value`, where `check` is built as `'team ' || metric` or `'player ' || metric` over an inner `union all` of raw per-metric rows, filtered by a sample-size floor before the range check is applied. There is no `model` column anywhere in the file — a 5-column branch will fail to compile against this with a `UNION ALL` arity mismatch.
+
+Append a third top-level branch in this same shape, prefixing checks with the staging model name so they read unambiguously (`stg_player_advanced usage_pct`, `stg_team_advanced pace`) and applying the same kind of sample-size floor the file's header comment explains is necessary — these are official season-level tables, so the floor is on `games_played`, matching the existing team-side floor of 10 games. `stg_player_advanced` has `games_played` and `minutes_per_game` but no total-minutes column, so approximate the existing 500-minute player floor as their product:
 
 ```sql
 
 union all
 
 -- Published rates must look like percentages. A value outside these bounds
--- means the source changed shape or a cast silently truncated.
-select 'stg_player_advanced' as model, season, cast(player_id as varchar) as entity,
-       'usage_pct' as metric, usage_pct as value
-from {{ ref('stg_player_advanced') }}
-where usage_pct is not null and (usage_pct < 0 or usage_pct > 60)
-
-union all
-
-select 'stg_team_advanced' as model, season, cast(team_id as varchar) as entity,
-       'pace' as metric, pace as value
-from {{ ref('stg_team_advanced') }}
-where pace is not null and (pace < 80 or pace > 120)
+-- means the source changed shape or a cast silently truncated. Same
+-- sample-size reasoning as above: a early-season row can be genuinely
+-- extreme without being wrong.
+select 'stg_' || model || ' ' || metric, season, entity, value
+from (
+    select season, cast(player_id as varchar) as entity, 'usage_pct' as metric,
+           usage_pct as value, 'player_advanced' as model
+    from {{ ref('stg_player_advanced') }}
+    where games_played * minutes_per_game >= 500
+    union all
+    select season, cast(team_id as varchar), 'pace', pace, 'team_advanced'
+    from {{ ref('stg_team_advanced') }}
+    where games_played >= 10
+)
+where value is not null
+  and (
+       (metric = 'usage_pct' and (value < 0 or value > 60))
+    or (metric = 'pace' and (value < 80 or value > 120))
+  )
 ```
 
 - [ ] **Step 3: Run the tests**
