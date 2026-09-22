@@ -881,7 +881,7 @@ import duckdb
 from ml.elo import compute_elo, expected_score
 con = duckdb.connect('warehouse/basketball.duckdb', read_only=True)
 # Task 4 found one no-contest game in the warehouse: 0021201214
-# (2013-04-16 BOS @ IND, postponed after the Boston Marathon bombing,
+# (2013-04-16 IND @ BOS, postponed after the Boston Marathon bombing,
 # recorded as a 0-0 final). Excluded generally by score rather than by
 # hardcoded game_id, since a future season could have another.
 g = con.execute('''
