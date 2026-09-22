@@ -40,8 +40,13 @@ models:
 
   - name: fct_team_game
     description: >
-      One row per game, oriented home versus away, with margin and a
-      neutral-site flag. The grain every game-level model builds on.
+      One row per game, oriented home versus away, with margin.
+      is_neutral_site is true only when the source data marks both teams as
+      away in the matchup string - this catches recent NBA Cup and
+      international games but misses the entire 2020 Orlando bubble (88
+      games) and pre-2024-25 international games, where the feed still
+      assigned a nominal home team. The grain every game-level model
+      builds on.
     columns:
       - name: game_id
         tests: [not_null, unique]
