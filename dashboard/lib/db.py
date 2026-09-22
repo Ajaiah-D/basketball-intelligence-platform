@@ -14,13 +14,27 @@ import streamlit as st
 DB_PATH = Path(__file__).resolve().parents[2] / "warehouse" / "basketball.duckdb"
 
 # nba_api's static team data has no conference field, so map it here.
-# Covers current franchises; historical abbreviations fall back to East
-# only if listed (SEA/VAN etc. handled below).
+# Covers current franchises plus historical/relocated abbreviations.
+#
+# dbt's mart_team_standings is the source of truth for the mapping and
+# carries the same two lists; these must stay in step with it. They are
+# kept here because conference() has a live caller that never touches the
+# mart - views/arcade.py builds its clue text from it - and because
+# standings() needs the mapping in its no-mart fallback path.
+#
+# PHL, GOS and SAN are the modern PHI/GSW/SAS franchises under the
+# abbreviations the source data uses for 1979-80 through 1995-96. They
+# were missing from both lists, and because conference() defaulted
+# anything unlisted to West, a 1980s 76er was reported as a Western
+# Conference player for 17 seasons of data. Anything added here must be
+# added to mart_team_standings.sql too, where
+# assert_standings_conference_is_assigned now fails the build on an
+# unlisted abbreviation.
 EAST = {"ATL", "BOS", "BKN", "NJN", "CHA", "CHH", "CHI", "CLE", "DET", "IND",
-        "MIA", "MIL", "NYK", "ORL", "PHI", "TOR", "WAS", "WSB"}
-WEST = {"DAL", "DEN", "GSW", "HOU", "LAC", "SDC", "LAL", "MEM", "VAN", "MIN",
-        "NOP", "NOH", "NOK", "OKC", "SEA", "PHX", "POR", "SAC", "KCK", "SAS",
-        "UTA", "UTH"}
+        "MIA", "MIL", "NYK", "ORL", "PHI", "PHL", "TOR", "WAS", "WSB"}
+WEST = {"DAL", "DEN", "GSW", "GOS", "HOU", "LAC", "SDC", "LAL", "MEM", "VAN",
+        "MIN", "NOP", "NOH", "NOK", "OKC", "SEA", "PHX", "POR", "SAC", "KCK",
+        "SAS", "SAN", "UTA", "UTH"}
 
 
 def conference(team_abbr: str) -> str:
