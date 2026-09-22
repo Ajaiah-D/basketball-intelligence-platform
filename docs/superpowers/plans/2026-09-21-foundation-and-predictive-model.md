@@ -1458,18 +1458,32 @@ Add `schedule` to the tables list in `_sources.yml`, matching the existing entri
 ```sql
 -- One row per scheduled game, including games not yet played.
 -- gameStatus is 1 for scheduled, 2 for in progress, 3 for final.
+--
+-- gameDate comes back from ScheduleLeagueV2 as "MM/DD/YYYY HH:MM:SS", not
+-- ISO 8601, so a plain cast to date fails - parse it explicitly instead.
+--
+-- gameStatus alone does not separate preseason from the real regular
+-- season - filtering only on gameStatus = 1 for 2026-27 returns 1,274
+-- games from 2026-10-03, when the real season (confirmed against
+-- stg_team_game_logs, where every known completed regular-season game_id
+-- starts '002') opens 2026-10-20 with 1,206 games. The first three
+-- characters of game_id encode game type: '001' preseason, '002' regular
+-- season (the only prefix ever seen in completed data), '004' playoffs.
+-- Exposed here so every consumer (predictions, Task 9) filters the same
+-- way instead of re-deriving it.
 
 select
-    cast(seasonYear as varchar)            as season,
-    cast(gameId as varchar)                as game_id,
-    cast(gameDate as date)                 as game_date,
-    cast(gameDateTimeUTC as timestamp)     as tipoff_utc,
-    cast(homeTeam_teamId as bigint)        as home_team_id,
-    cast(homeTeam_teamTricode as varchar)  as home_team_abbreviation,
-    cast(awayTeam_teamId as bigint)        as away_team_id,
-    cast(awayTeam_teamTricode as varchar)  as away_team_abbreviation,
-    coalesce(cast(isNeutral as boolean), false) as is_neutral_site,
-    cast(gameStatus as integer)            as game_status
+    cast(seasonYear as varchar)                            as season,
+    cast(gameId as varchar)                                as game_id,
+    cast(strptime(gameDate, '%m/%d/%Y %H:%M:%S') as date)  as game_date,
+    cast(gameDateTimeUTC as timestamp)                     as tipoff_utc,
+    cast(homeTeam_teamId as bigint)                        as home_team_id,
+    cast(homeTeam_teamTricode as varchar)                  as home_team_abbreviation,
+    cast(awayTeam_teamId as bigint)                        as away_team_id,
+    cast(awayTeam_teamTricode as varchar)                  as away_team_abbreviation,
+    coalesce(cast(isNeutral as boolean), false)            as is_neutral_site,
+    cast(gameStatus as integer)                            as game_status,
+    substr(cast(gameId as varchar), 1, 3) = '002'          as is_regular_season
 from {{ source('raw', 'schedule') }}
 ```
 
@@ -1480,7 +1494,8 @@ Add to `_staging_models.yml`:
     description: >
       Published schedule including unplayed games, from ScheduleLeagueV2.
       The game-log endpoints only return finished games, so this is the
-      only source for a future slate.
+      only source for a future slate. is_regular_season excludes preseason
+      and other non-regular game types from a game_status = 1 slate.
     columns:
       - name: game_id
         tests: [not_null, unique]
@@ -1503,11 +1518,12 @@ Expected: all pass.
 import duckdb
 con = duckdb.connect('warehouse/basketball.duckdb', read_only=True)
 print(con.execute('''select count(*) games, min(game_date) first_game, max(game_date) last_game
-  from main_staging.stg_schedule where season = '2026-27' and game_status = 1''').df().to_string())
+  from main_staging.stg_schedule
+  where season = '2026-27' and game_status = 1 and is_regular_season''').df().to_string())
 "
 ```
 
-Expected: roughly 1,230 regular-season games, first game 2026-10-20.
+Expected: roughly 1,206-1,230 regular-season games (a few may not be published yet), first game 2026-10-20. A `game_status = 1` filter alone is not enough - it includes preseason and returns games from early October with the wrong count; `is_regular_season` is what narrows it correctly.
 
 - [ ] **Step 6: Commit**
 
@@ -1639,13 +1655,16 @@ create table if not exists predictions (
 
 
 def upcoming_slate(con, through: date) -> pd.DataFrame:
-    """Scheduled, not-yet-played games up to and including `through`."""
+    """Scheduled, not-yet-played REGULAR SEASON games up to and including
+    `through`. game_status = 1 alone would also include preseason -
+    Task 8 found the schedule feed needs is_regular_season to separate
+    them (gameStatus doesn't carry a game-type distinction)."""
     return con.execute(
         """
         select season, game_id, game_date, home_team_id, away_team_id,
                is_neutral_site
         from main_staging.stg_schedule
-        where game_status = 1 and game_date <= ?
+        where game_status = 1 and is_regular_season and game_date <= ?
         order by game_date, game_id
         """,
         [through],
