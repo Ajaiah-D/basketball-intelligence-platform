@@ -386,6 +386,64 @@ def marts_available() -> bool:
         return False
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def predictions_available() -> bool:
+    """Whether any predictions have been written yet.
+
+    The table only exists after ml/predict.py has run at least once. A
+    warehouse published before that raises a catalog error that would take
+    the whole app down, so the page checks first - same pattern as
+    marts_available().
+    """
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from predictions limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
+    """The most recent prediction for each not-yet-played game."""
+    return q(
+        """
+        with latest as (
+            select *, row_number() over (
+                partition by game_id order by predicted_at desc
+            ) as recency
+            from predictions
+        )
+        select l.game_id, l.game_date, l.win_probability, l.predicted_margin,
+               s.home_team_abbreviation, s.away_team_abbreviation
+        from latest l
+        join main_staging.stg_schedule s on s.game_id = l.game_id
+        where l.recency = 1 and s.game_status = 1
+        order by l.game_date, l.game_id
+        limit ?
+        """,
+        (limit,),
+    )
+
+
+def prediction_track_record() -> dict:
+    """The model's public accuracy record.
+
+    Returns {"n": 0} when nothing has settled yet, including when the
+    predictions table (or a mart it joins against) does not exist - the
+    page must degrade the same gentle way predictions_available() does
+    rather than let a catalog error escape.
+    """
+    if not predictions_available():
+        return {"n": 0}
+    from ml.evaluate import track_record
+
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            return track_record(con)
+    except duckdb.Error:
+        return {"n": 0}
+
+
 def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
     """Advanced metrics for one season. Rate stats are meaningless on tiny
     samples (one made three is a 150% TS%), so callers pass a minutes floor."""

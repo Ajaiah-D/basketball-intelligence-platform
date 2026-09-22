@@ -70,6 +70,8 @@ def main() -> None:
         ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
         ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
         ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
+        ("predict", [PYTHON, "-m", "ml.predict"], None),
+        ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
         ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
     ]
 
