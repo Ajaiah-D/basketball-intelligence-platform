@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     import duckdb
 
-    from ml.elo import BASE_RATING, compute_elo
+    from ml.elo import BASE_RATING, current_ratings
     from ml.features import FEATURE_COLUMNS, build_feature_frame
     from ml.train import margin_to_win_probability
 
@@ -105,17 +105,17 @@ if __name__ == "__main__":
             # so most pre-tipoff features - rolling form, rest days - cannot
             # be computed for them yet without a forward-looking feature
             # pipeline this task does not build. Elo is the one feature that
-            # can be carried forward honestly: a team's rating entering its
-            # most recent played game, taken from compute_elo's own
-            # pre-game output, so nothing here looks at a result the model
-            # would not have known about pre-tipoff. This is an
-            # approximation (it is off by that one game's adjustment, at
-            # most k=20 Elo points) rather than the team's literal
-            # current rating, and every other feature is zero-filled,
-            # consistent with walk_forward's own fillna(0.0) tolerance for
-            # missing values. Flagged in the task-10 report as the one place
-            # this module's predictions should be revisited once a real
-            # forward feature pipeline exists.
+            # can be carried forward honestly: ml.elo.current_ratings()
+            # gives each team's actual current rating (post-last-game, and
+            # correctly regressed toward the mean if the target season
+            # hasn't started yet - e.g. opening night, when compute_elo's
+            # own season-transition regression never fires because it only
+            # runs while processing a row FROM the new season). Every other
+            # feature is zero-filled, consistent with walk_forward's own
+            # fillna(0.0) tolerance for missing values. Flagged in the
+            # task-10 report as the one place this module's predictions
+            # should be revisited once a real forward feature pipeline
+            # exists for the rest of FEATURE_COLUMNS.
             games = con.execute(
                 """
                 select game_id, season, game_date, home_team_id, away_team_id,
@@ -125,12 +125,19 @@ if __name__ == "__main__":
                 order by game_date, game_id
                 """
             ).df()
-            elo = compute_elo(games).set_index("game_id")
-            latest_elo: dict[int, float] = {}
-            for g in games.sort_values(["game_date", "game_id"]).itertuples(index=False):
-                pre = elo.loc[g.game_id]
-                latest_elo[g.home_team_id] = pre["home_elo_pre"]
-                latest_elo[g.away_team_id] = pre["away_elo_pre"]
+            # Seasons don't overlap and there is a months-long gap between
+            # them, so the 7-day slate window always falls inside exactly
+            # one season in practice - this is not expected to ever fire,
+            # but if the schedule ever did span two seasons in one window,
+            # taking the first would silently rate the second season's
+            # games against the wrong target season's regression.
+            target_seasons = slate["season"].unique()
+            if len(target_seasons) != 1:
+                raise ValueError(
+                    f"expected one season in the slate window, got {target_seasons!r}"
+                )
+            target_season = target_seasons[0]
+            latest_elo = current_ratings(games, target_season)
 
             rows = slate.copy()
             rows["home_elo_pre"] = rows["home_team_id"].map(latest_elo).fillna(BASE_RATING)
