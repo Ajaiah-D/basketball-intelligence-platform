@@ -64,7 +64,11 @@ if __name__ == "__main__":
     try:
         try:
             record = track_record(con)
-        except duckdb.Error:
+        except duckdb.CatalogException:
+            # The real "table doesn't exist yet" condition. A
+            # BinderException from schema drift, a ConversionException, or
+            # an IOException must still surface as a real error rather
+            # than silently reading as "nothing to score".
             record = {"n": 0}
 
         if record["n"] == 0:

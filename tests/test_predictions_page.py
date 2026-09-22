@@ -89,6 +89,19 @@ def test_renders_without_exception_when_predictions_exist(with_predictions_db):
     # The upcoming-games table renders (one settled prediction, scored,
     # feeds the track record KPIs instead of a second table).
     assert len(at.get("dataframe")) == 1
+    # Asserting only the dataframe count above would still pass if
+    # prediction_track_record() silently returned {"n": 0} (e.g. an import
+    # crash, or an over-broad exception guard swallowing a real error) and
+    # the page fell back to the early-return "no predictions settled yet"
+    # st.info - that branch renders zero dataframes too, same as this one.
+    # Check the KPI markdown actually rendered, not just that nothing
+    # raised, so this test can tell the two branches apart.
+    markdown_text = " ".join(md.value for md in at.get("markdown"))
+    assert "Accuracy" in markdown_text, (
+        "the track-record KPI branch must have rendered; if this fails "
+        "while at.exception is falsy, prediction_track_record() likely "
+        "fell back to {'n': 0} instead of returning real metrics"
+    )
 
 
 def test_renders_without_exception_when_predictions_table_is_absent(no_predictions_db):
