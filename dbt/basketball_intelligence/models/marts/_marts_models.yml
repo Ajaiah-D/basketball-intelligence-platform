@@ -55,6 +55,26 @@ models:
       - name: margin
         tests: [not_null]
 
+  - name: mart_team_standings
+    description: >
+      One row per team per season: won-loss record, scoring differential, a
+      head-to-head tiebreak and the last-five form string. Ordered by
+      win_pct, then head-to-head record against the other teams tied on
+      win_pct in the same season and conference, then point differential.
+      This is a simplification of the NBA's actual tiebreaker rules, not
+      an implementation of them - the real rulebook goes on to division
+      record, conference record and several further steps not modeled
+      here. See the model's own comment for the exact gaps.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: team_name
+        tests: [not_null]
+      - name: games_played
+        tests: [not_null]
+
   - name: mart_game_features
     description: >
       One row per game with the features a model may use before tip-off.
