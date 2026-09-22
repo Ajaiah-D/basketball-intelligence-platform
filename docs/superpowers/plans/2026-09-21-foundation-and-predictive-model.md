@@ -1691,9 +1691,11 @@ to accuracy because a confident wrong model looks fine on accuracy alone."
 
 ---
 
-## TRACK 2 — No deadline, no file overlap with Track 1
+## TRACK 2 — No deadline
 
-These touch files Track 1 never opens, so they can run on a separate branch at any time, including between Track 1 tasks.
+**Tasks 11, 12 and 13 touch files Track 1 never opens** — `.github/`, `.gitignore`, `data/fixtures/`, `README.md`, `docs/adr/`. They can run on a separate branch at any time, including concurrently with Track 1 and with each other.
+
+**Task 14 is the exception.** It modifies `dashboard/lib/db.py`, which Task 10 also modifies. Do not run them concurrently. Either finish Task 10 first, or do Task 14 before Track 1 reaches Task 10 — but not both at once, and not in parallel worktrees that merge later.
 
 ### Task 11: CI for tests only
 
