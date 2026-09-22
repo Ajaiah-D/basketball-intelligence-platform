@@ -4,7 +4,7 @@ arithmetic is pinned directly rather than only through the pipeline."""
 import pandas as pd
 import pytest
 
-from ml.elo import compute_elo, expected_score
+from ml.elo import compute_elo, current_ratings, expected_score
 
 
 def test_equal_ratings_are_a_coin_flip():
@@ -118,3 +118,53 @@ def test_missing_is_neutral_site_column_defaults_to_all_regular_games():
     assert out.set_index("game_id").loc["2", "home_elo_pre"] == pytest.approx(
         1500.0 + 20 * (1.0 - expected_score(1600.0, 1500.0))
     )
+
+
+def test_current_ratings_regresses_when_the_new_season_has_no_games_yet():
+    """Predicting opening night: as_of_season is a season with zero games in
+    `games`, so compute_elo's own season-transition regression (which only
+    fires when it processes a row FROM the new season) never runs at all.
+    A caller that read the last row of compute_elo's output for this team
+    would get 2000-01's raw, unregressed rating - current_ratings must not
+    make that mistake."""
+    games = pd.DataFrame({
+        "game_id": ["1"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01"]),
+        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+    })
+    ratings = current_ratings(games, as_of_season="2001-02")
+    adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))
+    assert ratings[10] == pytest.approx(1500.0 + 0.75 * adjustment)
+    assert ratings[20] == pytest.approx(1500.0 - 0.75 * adjustment)
+
+
+def test_current_ratings_applies_no_extra_regression_within_the_same_season():
+    """as_of_season matching the season already played must not double-apply
+    the regression on top of whatever compute_elo's own loop already did."""
+    games = pd.DataFrame({
+        "game_id": ["1"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01"]),
+        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+    })
+    ratings = current_ratings(games, as_of_season="2000-01")
+    adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))
+    assert ratings[10] == pytest.approx(1500.0 + adjustment)
+    assert ratings[20] == pytest.approx(1500.0 - adjustment)
+
+
+def test_current_ratings_is_post_game_not_pre_game():
+    """compute_elo only ever returns the rating a team held ENTERING a game.
+    Reading its last row for a team is therefore off by that one game's own
+    adjustment from the team's actual current rating - the exact off-by-one
+    current_ratings exists to fix. Pin the gap to precisely one game's
+    adjustment, with as_of_season equal to the existing season so no
+    between-season regression is in play to muddy the comparison."""
+    games = pd.DataFrame({
+        "game_id": ["1"], "season": ["2000-01"],
+        "game_date": pd.to_datetime(["2000-11-01"]),
+        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+    })
+    pre_game = compute_elo(games).set_index("game_id").loc["1", "home_elo_pre"]
+    post_game = current_ratings(games, as_of_season="2000-01")[10]
+    adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))
+    assert post_game - pre_game == pytest.approx(adjustment)
