@@ -56,9 +56,14 @@ def with_predictions_db(tmp_path, monkeypatch):
             game_status integer
         )
     """)
+    # home_points/away_points are carried here, even though the page never
+    # displays them, because the settled-predictions join filters on them:
+    # a cancelled game recorded as a 0-0 final is not a result and must not
+    # be scored against the public track record.
     con.execute("""
         create table main_marts.fct_team_game (
-            game_id varchar, margin double, home_won boolean
+            game_id varchar, margin double, home_won boolean,
+            home_points integer, away_points integer
         )
     """)
     con.execute("""
@@ -66,14 +71,22 @@ def with_predictions_db(tmp_path, monkeypatch):
             ('p1', 'ridge-v1', '2026-09-20 12:00:00', 'g_upcoming', '2026-27',
              '2026-10-21', 1610612738, 1610612747, 3.5, 0.61),
             ('p2', 'ridge-v1', '2026-09-01 12:00:00', 'g_settled', '2026-27',
-             '2026-09-05', 1610612738, 1610612747, 4.0, 0.63)
+             '2026-09-05', 1610612738, 1610612747, 4.0, 0.63),
+            ('p3', 'ridge-v1', '2026-09-01 12:00:00', 'g_no_contest', '2026-27',
+             '2026-09-06', 1610612738, 1610612747, 4.0, 0.63)
     """)
     con.execute("""
         insert into main_staging.stg_schedule values
             ('g_upcoming', '2026-10-21', 'BOS', 'NYK', 1)
     """)
+    # g_no_contest is the shape the one real cancelled game in the warehouse
+    # takes: a 0-0 "final" that never happened. A prediction exists for it
+    # (p3 above), so if the settled-predictions join ever loses its
+    # exclusion, it gets graded as a definite miss on a 0 margin.
     con.execute("""
-        insert into main_marts.fct_team_game values ('g_settled', 5.0, true)
+        insert into main_marts.fct_team_game values
+            ('g_settled', 5.0, true, 110, 105),
+            ('g_no_contest', 0.0, false, 0, 0)
     """)
     con.close()
     monkeypatch.setattr(db, "DB_PATH", path)
@@ -102,6 +115,24 @@ def test_renders_without_exception_when_predictions_exist(with_predictions_db):
         "while at.exception is falsy, prediction_track_record() likely "
         "fell back to {'n': 0} instead of returning real metrics"
     )
+
+
+def test_no_contest_game_is_not_scored_against_the_track_record(with_predictions_db):
+    """A cancelled game recorded as a 0-0 final must not be graded.
+
+    The fixture has two settled predictions, one of them for g_no_contest.
+    Only g_settled is a real result, so n must be 1. Without the
+    exclusion n is 2 and the extra row is scored as a confident miss (the
+    model said home by 4, the "actual" margin is 0 and home_won is false),
+    which drags accuracy to 0.5 and inflates Brier on a game that was
+    never played.
+    """
+    record = db.prediction_track_record()
+    assert record["n"] == 1, (
+        "g_no_contest (0-0, cancelled) was scored; the settled-predictions "
+        "join is missing its no-contest exclusion"
+    )
+    assert record["accuracy"] == 1.0
 
 
 def test_renders_without_exception_when_predictions_table_is_absent(no_predictions_db):

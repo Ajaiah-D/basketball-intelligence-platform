@@ -23,6 +23,12 @@ select p.game_id, p.model_version, p.game_date, p.predicted_margin,
 from first_prediction p
 join main_marts.fct_team_game f on f.game_id = p.game_id
 where p.attempt = 1
+  -- Same no-contest exclusion as mart_game_features.sql, ml/features.py
+  -- and ml/predict.py: a cancelled game recorded as a 0-0 final is not a
+  -- result. Without this, a real pre-tipoff prediction for a game that
+  -- never happened would be graded as a definite miss against a 0 actual
+  -- margin, quietly penalizing the public track record for it.
+  and not (f.home_points = 0 and f.away_points = 0)
 """
 
 

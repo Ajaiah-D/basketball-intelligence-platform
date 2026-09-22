@@ -495,6 +495,11 @@ _SETTLED_PREDICTIONS_SQL = """
     from first_prediction p
     join main_marts.fct_team_game f on f.game_id = p.game_id
     where p.attempt = 1
+      -- Same no-contest exclusion the rest of the pipeline applies: a
+      -- cancelled game recorded as a 0-0 final is not a result, and
+      -- grading a prediction for it would show a miss on the public
+      -- track record for a game that never happened.
+      and not (f.home_points = 0 and f.away_points = 0)
 """
 
 
