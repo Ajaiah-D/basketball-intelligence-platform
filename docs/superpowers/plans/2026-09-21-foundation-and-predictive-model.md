@@ -826,7 +826,7 @@ def compute_elo(
 
     `games` must already exclude no-contest fixtures before being passed
     in - a cancelled game recorded as a 0-0 final (confirmed instance:
-    game_id 0021201214, 2013-04-16 BOS @ IND, postponed after the Boston
+    game_id 0021201214, 2013-04-16 IND @ BOS, postponed after the Boston
     Marathon bombing) is not a real result and would corrupt both teams'
     ratings around that date if included. The filter lives in the SQL that
     builds `games` (mart_game_features.sql's valid_games CTE and
@@ -943,7 +943,7 @@ rather than a real home court."
 
 with valid_games as (
     -- Excludes no-contest fixtures: Task 4 found one cancelled game
-    -- recorded as a 0-0 final (game_id 0021201214, 2013-04-16 BOS @ IND,
+    -- recorded as a 0-0 final (game_id 0021201214, 2013-04-16 IND @ BOS,
     -- postponed after the Boston Marathon bombing). It never happened, so
     -- it must not feed anyone's rolling form or Elo. Filtered by score
     -- rather than by hardcoded game_id, since a future season could have
