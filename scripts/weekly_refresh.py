@@ -1,5 +1,11 @@
 """Weekly data refresh: ingest -> DuckDB -> payroll -> dbt -> release publish -> commit.
 
+ingest and load_duckdb are fatal - everything after them is built on what
+they produce. The payroll scrape is not: it hits a third-party site, and a
+week-old payroll parquet is a much smaller problem than the skipped
+predictions and unpublished warehouse that blocking on it used to cause.
+See main().
+
 Meant to be run by a local Windows Task Scheduler job. stats.nba.com blocks
 traffic from cloud/datacenter IP ranges (AWS, Azure, GCP, and GitHub Actions
 runners all fall in that bucket), so this can't run as a normal GitHub
@@ -106,15 +112,27 @@ def main() -> None:
         ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
     ])
 
+    # Payroll is deliberately NON-FATAL. It is the one step that scrapes a
+    # third party (Basketball-Reference), so it is also the one most likely
+    # to fail for reasons that have nothing to do with this pipeline - a
+    # rate limit, a page layout change, a bad gateway. Nothing downstream
+    # reads this week's payroll file: the warehouse still has last week's,
+    # which for a table that changes a few times a season is fine. Letting
+    # that failure block dbt, the model and the release publish traded a
+    # stale payroll number for no new predictions and an unpublished
+    # warehouse - strictly the worse outage. ingest/load_duckdb above stay
+    # fatal, because those failing means the actual game data is wrong or
+    # missing and everything after them would be built on it.
+    payroll_ok: bool | None = None  # None = never attempted (an earlier step failed)
     if ok:
         try:
             steps = payroll_steps()
         except Exception as exc:  # noqa: BLE001 - record it rather than crash the run
             run["steps"].append({"step": "payroll", "ok": False, "seconds": 0.0,
                                  "error": f"could not derive the current season/teams: {exc}"})
-            ok = False
+            payroll_ok = False
         else:
-            ok = run_steps(run, steps)
+            payroll_ok = run_steps(run, steps)
 
     if ok:
         ok = run_steps(run, [
@@ -125,6 +143,11 @@ def main() -> None:
             ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
         ])
 
+    # Not folded into run["ok"]: that flag gates the release publish below
+    # and the job's exit code, and a failed payroll fetch must stop neither.
+    # It is recorded separately (and in run["steps"]) so health_check.py can
+    # still surface it and it is not silently swallowed.
+    run["payroll_ok"] = payroll_ok
     run["ok"] = ok
     if run["ok"]:
         version_path = PROJECT_ROOT / "warehouse" / "version.txt"
@@ -144,6 +167,8 @@ def main() -> None:
     git("add", "data/last_updated.json", "logs/refresh_runs.jsonl")
     if git("diff", "--cached", "--quiet").returncode != 0:
         status = "ok" if run["ok"] else "FAILED"
+        if run["ok"] and payroll_ok is False:
+            status = "ok (payroll step failed)"
         git("commit", "-m", f"Weekly refresh: {status} {run['run_at']}")
         git("push")
 
