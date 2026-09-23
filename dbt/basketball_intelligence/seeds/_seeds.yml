@@ -1,0 +1,24 @@
+version: 2
+
+seeds:
+  - name: salary_cap_history
+    description: >
+      League-wide salary cap, luxury tax, and first/second apron thresholds by
+      season, 1984-85 (the cap's first season) through present. Hand-curated
+      from official NBA announcements, not scraped - see docs/contracts-
+      salary-cap-data-sources.md for why. luxury_tax is null before 2002-03
+      (the tax didn't exist yet); first_apron/second_apron are null before
+      2023-24 (introduced by the 2023 CBA) - both are legitimate values, not
+      missing data.
+    config:
+      column_types:
+        season: varchar
+        salary_cap: bigint
+        luxury_tax: bigint
+        first_apron: bigint
+        second_apron: bigint
+    columns:
+      - name: season
+        tests: [unique, not_null]
+      - name: salary_cap
+        tests: [not_null]
