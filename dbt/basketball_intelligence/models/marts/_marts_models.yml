@@ -98,10 +98,15 @@ models:
     description: >
       One row per team per season: payroll vs. that season's salary cap,
       luxury tax, and (2023-24 on) first/second apron thresholds.
-      payroll_likely_incomplete flags team-seasons where Basketball-
-      Reference's own source data has real gaps (verified: 1986-87 and
-      1989-90 are both affected, 1989-90 in full) - consumers should treat
-      those rows as "data not available" rather than a literal low payroll.
+      payroll_likely_incomplete flags team-seasons whose payroll figure
+      should not be read as that team's real payroll - usually because
+      Basketball-Reference's own source data has real gaps there (verified:
+      1984-85, 1986-87 and 1989-90 are all affected; 1984-85 is the single
+      largest at 23 flagged rows, and 1989-90 is affected in full).
+      payroll_incomplete_reason says which condition actually fired, because
+      they do not all mean "the source is missing data" - see that column.
+      Consumers should treat source-gap rows as "data not available" rather
+      than a literal low payroll.
     columns:
       - name: season
         tests: [not_null]
@@ -118,3 +123,26 @@ models:
         tests: [not_null]
       - name: payroll_likely_incomplete
         tests: [not_null]
+      - name: payroll_incomplete_reason
+        description: >
+          Which payroll_likely_incomplete condition fired. Null exactly when
+          payroll_likely_incomplete is false (asserted by
+          assert_team_finances_reason_matches_flag).
+
+          'no_source_data' - no salary table on the source page at all
+          (player_count 0, payroll null).
+
+          'sparse_source_data' - a salary table exists but is missing most of
+          the roster (player_count < 9), or the row is in 1984-85, a
+          whole-season source gap. Both mean Basketball-Reference's records
+          for that season are incomplete.
+
+          'below_half_cap' - the row count looks complete but the payroll is
+          under half that season's cap. Usually also a source gap, but not
+          provably one: the only row in the current 1200 reached by this arm
+          alone is 1988-89 Miami, a real, complete, genuinely cheap inaugural
+          expansion roster. Do not tell a reader the source is missing data
+          for a 'below_half_cap' season - say the number is unusually low.
+        tests:
+          - accepted_values:
+              values: ['no_source_data', 'sparse_source_data', 'below_half_cap']

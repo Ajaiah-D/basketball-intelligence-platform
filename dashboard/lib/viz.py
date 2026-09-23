@@ -468,11 +468,14 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
     """One team's payroll (solid line) against league cap/tax/apron thresholds
     (dashed reference lines) across every season in team_df.
 
-    Seasons flagged payroll_likely_incomplete (a real Basketball-Reference
-    source gap, not a display choice - see mart_team_finances's description)
-    are plotted as a gap in the payroll line, not a misleadingly low point:
-    a season where the source simply doesn't have most of a team's salaries
-    should never render as "this team spent almost nothing that year."
+    Seasons flagged payroll_likely_incomplete (a payroll figure the data
+    does not support publishing - usually a real Basketball-Reference source
+    gap, occasionally just an implausibly low total; mart_team_finances's
+    payroll_incomplete_reason says which, and views/finances.py captions the
+    two differently) are plotted as a gap in the payroll line, not a
+    misleadingly low point: a season where the source simply doesn't have
+    most of a team's salaries should never render as "this team spent almost
+    nothing that year."
     """
     payroll_y = team_df["team_payroll"].where(~team_df["payroll_likely_incomplete"])
     if payroll_y.notna().sum() == 0:
