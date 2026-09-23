@@ -9,9 +9,24 @@ Basketball-Reference publishes a 20 requests/minute rate limit; this script
 throttles to one request per 3.5 seconds (~17/min) to stay comfortably under
 it. Do not remove the sleep.
 
-Four pre-1996-97 team codes differ between this project's nba_api-derived
-codes and Basketball-Reference's own codes (Spurs, Warriors, Jazz, 76ers) -
-see LEGACY_CODE_MAP below. Every other historical code, including relocated
+Six team codes differ between this project's nba_api-derived codes and
+Basketball-Reference's own codes for part of their history (Spurs, Warriors,
+Jazz, 76ers, Bullets/Wizards, Bobcats/Hornets) - see LEGACY_CODE_MAP below;
+each entry's own cutoff season controls when the remap applies, since that
+cutoff isn't the same for every franchise, and the direction differs too:
+four switched away from a bbref-only code at 1996-97 (nba_api never emits
+those codes after that season, so the cutoff is a formality); Washington's
+Bullets-to-Wizards rename, and Basketball-Reference's matching code change,
+didn't happen until 1997-98, and nba_api never changed WAS's own code at
+all; Charlotte is the mirror image of the other four - nba_api has used
+"CHA" for this franchise continuously across the 2004 expansion and the
+2014-15 Bobcats-to-Hornets rename, but Basketball-Reference switched to
+"CHO" starting with the 2014-15 season, so the remap only starts applying
+partway through this one's history rather than ending partway through.
+Two more codes differ across every era, not just historically (Suns:
+nba_api's "PHX" vs Basketball-Reference's "PHO"; Nets since the Brooklyn
+move: nba_api's "BKN" vs Basketball-Reference's "BRK") - see
+PERMANENT_CODE_MAP below. Every other historical code, including relocated
 franchises, matches directly.
 
 Usage:
@@ -38,13 +53,45 @@ REQUEST_TIMEOUT = 30
 MAX_RETRIES = 3
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-# nba_api uses these four legacy codes for seasons before 1996-97; Basketball-
-# Reference uses the modern code for the same franchise throughout its history.
+# nba_code -> (bbref_code, last season-end-year still under that bbref_code).
+# The first four switched in nba_api's own codes at the 1996-97 season (nba_api
+# never emits "SAN" etc. after that season, so the cutoff here is a formality).
+# WAS is different: nba_api has used "WAS" for this franchise across its
+# entire history, but Basketball-Reference published pages under "WSB"
+# (Bullets) through the 1996-97 season and "WAS" (Wizards) only from the
+# 1997-98 rename onward - confirmed live (basketball-reference.com/teams/
+# WAS/1985.html 404s, WSB/1985.html 200s; WSB/1998.html 404s, WAS/1998.html
+# 200s), discovered when the real backfill (Task 3) crashed on a 404 for
+# WAS/1985.html.
 LEGACY_CODE_MAP = {
-    "SAN": "SAS",  # Spurs
-    "GOS": "GSW",  # Warriors
-    "UTH": "UTA",  # Jazz
-    "PHL": "PHI",  # 76ers
+    "SAN": ("SAS", 1996),  # Spurs
+    "GOS": ("GSW", 1996),  # Warriors
+    "UTH": ("UTA", 1996),  # Jazz
+    "PHL": ("PHI", 1996),  # 76ers
+    "WAS": ("WSB", 1997),  # Bullets -> Wizards, renamed for 1997-98
+}
+
+# nba_code -> (bbref_code, first season-end-year under that bbref_code).
+# The mirror image of LEGACY_CODE_MAP: nba_api kept "CHA" through the 2014-15
+# Bobcats-to-Hornets rename, but Basketball-Reference switched to "CHO" that
+# same season - confirmed live (basketball-reference.com/teams/CHA/2015.html
+# 404s, CHO/2015.html 200s; CHA/2014.html 200s, CHO/2014.html 404s), found
+# the same way as WAS/PHX below: the real backfill (Task 3) would have
+# crashed on this the moment it reached a post-2014-15 Hornets season.
+MODERN_CODE_MAP = {
+    "CHA": ("CHO", 2015),  # Bobcats -> Hornets, Basketball-Reference's code changed for 2014-15
+}
+
+# Unlike the codes above, these two mismatches aren't era-limited at all:
+# nba_api has used "PHX" for the Suns and "BKN" for the Nets (since the
+# Brooklyn move) across their entire respective histories in this project's
+# data, but Basketball-Reference has always published under "PHO" and "BRK"
+# - confirmed live (.../PHX/*.html and .../BKN/*.html 404 for every season
+# checked; .../PHO/*.html and .../BRK/*.html 200), discovered when the real
+# backfill (Task 3) crashed on 404s for PHX/1985.html and BKN/2013.html.
+PERMANENT_CODE_MAP = {
+    "PHX": "PHO",  # Suns
+    "BKN": "BRK",  # Nets, since the 2012-13 Brooklyn move
 }
 
 log = logging.getLogger("team_payroll_ingest")
@@ -69,8 +116,16 @@ def season_end_year(season: str) -> int:
 
 def bbref_code(nba_code: str, season: str) -> str:
     """Map this project's team code to Basketball-Reference's, for the given season."""
-    if season_end_year(season) <= 1996 and nba_code in LEGACY_CODE_MAP:
-        return LEGACY_CODE_MAP[nba_code]
+    if nba_code in PERMANENT_CODE_MAP:
+        return PERMANENT_CODE_MAP[nba_code]
+    if nba_code in LEGACY_CODE_MAP:
+        legacy_bbref_code, last_end_year = LEGACY_CODE_MAP[nba_code]
+        if season_end_year(season) <= last_end_year:
+            return legacy_bbref_code
+    if nba_code in MODERN_CODE_MAP:
+        modern_bbref_code, first_end_year = MODERN_CODE_MAP[nba_code]
+        if season_end_year(season) >= first_end_year:
+            return modern_bbref_code
     return nba_code
 
 
