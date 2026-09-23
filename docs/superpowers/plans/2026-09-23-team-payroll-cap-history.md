@@ -363,7 +363,10 @@ def test_parse_salary_table_total_matches_known_payroll():
     html = FIXTURE.read_text(encoding="utf-8")
     rows = parse_salary_table(html)
     total = sum(r["salary_usd"] for r in rows)
-    assert total == 61586674  # verified by hand-summing the fixture's 14 rows
+    assert total == 83552174  # verified by hand-summing the fixture's 14 rows
+    # (an earlier draft of this plan mis-summed these 14 values by hand as
+    # 61,586,674 - Task 2's implementer caught and corrected it against the
+    # real fixture; this is the correct total)
 
 
 def test_parse_salary_table_empty_page_returns_empty_list():
@@ -713,7 +716,7 @@ df = pd.read_parquet('data/raw/team_payroll/2009-10.parquet')
 print(df[df.team_abbreviation == 'BOS'])
 "
 ```
-Expected: one row, `team_payroll` close to `61586674` (the fixture-verified 2009-10 Celtics
+Expected: one row, `team_payroll` close to `83552174` (the fixture-verified 2009-10 Celtics
 total from Task 2's test) - it may differ slightly if the live page has since been corrected by
 Basketball-Reference, but should not be wildly different (e.g. not off by an order of magnitude,
 which would indicate a parsing or team-code bug).
@@ -906,9 +909,10 @@ Create `dbt/basketball_intelligence/tests/assert_team_finances_known_tax_case.sq
 
 ```sql
 -- The 2009-10 Boston Celtics are a real, well-documented luxury-tax-paying
--- team (team_payroll ~$61.6M against a $57.7M luxury tax line that season -
+-- team (team_payroll ~$83.55M against a $69.92M luxury tax line that season -
 -- see docs/superpowers/plans/2026-09-23-team-payroll-cap-history.md's Task 2
--- fixture, which verifies the payroll figure by hand-summing the real page).
+-- fixture, which verifies the payroll figure by hand-summing the real page,
+-- and Task 1's seed for the tax line).
 -- If this row isn't flagged over_tax, either the payroll ingestion or the
 -- mart's comparison logic is wrong.
 select season, team_abbreviation, team_payroll, luxury_tax, over_tax
