@@ -68,7 +68,7 @@ select
     c.luxury_tax,
     c.first_apron,
     c.second_apron,
-    round(p.team_payroll / c.salary_cap, 3)          as payroll_pct_of_cap,
+    round(p.team_payroll / (1.0 * c.salary_cap), 3)  as payroll_pct_of_cap,
     coalesce(p.player_count < 9
              or p.team_payroll < (0.5 * c.salary_cap)
              or p.season = '1984-85', true)
