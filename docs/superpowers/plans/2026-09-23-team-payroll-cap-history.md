@@ -807,9 +807,11 @@ git commit -m "Backfill historical team payroll and wire current season into wee
 - Create: `dbt/basketball_intelligence/tests/assert_team_finances_flags_incomplete_payroll.sql`
 
 **Interfaces:**
-- Consumes: `raw.team_payroll` (Task 3's parquet output, loaded by the existing
-  `scripts/load_to_duckdb.py` with no changes needed - it auto-discovers any `data/raw/*/`
-  directory), `main.salary_cap_history` (Task 1's seed).
+- Consumes: `raw.team_payroll` (Task 3's parquet output, loaded into the warehouse by running
+  the existing `scripts/load_to_duckdb.py` - no code changes needed there, it auto-discovers
+  any `data/raw/*/` directory, but it does need to actually be **run** once against Task 3's
+  output before this task's dbt models exist to select from - see Step 5), `main.salary_cap_history`
+  (Task 1's seed).
 - Produces: `main_marts.mart_team_finances` with columns `season varchar, team_abbreviation
   varchar, team_payroll bigint, player_count integer, salary_cap bigint, luxury_tax bigint,
   first_apron bigint, second_apron bigint, payroll_pct_of_cap double,
@@ -916,21 +918,31 @@ Create `dbt/basketball_intelligence/models/marts/mart_team_finances.sql`:
 -- false.
 --
 -- payroll_likely_incomplete marks a team-season whose payroll figure should
--- not be read as that team's real payroll, because Basketball-Reference's
--- historical salary data has genuine holes (1986-87 Denver's source page has
--- exactly one salaried player for the whole team; every 1989-90 team has at
--- most six). Two independent conditions, either of which is enough:
+-- not be read as that team's real payroll. Two independent conditions,
+-- either of which is enough:
 --
 --   1. player_count < 8 - a directly observed fact: a total summed from
---      fewer than eight players is not a roster, whatever it adds up to. An
---      NBA roster is 12-15; healthy seasons in this data run 11-21 rows.
+--      fewer than eight players is not a roster, whatever it adds up to.
+--      Across this backfill's non-gap seasons, real row counts run 9-39
+--      (1998-99 HOU's lockout-shortened roster is the thinnest real one, at
+--      9; 89% of non-gap rows fall in 11-21) - so 8 sits exactly one row
+--      below the lowest genuine case found. Don't nudge this threshold up
+--      without re-checking that margin.
 --   2. payroll < 0.5 * that season's cap - a backstop for a season that has
---      a full-looking row count but implausible money.
+--      a full-looking row count but implausible money. This arm is a proxy,
+--      not a certainty: it also flags 1988-89 Miami (13 real players, 47%
+--      of that year's cap) - a genuinely cheap first-year expansion roster,
+--      not a source gap. Reads as "don't trust this number," which is still
+--      the right call for an inaugural-season roster, but it's a different
+--      kind of "incomplete" than the source-gap cases below.
 --
--- Condition 1 is the one that matters, and is why this is not just a ratio
--- check: in 1989-90, eleven teams clear 0.5x cap (52%-92%) on only 3-6
--- player rows, so the ratio alone would pass them through as real. A null
--- payroll (player_count 0) is incomplete by definition.
+-- Condition 1 is the one that matters for the two real source gaps this
+-- backfill found: Basketball-Reference's historical salary data has genuine
+-- holes in 1986-87 (Denver's page has exactly one salaried player for the
+-- whole team) and 1989-90 (every team has at most six rows). In 1989-90,
+-- eleven teams clear 0.5x cap (52%-92%) on only 3-6 player rows, so the
+-- ratio alone would pass them through as real - only player_count catches
+-- them. A null payroll (player_count 0) is incomplete by definition.
 --
 -- Both are general rules, not a hardcoded "skip 1986-87/1989-90", so a
 -- future re-scrape that introduces a new gap is caught without another
@@ -1063,7 +1075,10 @@ This test also fails if the three rows aren't present at all, which is the point
 returning 0 rows because a row is missing would pass vacuously, so also confirm the mart actually
 has 1200 team-seasons (42 seasons, every active franchise) before trusting a green run here.
 
-Run: `dbt seed --profiles-dir .` then `dbt run --select stg_team_payroll mart_team_finances --profiles-dir .` then `dbt test --select stg_team_payroll mart_team_finances assert_mart_grain_is_unique assert_team_finances_known_tax_case assert_team_finances_flags_incomplete_payroll --profiles-dir .` (all from `dbt/basketball_intelligence`)
+Run, from the repo root, `python scripts/load_to_duckdb.py` first - Task 3's backfill wrote
+`data/raw/team_payroll/*.parquet`, but nothing loads it into `raw.team_payroll` until this runs;
+skipping it means `stg_team_payroll` errors on a missing source. Then, from
+`dbt/basketball_intelligence`: `dbt seed --profiles-dir .` then `dbt run --select stg_team_payroll mart_team_finances --profiles-dir .` then `dbt test --select stg_team_payroll mart_team_finances assert_mart_grain_is_unique assert_team_finances_known_tax_case assert_team_finances_flags_incomplete_payroll --profiles-dir .`
 Expected: all PASS, 0 rows from each test query. If `assert_team_finances_known_tax_case` fails,
 check Task 1's 2005-06/2013-14/2026-27 anchor rows are intact and Task 3's backfill actually
 produced a 2009-10 BOS row before assuming the mart logic itself is wrong. If
