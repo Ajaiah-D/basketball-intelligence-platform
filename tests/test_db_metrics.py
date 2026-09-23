@@ -6,7 +6,10 @@ deliberate, but it lets the two implementations drift - these tests pin
 them together.
 """
 
+import duckdb
 import pytest
+
+from dashboard.lib import db
 
 # Seasons where a meaningful share of player-game rows have a null in one
 # of the three columns the true-shooting ratio sums. Not every player in
@@ -120,3 +123,91 @@ def test_true_shooting_matches_mart_when_box_score_complete(con):
     assert len(rows) > 100, "expected a substantial overlap to compare"
     mismatches = [r for r in rows if abs(r[1] - r[2]) > 0.05]
     assert not mismatches, f"app/mart TS% drift: {mismatches[:5]}"
+
+
+# --- Finances page coverage ----------------------------------------------------
+#
+# Same isolated-tmp-warehouse pattern as test_predictions_page.py's
+# no_predictions_db/with_predictions_db: a fresh DuckDB file per fixture,
+# db.DB_PATH monkeypatched onto it, and the two db.py caches (q, and the
+# relevant *_available()) cleared before and after so a stale hit from one
+# test's warehouse can't leak into the next test's assertions against a
+# different one.
+
+def _reset_finances_cache() -> None:
+    db.q.clear()
+    db.team_finances_available.clear()
+
+
+@pytest.fixture
+def tmp_warehouse_without_marts(tmp_path, monkeypatch):
+    """A warehouse file with no main_marts schema at all - the state of a
+    warehouse published before mart_team_finances existed."""
+    path = tmp_path / "no_marts.duckdb"
+    duckdb.connect(str(path)).close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    _reset_finances_cache()
+    yield path
+    _reset_finances_cache()
+
+
+@pytest.fixture
+def warehouse_with_finances_mart(tmp_path, monkeypatch):
+    """A warehouse with a minimal main_marts.mart_team_finances and
+    main.salary_cap_history - enough to exercise team_payroll_history() and
+    salary_cap_history() without touching the real warehouse."""
+    path = tmp_path / "with_finances.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute("create schema main_marts")
+    con.execute("""
+        create table main.salary_cap_history (
+            season varchar, salary_cap bigint, luxury_tax bigint,
+            first_apron bigint, second_apron bigint
+        )
+    """)
+    con.execute("""
+        create table main_marts.mart_team_finances (
+            season varchar, team_abbreviation varchar, team_payroll bigint,
+            player_count integer, salary_cap bigint, luxury_tax bigint,
+            first_apron bigint, second_apron bigint, payroll_pct_of_cap double,
+            payroll_likely_incomplete boolean, over_cap boolean, over_tax boolean,
+            over_first_apron boolean, over_second_apron boolean
+        )
+    """)
+    # 2022-23 predates the apron rules (first_apron/second_apron null, same
+    # as salary_cap_history's real seed for that season); 2023-24 has both.
+    con.execute("""
+        insert into main.salary_cap_history values
+            ('2022-23', 123655000, 150267000, NULL, NULL),
+            ('2023-24', 136021000, 165294000, 172346000, 182794000)
+    """)
+    con.execute("""
+        insert into main_marts.mart_team_finances values
+            ('2022-23', 'BOS', 178000000, 15, 123655000, 150267000, NULL, NULL,
+             1.440, false, true, true, NULL, NULL),
+            ('2023-24', 'BOS', 185000000, 15, 136021000, 165294000, 172346000, 182794000,
+             1.360, false, true, true, true, false),
+            ('2023-24', 'NYK', 150000000, 14, 136021000, 165294000, 172346000, 182794000,
+             1.103, false, true, false, false, false)
+    """)
+    con.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    _reset_finances_cache()
+    yield path
+    _reset_finances_cache()
+
+
+def test_team_finances_available_false_before_mart_exists(tmp_warehouse_without_marts):
+    assert db.team_finances_available() is False
+
+
+def test_team_payroll_history_filters_by_team(warehouse_with_finances_mart):
+    df = db.team_payroll_history(team="BOS")
+    assert (df["team_abbreviation"] == "BOS").all()
+    assert len(df) > 0
+
+
+def test_salary_cap_history_has_no_apron_before_2023_24(warehouse_with_finances_mart):
+    df = db.salary_cap_history()
+    pre_apron = df[df["season"] < "2023-24"]
+    assert pre_apron["first_apron"].isna().all()
