@@ -31,3 +31,11 @@ sources:
           Full published schedule including unplayed games (ScheduleLeagueV2).
           Re-fetched every run for the current season since postponements and
           rescheduling change it.
+      - name: team_payroll
+        description: >
+          Team payroll totals by season, 1984-85 on, scraped from Basketball-
+          Reference by ingestion/team_payroll_ingest.py. One row per team per
+          season, for every team active that season. team_payroll is null (never
+          0) where the source page has no salary table; player_count records how
+          many player rows the total was summed from, so an incomplete season is
+          an observed fact rather than something inferred from the cap ratio.

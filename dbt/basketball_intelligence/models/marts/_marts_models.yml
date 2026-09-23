@@ -93,3 +93,28 @@ models:
         tests: [not_null]
       - name: game_date
         tests: [not_null]
+
+  - name: mart_team_finances
+    description: >
+      One row per team per season: payroll vs. that season's salary cap,
+      luxury tax, and (2023-24 on) first/second apron thresholds.
+      payroll_likely_incomplete flags team-seasons where Basketball-
+      Reference's own source data has real gaps (verified: 1986-87 and
+      1989-90 are both affected, 1989-90 in full) - consumers should treat
+      those rows as "data not available" rather than a literal low payroll.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_abbreviation
+        tests: [not_null]
+      - name: team_payroll
+        description: >
+          Nullable: 9 team-seasons have no salary table at all in the source.
+          Not not_null tested for that reason - use payroll_likely_incomplete
+          (or player_count) to decide whether a value is trustworthy.
+      - name: player_count
+        tests: [not_null]
+      - name: salary_cap
+        tests: [not_null]
+      - name: payroll_likely_incomplete
+        tests: [not_null]
