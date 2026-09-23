@@ -1,3 +1,8 @@
+-- CI note: this row (1998-99 HOU) is NOT in CI's reduced fixture set (see
+-- assert_team_finances_flags_incomplete_payroll.sql for the same caveat) -
+-- this test passes vacuously in CI and only earns its keep against a full
+-- local warehouse.
+--
 -- The mirror image of assert_team_finances_flags_incomplete_payroll: a real,
 -- legitimate team-season that must NOT come out flagged, so a future edit
 -- that further tightens player_count (or widens the 1984-85 exception)

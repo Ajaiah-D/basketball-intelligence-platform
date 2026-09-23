@@ -2,6 +2,14 @@
 -- exercises a different arm of the rule, so a regression in any arm fails
 -- here rather than on a public chart:
 --
+-- CI note: CI builds from a reduced fixture set covering only 1984-85 and
+-- 2024-25 (see .github/workflows/tests.yml and data/fixtures/team_payroll/).
+-- Only the 1984-85 NYK case below is present in that warehouse; the other
+-- three rows don't exist there, so this test passes vacuously for them in
+-- CI (an empty WHERE match, not a real assertion). It still runs for real
+-- against all four cases on a full local warehouse, which is where this
+-- test actually earns its keep.
+--
 --   1986-87 DEN - one salaried player on record (Mike Evans, $75,000).
 --                 Caught by both the ratio and the row count.
 --   1989-90 BOS - $5,950,000 from THREE player rows, which is 61% of that
