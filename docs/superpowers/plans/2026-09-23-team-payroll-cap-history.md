@@ -804,6 +804,7 @@ git commit -m "Backfill historical team payroll and wire current season into wee
   `mart_team_finances` entry)
 - Modify: `dbt/basketball_intelligence/tests/assert_mart_grain_is_unique.sql` (add a 4th branch)
 - Create: `dbt/basketball_intelligence/tests/assert_team_finances_known_tax_case.sql`
+- Create: `dbt/basketball_intelligence/tests/assert_team_finances_flags_incomplete_payroll.sql`
 
 **Interfaces:**
 - Consumes: `raw.team_payroll` (Task 3's parquet output, loaded by the existing
@@ -811,9 +812,23 @@ git commit -m "Backfill historical team payroll and wire current season into wee
   directory), `main.salary_cap_history` (Task 1's seed).
 - Produces: `main_marts.mart_team_finances` with columns `season varchar, team_abbreviation
   varchar, team_payroll bigint, salary_cap bigint, luxury_tax bigint, first_apron bigint,
-  second_apron bigint, payroll_pct_of_cap double, over_cap boolean, over_tax boolean,
-  over_first_apron boolean, over_second_apron boolean` - one row per team-season. Task 5's
-  `dashboard/lib/db.py` queries this exact shape.
+  second_apron bigint, payroll_pct_of_cap double, payroll_likely_incomplete boolean,
+  over_cap boolean, over_tax boolean, over_first_apron boolean, over_second_apron boolean` -
+  one row per team-season. Task 5's `dashboard/lib/db.py` queries this exact shape.
+
+**A real, verified data gap this task's mart must handle honestly:** Task 3's completed backfill
+surfaced a genuine Basketball-Reference source gap, not a scraper bug - the 1986-87 season's
+"Salaries Table" is severely incomplete on their site for most teams that year (confirmed by
+reading the live page directly: 1986-87 Denver's table has exactly one player row, Mike Evans at
+$75,000, for the entire team - not a parsing failure, that's genuinely everything the page has).
+11 of 1986-87's 17 available teams come in under 50% of that season's $4,945,000 cap, which no
+real full-roster payroll would do; every other season in the backfill looks plausible against its
+own cap. A chart or table that presented 1986-87 Denver's payroll as a real $75,000 figure
+alongside neighboring seasons in the multi-million range would be actively misleading, not just
+imprecise - this needs a flag, not just the existing early-era caption. `payroll_likely_incomplete`
+below is a general, principled rule (not a hardcoded "skip 1986-87" special case) so it also
+catches any other similarly-gapped team-season already in the data or introduced by a future
+re-scrape, without needing another manual audit to find it.
 
 - [ ] **Step 1: Add the raw source**
 
@@ -870,6 +885,15 @@ Create `dbt/basketball_intelligence/models/marts/mart_team_finances.sql`:
 -- description) - the corresponding over_* flag is null for those rows too,
 -- not false, since "over a threshold that didn't exist" is not a meaningful
 -- false.
+--
+-- payroll_likely_incomplete flags a team-season whose payroll is
+-- implausibly low against that season's own cap (under half of it) - real
+-- teams don't run rosters that cheap even in a bad year. This exists
+-- because Basketball-Reference's own historical salary data has real gaps
+-- (verified directly: 1986-87 Denver's source page has exactly one salaried
+-- player on record for the whole team) - not a scraper bug, a genuine hole
+-- in the source. The 0.5 threshold is deliberately conservative so it
+-- doesn't false-positive on a real, merely cheap roster.
 
 with payroll as (
     select * from {{ ref('stg_team_payroll') }}
@@ -888,6 +912,7 @@ select
     c.first_apron,
     c.second_apron,
     round(p.team_payroll / c.salary_cap, 3)          as payroll_pct_of_cap,
+    p.team_payroll < (0.5 * c.salary_cap)            as payroll_likely_incomplete,
     p.team_payroll > c.salary_cap                    as over_cap,
     case when c.luxury_tax is not null
          then p.team_payroll > c.luxury_tax end       as over_tax,
@@ -907,6 +932,10 @@ Add to `dbt/basketball_intelligence/models/marts/_marts_models.yml` (matching
     description: >
       One row per team per season: payroll vs. that season's salary cap,
       luxury tax, and (2023-24 on) first/second apron thresholds.
+      payroll_likely_incomplete flags team-seasons where Basketball-
+      Reference's own source data has real gaps (verified: 1986-87 is the
+      worst-affected season) - consumers should treat those rows as "data
+      not available" rather than a literal low payroll.
     columns:
       - name: season
         tests: [not_null]
@@ -915,6 +944,8 @@ Add to `dbt/basketball_intelligence/models/marts/_marts_models.yml` (matching
       - name: team_payroll
         tests: [not_null]
       - name: salary_cap
+        tests: [not_null]
+      - name: payroll_likely_incomplete
         tests: [not_null]
 ```
 
@@ -956,10 +987,27 @@ where season = '2009-10'
   and (over_tax is distinct from true)
 ```
 
-Run: `dbt seed --profiles-dir .` then `dbt run --select stg_team_payroll mart_team_finances --profiles-dir .` then `dbt test --select stg_team_payroll mart_team_finances assert_mart_grain_is_unique assert_team_finances_known_tax_case --profiles-dir .` (all from `dbt/basketball_intelligence`)
+Create a second negative-control test, `dbt/basketball_intelligence/tests/assert_team_finances_flags_incomplete_payroll.sql`, against the real gap Task 3's backfill found (verified directly against the live Basketball-Reference page, not a guess - see this task's own Interfaces section above):
+
+```sql
+-- 1986-87 Denver has exactly one salaried player on record on Basketball-
+-- Reference's own page for that team-season (Mike Evans, $75,000) - a real,
+-- verified source gap, not a scraper bug. If this row isn't flagged
+-- payroll_likely_incomplete, the mart's completeness heuristic is broken.
+select season, team_abbreviation, team_payroll, salary_cap, payroll_likely_incomplete
+from {{ ref('mart_team_finances') }}
+where season = '1986-87'
+  and team_abbreviation = 'DEN'
+  and (payroll_likely_incomplete is distinct from true)
+```
+
+Run: `dbt seed --profiles-dir .` then `dbt run --select stg_team_payroll mart_team_finances --profiles-dir .` then `dbt test --select stg_team_payroll mart_team_finances assert_mart_grain_is_unique assert_team_finances_known_tax_case assert_team_finances_flags_incomplete_payroll --profiles-dir .` (all from `dbt/basketball_intelligence`)
 Expected: all PASS, 0 rows from each test query. If `assert_team_finances_known_tax_case` fails,
 check Task 1's 2005-06/2013-14/2026-27 anchor rows are intact and Task 3's backfill actually
-produced a 2009-10 BOS row before assuming the mart logic itself is wrong.
+produced a 2009-10 BOS row before assuming the mart logic itself is wrong. If
+`assert_team_finances_flags_incomplete_payroll` fails, confirm Task 3's backfill actually wrote
+`data/raw/team_payroll/1986-87.parquet` with DEN's real (implausibly low) figure before assuming
+the mart's threshold logic is wrong.
 
 - [ ] **Step 6: Commit**
 
@@ -970,7 +1018,8 @@ git add dbt/basketball_intelligence/models/staging/stg_team_payroll.sql \
         dbt/basketball_intelligence/models/marts/mart_team_finances.sql \
         dbt/basketball_intelligence/models/marts/_marts_models.yml \
         dbt/basketball_intelligence/tests/assert_mart_grain_is_unique.sql \
-        dbt/basketball_intelligence/tests/assert_team_finances_known_tax_case.sql
+        dbt/basketball_intelligence/tests/assert_team_finances_known_tax_case.sql \
+        dbt/basketball_intelligence/tests/assert_team_finances_flags_incomplete_payroll.sql
 git commit -m "Add mart_team_finances: team payroll vs. cap/tax/apron thresholds"
 ```
 
@@ -1038,11 +1087,19 @@ not the generic `quick_chart` dev-tool builder):
 ```python
 def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figure:
     """One team's payroll (solid line) against league cap/tax/apron thresholds
-    (dashed reference lines) across every season in team_df."""
+    (dashed reference lines) across every season in team_df.
+
+    Seasons flagged payroll_likely_incomplete (a real Basketball-Reference
+    source gap, not a display choice - see mart_team_finances's description)
+    are plotted as a gap in the payroll line, not a misleadingly low point:
+    a season where the source simply doesn't have most of a team's salaries
+    should never render as "this team spent almost nothing that year."
+    """
     fig = go.Figure()
+    payroll_y = team_df["team_payroll"].where(~team_df["payroll_likely_incomplete"])
     fig.add_scatter(
-        x=team_df["season"], y=team_df["team_payroll"], name="Team payroll",
-        mode="lines+markers", line=dict(color=T.ACCENT, width=2),
+        x=team_df["season"], y=payroll_y, name="Team payroll",
+        mode="lines+markers", line=dict(color=T.ACCENT, width=2), connectgaps=False,
     )
     thresholds = [
         ("salary_cap", "Salary cap", T.SERIES[1]),
@@ -1107,13 +1164,23 @@ def render() -> None:
             "records - treat early-era numbers as directionally right, not exact."
         )
 
+    incomplete_seasons = team_df.loc[team_df["payroll_likely_incomplete"], "season"].tolist()
+    if incomplete_seasons:
+        st.caption(
+            f"No reliable payroll total exists for {', '.join(incomplete_seasons)} - "
+            "Basketball-Reference's own salary records for that season are missing "
+            "most of the roster, not just this team. Shown as a gap in the chart "
+            "below rather than a low number."
+        )
+
     st.plotly_chart(viz.team_finances_trend(team_df, cap_df), use_container_width=True,
                     config=viz.PLOTLY_CONFIG)
 
     st.dataframe(
         team_df[["season", "team_payroll", "salary_cap", "luxury_tax",
                 "first_apron", "second_apron", "payroll_pct_of_cap",
-                "over_cap", "over_tax", "over_first_apron", "over_second_apron"]],
+                "payroll_likely_incomplete", "over_cap", "over_tax",
+                "over_first_apron", "over_second_apron"]],
         hide_index=True, use_container_width=True,
     )
 
