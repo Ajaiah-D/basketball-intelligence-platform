@@ -93,12 +93,34 @@ Two genuinely different kinds of data, sourced two different ways:
   actually paid luxury tax) rather than only synthetic data — same verification standard applied
   throughout this project's existing test suite.
 
-## Open technical unknown, to resolve during implementation
+## Resolved: Basketball-Reference page structure (confirmed 2026-09-23)
 
-Basketball-Reference's exact page structure for historical team-by-season payroll totals is
-**not yet confirmed** — the design above describes the target shape (one row per team-season),
-not a confirmed source URL/table. The first implementation task is a short, time-boxed spike to
-nail this down; if the real page structure turns out to be meaningfully harder to parse than
-expected (e.g., payroll only derivable by summing individual player contract pages per team per
-season, at ~30x the request volume), that should come back as a finding before the rest of the
-plan proceeds, not be silently absorbed.
+The spike ran during plan-writing, against real fetched pages (not assumed):
+
+- **`/contracts/{TEAM}.html` (the page named in the original research pass) is forward-looking
+  only** — current season + up to 5 future years, no historical access via a `?year=` param
+  (tested and ignored). Not usable for history; ruled out.
+- **The real source is `https://www.basketball-reference.com/teams/{BBREF_CODE}/{END_YEAR}.html`**
+  (`END_YEAR` = the season's second calendar year, e.g. season "1984-85" → `1985`) — each
+  team-season's own page, confirmed working back to 1985 (Larry Bird's 1984-85 Celtics salary
+  is on this exact page, table id `salaries2`, caption "Salaries Table"). One request per
+  team-season.
+- Each row is `<td data-stat="salary" csk="1800000">$1,800,000</td>` per player — the `csk`
+  attribute carries the raw integer, no currency-string parsing needed. **No team-totals footer
+  row exists on this table** — team payroll is the sum of that season's player rows, computed
+  by the ingestion script, not read off the page.
+- **Team-code mapping, verified against the project's own existing historical franchise-code
+  list** (already sitting in `raw.team_game_logs`/`fct_team_game` from `nba_api` — 42 distinct
+  codes across relocations, not just the 30 current franchises in `raw.teams`): confirmed by
+  direct fetch that Basketball-Reference's codes match this project's nba_api-derived codes
+  **except** for four pre-1996-97 legacy codes, which need an explicit mapping:
+  - `SAN` (nba_api, Spurs pre-1996-97) → `SAS` on Basketball-Reference
+  - `GOS` (nba_api, Warriors pre-1996-97) → `GSW`
+  - `UTH` (nba_api, Jazz pre-1996-97) → `UTA`
+  - `PHL` (nba_api, 76ers pre-1996-97) → `PHI`
+  Every other historical code checked matches directly, including the trickier relocation cases
+  (`SDC`, `KCK`, `SEA`, `VAN`, `NJN`, `CHH`, `NOH`, and the Katrina-relocation `NOK` seasons,
+  which Basketball-Reference also splits out separately rather than folding into `NOH`).
+
+This removes the open unknown from the original design — the ingestion task below is written
+against confirmed source behavior, not an assumption.
