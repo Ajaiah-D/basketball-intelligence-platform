@@ -153,8 +153,10 @@ python ingestion\nba_ingest.py --backfill 1979-80 --pbp-games 0
 # 3. Load raw parquet into DuckDB
 python scripts\load_to_duckdb.py
 
-# 4. Build and test dbt models
+# 4. Build and test dbt models (seed first - the salary cap/tax/apron
+#    reference table is hand-curated data, not derived from a raw source)
 cd dbt\basketball_intelligence
+dbt seed --profiles-dir .
 dbt run --profiles-dir .
 dbt test --profiles-dir .
 cd ..\..

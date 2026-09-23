@@ -31,6 +31,7 @@ jobs:
       - name: dbt build
         working-directory: dbt/basketball_intelligence
         run: |
+          dbt seed --profiles-dir .
           dbt run --profiles-dir .
           dbt test --profiles-dir .
 
