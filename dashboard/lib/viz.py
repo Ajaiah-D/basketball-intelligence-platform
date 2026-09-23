@@ -474,11 +474,19 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
     a season where the source simply doesn't have most of a team's salaries
     should never render as "this team spent almost nothing that year."
     """
-    fig = go.Figure()
     payroll_y = team_df["team_payroll"].where(~team_df["payroll_likely_incomplete"])
+    if payroll_y.notna().sum() == 0:
+        # A short-lived franchise whose only season(s) on record are all
+        # flagged incomplete (e.g. KCK, one real season, that season
+        # flagged) - an empty axis box would look broken; say why instead.
+        return _empty("No reliable payroll data for this team - every "
+                      "season on record has an incomplete source figure.")
+
+    fig = go.Figure()
     fig.add_scatter(
         x=team_df["season"], y=payroll_y, name="Team payroll",
         mode="lines+markers", line=dict(color=T.ACCENT, width=2), connectgaps=False,
+        hovertemplate="%{x}<br>$%{y:,.0f}<extra>Team payroll</extra>",
     )
     thresholds = [
         ("salary_cap", "Salary cap", T.SERIES[1]),
@@ -492,6 +500,7 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
             fig.add_scatter(
                 x=merged["season"], y=merged[col], name=label,
                 mode="lines", line=dict(color=color, width=1.5, dash="dash"),
+                hovertemplate="%{x}<br>$%{y:,.0f}<extra>" + label + "</extra>",
             )
     fig.update_layout(**_layout(height=420, showlegend=True))
     # Season labels like "1984-85" parse as dates unless forced categorical -

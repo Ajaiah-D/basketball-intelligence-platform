@@ -444,10 +444,17 @@ def marts_available() -> bool:
 def team_finances_available() -> bool:
     """Whether mart_team_finances exists in the warehouse - same guard pattern
     as marts_available()/predictions_available(), for a warehouse published
-    before this feature shipped."""
+    before this feature shipped.
+
+    Also probes main.salary_cap_history: finances.py's render() calls
+    salary_cap_history() unconditionally right after this check passes, so
+    this guard has to cover both objects the page actually reads, not just
+    the mart, or a warehouse missing just the seed would still crash past
+    this check."""
     try:
         with duckdb.connect(str(DB_PATH), read_only=True) as con:
             con.execute("select 1 from main_marts.mart_team_finances limit 1")
+            con.execute("select 1 from main.salary_cap_history limit 1")
         return True
     except (duckdb.Error, OSError):
         return False
