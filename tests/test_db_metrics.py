@@ -127,75 +127,10 @@ def test_true_shooting_matches_mart_when_box_score_complete(con):
 
 # --- Finances page coverage ----------------------------------------------------
 #
-# Same isolated-tmp-warehouse pattern as test_predictions_page.py's
-# no_predictions_db/with_predictions_db: a fresh DuckDB file per fixture,
-# db.DB_PATH monkeypatched onto it, and the two db.py caches (q, and the
-# relevant *_available()) cleared before and after so a stale hit from one
-# test's warehouse can't leak into the next test's assertions against a
-# different one.
-
-def _reset_finances_cache() -> None:
-    db.q.clear()
-    db.team_finances_available.clear()
-
-
-@pytest.fixture
-def tmp_warehouse_without_marts(tmp_path, monkeypatch):
-    """A warehouse file with no main_marts schema at all - the state of a
-    warehouse published before mart_team_finances existed."""
-    path = tmp_path / "no_marts.duckdb"
-    duckdb.connect(str(path)).close()
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_finances_cache()
-    yield path
-    _reset_finances_cache()
-
-
-@pytest.fixture
-def warehouse_with_finances_mart(tmp_path, monkeypatch):
-    """A warehouse with a minimal main_marts.mart_team_finances and
-    main.salary_cap_history - enough to exercise team_payroll_history() and
-    salary_cap_history() without touching the real warehouse."""
-    path = tmp_path / "with_finances.duckdb"
-    con = duckdb.connect(str(path))
-    con.execute("create schema main_marts")
-    con.execute("""
-        create table main.salary_cap_history (
-            season varchar, salary_cap bigint, luxury_tax bigint,
-            first_apron bigint, second_apron bigint
-        )
-    """)
-    con.execute("""
-        create table main_marts.mart_team_finances (
-            season varchar, team_abbreviation varchar, team_payroll bigint,
-            player_count integer, salary_cap bigint, luxury_tax bigint,
-            first_apron bigint, second_apron bigint, payroll_pct_of_cap double,
-            payroll_likely_incomplete boolean, over_cap boolean, over_tax boolean,
-            over_first_apron boolean, over_second_apron boolean
-        )
-    """)
-    # 2022-23 predates the apron rules (first_apron/second_apron null, same
-    # as salary_cap_history's real seed for that season); 2023-24 has both.
-    con.execute("""
-        insert into main.salary_cap_history values
-            ('2022-23', 123655000, 150267000, NULL, NULL),
-            ('2023-24', 136021000, 165294000, 172346000, 182794000)
-    """)
-    con.execute("""
-        insert into main_marts.mart_team_finances values
-            ('2022-23', 'BOS', 178000000, 15, 123655000, 150267000, NULL, NULL,
-             1.440, false, true, true, NULL, NULL),
-            ('2023-24', 'BOS', 185000000, 15, 136021000, 165294000, 172346000, 182794000,
-             1.360, false, true, true, true, false),
-            ('2023-24', 'NYK', 150000000, 14, 136021000, 165294000, 172346000, 182794000,
-             1.103, false, true, false, false, false)
-    """)
-    con.close()
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_finances_cache()
-    yield path
-    _reset_finances_cache()
-
+# The tmp_warehouse_without_marts / warehouse_with_finances_mart fixtures
+# these use live in conftest.py, because tests/test_finances_page.py drives
+# the same page end-to-end against the same warehouse shape and the two
+# definitions would otherwise drift apart.
 
 def test_team_finances_available_false_before_mart_exists(tmp_warehouse_without_marts):
     assert db.team_finances_available() is False
@@ -205,6 +140,44 @@ def test_team_payroll_history_filters_by_team(warehouse_with_finances_mart):
     df = db.team_payroll_history(team="BOS")
     assert (df["team_abbreviation"] == "BOS").all()
     assert len(df) > 0
+
+
+def test_team_payroll_history_merges_a_renamed_franchise(warehouse_with_finances_mart):
+    """GOS and GSW are one franchise under nba_api's 1996-97 code rename, so
+    asking for GSW must return the GOS seasons too.
+
+    Before this, the Finances page - whose whole point is 42 years of one
+    team's history - listed the two halves as separate teams and silently
+    started the Warriors chart in 1996-97. Asserting both codes come back
+    (not just a row count) is what would catch a regression that resolved
+    the franchise but then filtered them back apart."""
+    df = db.team_payroll_history(team="GSW")
+    assert set(df["team_abbreviation"]) == {"GOS", "GSW"}, (
+        "GSW must return both of this franchise's abbreviations"
+    )
+    # One continuous series, oldest first - the chart plots it in this order.
+    assert df["season"].tolist() == sorted(df["season"].tolist())
+    assert df["season"].tolist() == ["1995-96", "1996-97"]
+
+
+def test_team_payroll_history_does_not_merge_an_unrelated_team(warehouse_with_finances_mart):
+    """Only the four code-rename pairs merge. A relocation (SEA -> OKC) or
+    any ordinary code must still return exactly itself, or the fix would be
+    inventing franchise history instead of repairing it."""
+    for code in ("BOS", "NYK", "MIA", "DEN"):
+        df = db.team_payroll_history(team=code)
+        assert set(df["team_abbreviation"]) == {code}, code
+    assert db.franchise_codes("SEA") == ("SEA",)
+    assert db.franchise_codes("OKC") == ("OKC",)
+
+
+def test_franchise_options_collapses_only_the_renamed_pairs(warehouse_with_finances_mart):
+    codes = db.team_payroll_history()["team_abbreviation"]
+    options = db.franchise_options(codes)
+    assert "GOS" not in options, "the legacy code must not be offered separately"
+    assert "GSW" in options
+    # Everything else survives untouched.
+    assert {"BOS", "NYK", "MIA", "DEN"} <= set(options)
 
 
 def test_salary_cap_history_has_no_apron_before_2023_24(warehouse_with_finances_mart):
