@@ -811,24 +811,38 @@ git commit -m "Backfill historical team payroll and wire current season into wee
   `scripts/load_to_duckdb.py` with no changes needed - it auto-discovers any `data/raw/*/`
   directory), `main.salary_cap_history` (Task 1's seed).
 - Produces: `main_marts.mart_team_finances` with columns `season varchar, team_abbreviation
-  varchar, team_payroll bigint, salary_cap bigint, luxury_tax bigint, first_apron bigint,
-  second_apron bigint, payroll_pct_of_cap double, payroll_likely_incomplete boolean,
-  over_cap boolean, over_tax boolean, over_first_apron boolean, over_second_apron boolean` -
-  one row per team-season. Task 5's `dashboard/lib/db.py` queries this exact shape.
+  varchar, team_payroll bigint, player_count integer, salary_cap bigint, luxury_tax bigint,
+  first_apron bigint, second_apron bigint, payroll_pct_of_cap double,
+  payroll_likely_incomplete boolean, over_cap boolean, over_tax boolean, over_first_apron
+  boolean, over_second_apron boolean` - one row per team-season, 1200 of them. `team_payroll`
+  is nullable. Task 5's `dashboard/lib/db.py` queries this exact shape.
 
-**A real, verified data gap this task's mart must handle honestly:** Task 3's completed backfill
-surfaced a genuine Basketball-Reference source gap, not a scraper bug - the 1986-87 season's
-"Salaries Table" is severely incomplete on their site for most teams that year (confirmed by
-reading the live page directly: 1986-87 Denver's table has exactly one player row, Mike Evans at
-$75,000, for the entire team - not a parsing failure, that's genuinely everything the page has).
-11 of 1986-87's 17 available teams come in under 50% of that season's $4,945,000 cap, which no
-real full-roster payroll would do; every other season in the backfill looks plausible against its
-own cap. A chart or table that presented 1986-87 Denver's payroll as a real $75,000 figure
-alongside neighboring seasons in the multi-million range would be actively misleading, not just
-imprecise - this needs a flag, not just the existing early-era caption. `payroll_likely_incomplete`
-below is a general, principled rule (not a hardcoded "skip 1986-87" special case) so it also
-catches any other similarly-gapped team-season already in the data or introduced by a future
-re-scrape, without needing another manual audit to find it.
+**A real, verified data gap this task's mart must handle honestly:** Task 3's backfill surfaced a
+genuine Basketball-Reference source gap, not a scraper bug - their "Salaries Table" is severely
+incomplete for **two** seasons, 1986-87 and 1989-90. Confirmed by reading the live pages directly:
+1986-87 Denver's table has exactly one player row, Mike Evans at $75,000, for the entire team, and
+1989-90 Dallas and Milwaukee have one row each. That is genuinely everything those pages have.
+
+An earlier revision of this plan claimed only 1986-87 was affected and that "every other season
+looks plausible against its own cap." **That was wrong**, and it was wrong in the specific way a
+cap-ratio heuristic is blind to. Task 3 now records a `player_count` column - how many salary rows
+each total was actually built from - which makes the real shape directly observable:
+
+| season  | team-seasons | zero rows | max player_count | note |
+|---------|--------------|-----------|------------------|------|
+| 1986-87 | 23           | 6         | 13 (NYK only)    | every other team 1-6 rows |
+| 1989-90 | 27           | 3         | 6                | **every** team is thin |
+
+The 0.5x-cap rule alone catches 13 of 1989-90's 24 non-empty teams. The other 11 - Atlanta, Boston,
+Chicago, Denver, Golden State, the Lakers, New York, Portland, Sacramento, San Antonio and Utah -
+land between 52% and 92% of that season's $9,802,000 cap and so pass the ratio check unflagged,
+while being built from only 3 to 6 player rows each. Rendering those as real payroll points is
+exactly the "actively misleading" outcome the flag exists to prevent, so **`payroll_likely_incomplete`
+must consider `player_count`, not just the cap ratio** - see Step 3.
+
+Note also that teams with no salary data at all now get a row with a null `team_payroll` and
+`player_count` 0, rather than being dropped from the parquet. That is deliberate: a flag can't fire
+for a row that doesn't exist. The staging model must not filter these rows away.
 
 - [ ] **Step 1: Add the raw source**
 
@@ -840,7 +854,10 @@ list (alongside `player_game_logs`, `team_game_logs`, etc. - same indentation le
         description: >
           Team payroll totals by season, 1984-85 on, scraped from Basketball-
           Reference by ingestion/team_payroll_ingest.py. One row per team per
-          season.
+          season, for every team active that season. team_payroll is null (never
+          0) where the source page has no salary table; player_count records how
+          many player rows the total was summed from, so an incomplete season is
+          an observed fact rather than something inferred from the cap ratio.
 ```
 
 - [ ] **Step 2: Write the staging model**
@@ -849,13 +866,20 @@ Create `dbt/basketball_intelligence/models/staging/stg_team_payroll.sql`:
 
 ```sql
 -- One row per team per season: total payroll, typed and lightly cleaned.
+--
+-- Deliberately unfiltered. An earlier draft had `where team_payroll > 0`,
+-- which silently drops the 9 team-seasons whose source page has no salary
+-- table at all (6 in 1986-87, 3 in 1989-90) - the exact bug the ingestion
+-- layer was just fixed to stop committing. A team-season that exists in
+-- raw.team_payroll must survive to the mart so payroll_likely_incomplete can
+-- mark it; filtering here just moves the invisibility one layer down.
 
 select
     cast(season as varchar)            as season,
     cast(team_abbreviation as varchar) as team_abbreviation,
-    cast(team_payroll as bigint)       as team_payroll
+    cast(team_payroll as bigint)       as team_payroll,
+    cast(player_count as integer)      as player_count
 from {{ source('raw', 'team_payroll') }}
-where team_payroll > 0
 ```
 
 Add to `dbt/basketball_intelligence/models/staging/_staging_models.yml` (matching the format of
@@ -871,6 +895,11 @@ test style exactly):
       - name: team_abbreviation
         tests: [not_null]
       - name: team_payroll
+        description: >
+          Null where Basketball-Reference has no salary table for that
+          team-season - deliberately NOT not_null tested, see player_count.
+      - name: player_count
+        description: Salary rows the total was summed from; 0 means no data.
         tests: [not_null]
 ```
 
@@ -886,14 +915,26 @@ Create `dbt/basketball_intelligence/models/marts/mart_team_finances.sql`:
 -- not false, since "over a threshold that didn't exist" is not a meaningful
 -- false.
 --
--- payroll_likely_incomplete flags a team-season whose payroll is
--- implausibly low against that season's own cap (under half of it) - real
--- teams don't run rosters that cheap even in a bad year. This exists
--- because Basketball-Reference's own historical salary data has real gaps
--- (verified directly: 1986-87 Denver's source page has exactly one salaried
--- player on record for the whole team) - not a scraper bug, a genuine hole
--- in the source. The 0.5 threshold is deliberately conservative so it
--- doesn't false-positive on a real, merely cheap roster.
+-- payroll_likely_incomplete marks a team-season whose payroll figure should
+-- not be read as that team's real payroll, because Basketball-Reference's
+-- historical salary data has genuine holes (1986-87 Denver's source page has
+-- exactly one salaried player for the whole team; every 1989-90 team has at
+-- most six). Two independent conditions, either of which is enough:
+--
+--   1. player_count < 8 - a directly observed fact: a total summed from
+--      fewer than eight players is not a roster, whatever it adds up to. An
+--      NBA roster is 12-15; healthy seasons in this data run 11-21 rows.
+--   2. payroll < 0.5 * that season's cap - a backstop for a season that has
+--      a full-looking row count but implausible money.
+--
+-- Condition 1 is the one that matters, and is why this is not just a ratio
+-- check: in 1989-90, eleven teams clear 0.5x cap (52%-92%) on only 3-6
+-- player rows, so the ratio alone would pass them through as real. A null
+-- payroll (player_count 0) is incomplete by definition.
+--
+-- Both are general rules, not a hardcoded "skip 1986-87/1989-90", so a
+-- future re-scrape that introduces a new gap is caught without another
+-- manual season-by-season audit.
 
 with payroll as (
     select * from {{ ref('stg_team_payroll') }}
@@ -907,12 +948,15 @@ select
     p.season,
     p.team_abbreviation,
     p.team_payroll,
+    p.player_count,
     c.salary_cap,
     c.luxury_tax,
     c.first_apron,
     c.second_apron,
     round(p.team_payroll / c.salary_cap, 3)          as payroll_pct_of_cap,
-    p.team_payroll < (0.5 * c.salary_cap)            as payroll_likely_incomplete,
+    coalesce(p.player_count < 8
+             or p.team_payroll < (0.5 * c.salary_cap), true)
+                                                     as payroll_likely_incomplete,
     p.team_payroll > c.salary_cap                    as over_cap,
     case when c.luxury_tax is not null
          then p.team_payroll > c.luxury_tax end       as over_tax,
@@ -933,15 +977,20 @@ Add to `dbt/basketball_intelligence/models/marts/_marts_models.yml` (matching
       One row per team per season: payroll vs. that season's salary cap,
       luxury tax, and (2023-24 on) first/second apron thresholds.
       payroll_likely_incomplete flags team-seasons where Basketball-
-      Reference's own source data has real gaps (verified: 1986-87 is the
-      worst-affected season) - consumers should treat those rows as "data
-      not available" rather than a literal low payroll.
+      Reference's own source data has real gaps (verified: 1986-87 and
+      1989-90 are both affected, 1989-90 in full) - consumers should treat
+      those rows as "data not available" rather than a literal low payroll.
     columns:
       - name: season
         tests: [not_null]
       - name: team_abbreviation
         tests: [not_null]
       - name: team_payroll
+        description: >
+          Nullable: 9 team-seasons have no salary table at all in the source.
+          Not not_null tested for that reason - use payroll_likely_incomplete
+          (or player_count) to decide whether a value is trustworthy.
+      - name: player_count
         tests: [not_null]
       - name: salary_cap
         tests: [not_null]
@@ -990,16 +1039,29 @@ where season = '2009-10'
 Create a second negative-control test, `dbt/basketball_intelligence/tests/assert_team_finances_flags_incomplete_payroll.sql`, against the real gap Task 3's backfill found (verified directly against the live Basketball-Reference page, not a guess - see this task's own Interfaces section above):
 
 ```sql
--- 1986-87 Denver has exactly one salaried player on record on Basketball-
--- Reference's own page for that team-season (Mike Evans, $75,000) - a real,
--- verified source gap, not a scraper bug. If this row isn't flagged
--- payroll_likely_incomplete, the mart's completeness heuristic is broken.
-select season, team_abbreviation, team_payroll, salary_cap, payroll_likely_incomplete
+-- Three real, verified source gaps that must all come out flagged. Each one
+-- exercises a different arm of the rule, so a regression in any arm fails
+-- here rather than on a public chart:
+--
+--   1986-87 DEN - one salaried player on record (Mike Evans, $75,000).
+--                 Caught by both the ratio and the row count.
+--   1989-90 BOS - $5,950,000 from THREE player rows, which is 61% of that
+--                 season's cap. The ratio check passes it; only
+--                 player_count catches it. This is the case the original
+--                 0.5x-cap-only rule missed entirely.
+--   1986-87 GOS - no salary table at all: null payroll, player_count 0.
+--                 Must still be a row here, and must be flagged.
+select season, team_abbreviation, team_payroll, player_count, salary_cap,
+       payroll_likely_incomplete
 from {{ ref('mart_team_finances') }}
-where season = '1986-87'
-  and team_abbreviation = 'DEN'
+where (season, team_abbreviation) in (
+        ('1986-87', 'DEN'), ('1989-90', 'BOS'), ('1986-87', 'GOS'))
   and (payroll_likely_incomplete is distinct from true)
 ```
+
+This test also fails if the three rows aren't present at all, which is the point: `select ... in`
+returning 0 rows because a row is missing would pass vacuously, so also confirm the mart actually
+has 1200 team-seasons (42 seasons, every active franchise) before trusting a green run here.
 
 Run: `dbt seed --profiles-dir .` then `dbt run --select stg_team_payroll mart_team_finances --profiles-dir .` then `dbt test --select stg_team_payroll mart_team_finances assert_mart_grain_is_unique assert_team_finances_known_tax_case assert_team_finances_flags_incomplete_payroll --profiles-dir .` (all from `dbt/basketball_intelligence`)
 Expected: all PASS, 0 rows from each test query. If `assert_team_finances_known_tax_case` fails,
