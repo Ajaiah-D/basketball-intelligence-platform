@@ -1,4 +1,4 @@
-"""Weekly data refresh: ingest -> DuckDB -> dbt -> release publish -> commit.
+"""Weekly data refresh: ingest -> DuckDB -> payroll -> dbt -> release publish -> commit.
 
 Meant to be run by a local Windows Task Scheduler job. stats.nba.com blocks
 traffic from cloud/datacenter IP ranges (AWS, Azure, GCP, and GitHub Actions
@@ -24,11 +24,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import duckdb
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
 RELEASE_TAG = "data-v1"  # reused indefinitely so WAREHOUSE_URL never changes
 PYTHON = sys.executable
 # Task Scheduler launches this with the venv's python.exe directly (not an
@@ -36,22 +33,8 @@ PYTHON = sys.executable
 # PATH - resolve dbt's full path the same way sys.executable resolves python.
 DBT = str(Path(PYTHON).parent / ("dbt.exe" if os.name == "nt" else "dbt"))
 
-
-def _current_season_and_teams() -> tuple[str, list[str]]:
-    """(current season, team codes active that season), derived from the warehouse
-    the same way scripts/backfill_team_payroll.py's seasons_and_teams() does - not
-    hardcoded, since a mid-season expansion/relocation shouldn't require a code
-    change here."""
-    con = duckdb.connect(str(DB_PATH), read_only=True)
-    df = con.execute(
-        "select distinct season, team_abbreviation as team_abbreviation "
-        "from raw.team_game_logs where season = (select max(season) from raw.team_game_logs)"
-    ).df()
-    con.close()
-    return df["season"].iloc[0], sorted(df["team_abbreviation"].tolist())
-
-
-CURRENT_SEASON, CURRENT_TEAM_CODES = _current_season_and_teams()
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.season_teams import current_season_and_teams  # noqa: E402
 
 
 def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
@@ -81,30 +64,68 @@ def git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=PROJECT_ROOT, capture_output=True, text=True)
 
 
-def main() -> None:
-    dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
-    run = {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "steps": []}
-
-    steps = [
-        ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
-        ("payroll", [PYTHON, "ingestion/team_payroll_ingest.py", "--force",
-                     "--season", CURRENT_SEASON, "--teams", *CURRENT_TEAM_CODES], None),
-        ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
-        ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
-        ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
-        ("predict", [PYTHON, "-m", "ml.predict"], None),
-        ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
-        ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
-    ]
-
-    run["ok"] = True
+def run_steps(run: dict, steps: list[tuple]) -> bool:
+    """Run steps in order, recording each one; stop at the first failure."""
     for name, cmd, cwd in steps:
         entry = run_step(name, cmd, cwd)
         run["steps"].append(entry)
         if not entry["ok"]:
-            run["ok"] = False
-            break
+            return False
+    return True
 
+
+def payroll_steps() -> list[tuple]:
+    """The payroll fetch, plus the reload that lands its output in the warehouse.
+
+    Built at call time, not as a module-level constant, because the season and
+    team list come from raw.team_game_logs - which only reflects this run's
+    ingestion once "load_duckdb" has run. Computed any earlier, the first
+    refresh after a season rollover would derive the *previous* season's teams,
+    re-fetch ~30 already-static pages and skip the new season's payroll
+    entirely until the following week. Deferring it also means importing this
+    module no longer touches the database, so a fresh checkout with no
+    warehouse yet can still bootstrap itself from nothing.
+    """
+    season, teams = current_season_and_teams()
+    return [
+        ("payroll", [PYTHON, "ingestion/team_payroll_ingest.py", "--force",
+                     "--season", season, "--teams", *teams], None),
+        # load_to_duckdb again: the payroll parquet was written after the first
+        # load, and dbt runs next - without this it would query a warehouse a
+        # week behind the file on disk.
+        ("load_payroll", [PYTHON, "scripts/load_to_duckdb.py"], None),
+    ]
+
+
+def main() -> None:
+    dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
+    run = {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "steps": []}
+
+    ok = run_steps(run, [
+        ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
+        ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
+    ])
+
+    if ok:
+        try:
+            steps = payroll_steps()
+        except Exception as exc:  # noqa: BLE001 - record it rather than crash the run
+            run["steps"].append({"step": "payroll", "ok": False, "seconds": 0.0,
+                                 "error": f"could not derive the current season/teams: {exc}"})
+            ok = False
+        else:
+            ok = run_steps(run, steps)
+
+    if ok:
+        ok = run_steps(run, [
+            ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
+            ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
+            ("predict", [PYTHON, "-m", "ml.predict"], None),
+            ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
+            ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
+        ])
+
+    run["ok"] = ok
     if run["ok"]:
         version_path = PROJECT_ROOT / "warehouse" / "version.txt"
         version_path.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))

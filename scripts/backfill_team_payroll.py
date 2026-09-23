@@ -1,9 +1,8 @@
 """One-time historical backfill of team payroll, 1984-85 through the current season.
 
 Derives which team codes were active each season from this project's own
-warehouse (raw.team_game_logs), which already carries the full historical
-franchise-code history from nba_api ingestion - rather than hand-maintaining
-a separate relocation table here.
+warehouse - see scripts/season_teams.py - rather than hand-maintaining a
+separate relocation table here.
 
 Usage:
     python scripts/backfill_team_payroll.py
@@ -17,33 +16,13 @@ import logging
 import sys
 from pathlib import Path
 
-import duckdb
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
-FIRST_SEASON = "1984-85"
 
 sys.path.insert(0, str(PROJECT_ROOT))
 from ingestion.team_payroll_ingest import write_season  # noqa: E402
+from scripts.season_teams import seasons_and_teams  # noqa: E402
 
 log = logging.getLogger("backfill_team_payroll")
-
-
-def seasons_and_teams() -> dict[str, list[str]]:
-    """{season: [team codes active that season]}, derived from raw.team_game_logs,
-    restricted to FIRST_SEASON onward (payroll/cap data has no meaning before the
-    salary cap existed)."""
-    con = duckdb.connect(str(DB_PATH), read_only=True)
-    df = con.execute(
-        "select distinct season, team_abbreviation as team_abbreviation "
-        "from raw.team_game_logs where season >= ? order by season",
-        [FIRST_SEASON],
-    ).df()
-    con.close()
-    out: dict[str, list[str]] = {}
-    for season, group in df.groupby("season"):
-        out[season] = sorted(group["team_abbreviation"].tolist())
-    return out
 
 
 def main() -> None:
