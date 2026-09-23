@@ -3,9 +3,11 @@ version: 2
 sources:
   - name: raw
     description: >
-      Raw NBA data pulled from stats.nba.com via nba_api by
-      ingestion/nba_ingest.py and loaded by scripts/load_to_duckdb.py.
-      Tables mirror the API responses with original column names.
+      Raw data loaded by scripts/load_to_duckdb.py. Most tables are pulled
+      from stats.nba.com via nba_api by ingestion/nba_ingest.py and mirror
+      the API responses with original column names - team_payroll is the
+      exception, scraped from Basketball-Reference by
+      ingestion/team_payroll_ingest.py (see that table's own description).
     schema: raw
     tables:
       - name: player_game_logs
