@@ -24,14 +24,34 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import duckdb
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
+DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
 RELEASE_TAG = "data-v1"  # reused indefinitely so WAREHOUSE_URL never changes
 PYTHON = sys.executable
 # Task Scheduler launches this with the venv's python.exe directly (not an
 # activated shell), so the venv's Scripts/ dir isn't on child processes'
 # PATH - resolve dbt's full path the same way sys.executable resolves python.
 DBT = str(Path(PYTHON).parent / ("dbt.exe" if os.name == "nt" else "dbt"))
+
+
+def _current_season_and_teams() -> tuple[str, list[str]]:
+    """(current season, team codes active that season), derived from the warehouse
+    the same way scripts/backfill_team_payroll.py's seasons_and_teams() does - not
+    hardcoded, since a mid-season expansion/relocation shouldn't require a code
+    change here."""
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    df = con.execute(
+        "select distinct season, team_abbreviation as team_abbreviation "
+        "from raw.team_game_logs where season = (select max(season) from raw.team_game_logs)"
+    ).df()
+    con.close()
+    return df["season"].iloc[0], sorted(df["team_abbreviation"].tolist())
+
+
+CURRENT_SEASON, CURRENT_TEAM_CODES = _current_season_and_teams()
 
 
 def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
@@ -67,6 +87,8 @@ def main() -> None:
 
     steps = [
         ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
+        ("payroll", [PYTHON, "ingestion/team_payroll_ingest.py", "--force",
+                     "--season", CURRENT_SEASON, "--teams", *CURRENT_TEAM_CODES], None),
         ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
         ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
         ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
