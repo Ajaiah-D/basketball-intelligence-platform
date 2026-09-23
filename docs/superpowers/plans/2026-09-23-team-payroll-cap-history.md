@@ -721,7 +721,41 @@ total from Task 2's test) - it may differ slightly if the live page has since be
 Basketball-Reference, but should not be wildly different (e.g. not off by an order of magnitude,
 which would indicate a parsing or team-code bug).
 
-- [ ] **Step 4: Wire the current season into weekly refresh**
+- [ ] **Step 4: Check for silently under-counted team-seasons**
+
+Task 2's review flagged a real, previously-undetected failure mode: `parse_salary_table`'s regex
+requires each player row to have an `<a>` link to that player's own Basketball-Reference page.
+A player without one (rare, but plausible among short-lived/10-day-contract players especially
+in the 1984-85-early-1990s range this backfill covers) is silently skipped - not logged, not
+`None`, just a quietly-too-low sum with no error. Unlike the zero-rows case (which `write_season`
+already logs a warning for), this one produces a *plausible-looking but wrong* number.
+
+Run this check against the full backfill to catch it:
+```bash
+python -c "
+import pandas as pd
+from pathlib import Path
+frames = [pd.read_parquet(p) for p in Path('data/raw/team_payroll').glob('*.parquet')]
+df = pd.concat(frames, ignore_index=True)
+# A team fielding fewer than ~8 salaried players in a season is suspicious -
+# real rosters, even minimal ones, are larger than that.
+low = df[df.groupby(['season', 'team_abbreviation'])['team_payroll'].transform('count') < 1]
+print(f'{len(df)} team-seasons total')
+print(df.sort_values('team_payroll').head(10))  # lowest payrolls, eyeball for implausible outliers
+"
+```
+This can't directly count *rows-per-page* from the parquet (it only stores the summed total, not
+the row count) - if the lowest-payroll teams in the output include any real, non-expansion-team
+season with an implausibly low total (rough gut check: under ~$1M in modern-era dollars, or
+under the era-appropriate rookie minimum for a single player in early years), open that specific
+team-season's live Basketball-Reference page and compare its visible roster count to what
+`data/raw/team_payroll/{season}.parquet` recorded for that team, to confirm whether it's a real
+small roster (some early-cap-era teams carried very few salaried players) or evidence of the
+missing-`<a>`-tag skip. Note any confirmed instances in your task report rather than silently
+accepting the number - this is a data-quality flag for Task 4's mart and the dashboard's
+early-era disclaimer, not necessarily something to fix in this task.
+
+- [ ] **Step 5: Wire the current season into weekly refresh**
 
 Modify `scripts/weekly_refresh.py`, adding one step to the existing `steps` list right after
 `"ingest"` (only the current season needs re-fetching weekly; the historical backfill from Step
@@ -749,7 +783,7 @@ teams, since weekly refresh already has a live warehouse to query by the time th
 this is intentionally NOT hardcoded as a fixed 30-team list, since a mid-season expansion/
 relocation should not require an unrelated code change to this file.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add scripts/backfill_team_payroll.py scripts/weekly_refresh.py
