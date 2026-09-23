@@ -9,8 +9,8 @@
 -- at 60.4% of BRI - under the trigger - so no tax was collected and no
 -- operative threshold figure exists for that season (unlike 2001-02, where
 -- the tax mechanism itself hadn't been introduced yet). This is a real
--- historical fact, not a research gap - see .superpowers/sdd/task-1-
--- report.md's sourcing table for the corroborating citations.
+-- historical fact, independently corroborated (e.g. Forbes' "Complete
+-- History Of NBA Luxury Tax Payments, 2001-2022"), not a research gap.
 select season, 'luxury_tax' as missing_column
 from {{ ref('salary_cap_history') }}
 where season >= '2002-03'
