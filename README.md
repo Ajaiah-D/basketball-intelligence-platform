@@ -111,6 +111,10 @@ data/raw/                      # raw parquet extracts (gitignored)
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
   player-season averaged more, streak scoring) and *Mystery Player*
   (identify a notable season from progressively revealed clues)
+- **Finances**: one team's payroll across every season on record against
+  that year's salary cap, luxury tax and (2023-24 on) apron lines. Seasons
+  where Basketball-Reference's salary data is incomplete are shown as gaps
+  rather than misleadingly low totals
 - **Predictions**: upcoming games with a home-team win probability, plus
   the model's public track record. Currently Elo ratings only - rolling-form
   features (recent record, rest days) aren't computed for future games yet,

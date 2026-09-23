@@ -22,7 +22,9 @@ boundary. Every other historical code, relocations included, matches directly.
 
 Usage:
     python ingestion/team_payroll_ingest.py --season 2026-27
-    python ingestion/team_payroll_ingest.py --backfill 1984-85   # every season from 1984-85 to now
+
+For a multi-season backfill use scripts/backfill_team_payroll.py, which is
+what main() points you at - this module fetches one season per invocation.
 """
 
 from __future__ import annotations
