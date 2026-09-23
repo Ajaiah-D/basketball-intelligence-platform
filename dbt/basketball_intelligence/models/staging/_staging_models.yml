@@ -78,3 +78,18 @@ models:
         tests: [not_null]
       - name: is_regular_season
         tests: [not_null]
+
+  - name: stg_team_payroll
+    description: One row per team per season with total payroll.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_abbreviation
+        tests: [not_null]
+      - name: team_payroll
+        description: >
+          Null where Basketball-Reference has no salary table for that
+          team-season - deliberately NOT not_null tested, see player_count.
+      - name: player_count
+        description: Salary rows the total was summed from; 0 means no data.
+        tests: [not_null]
