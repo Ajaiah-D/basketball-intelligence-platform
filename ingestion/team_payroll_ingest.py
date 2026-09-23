@@ -3,31 +3,22 @@
 For each team-season, fetches https://www.basketball-reference.com/teams/
 {BBREF_CODE}/{END_YEAR}.html, sums the "Salaries Table" (id="salaries2") on
 that page, and writes one row per team-season to data/raw/team_payroll/
-{season}.parquet.
+{season}.parquet with columns:
+
+    season, team_abbreviation, team_payroll, player_count
+
+Every requested team gets a row, including one whose page has no salary
+table at all (team_payroll null, player_count 0) - see ingest_season.
 
 Basketball-Reference publishes a 20 requests/minute rate limit; this script
 throttles to one request per 3.5 seconds (~17/min) to stay comfortably under
 it. Do not remove the sleep.
 
-Six team codes differ between this project's nba_api-derived codes and
-Basketball-Reference's own codes for part of their history (Spurs, Warriors,
-Jazz, 76ers, Bullets/Wizards, Bobcats/Hornets) - see LEGACY_CODE_MAP below;
-each entry's own cutoff season controls when the remap applies, since that
-cutoff isn't the same for every franchise, and the direction differs too:
-four switched away from a bbref-only code at 1996-97 (nba_api never emits
-those codes after that season, so the cutoff is a formality); Washington's
-Bullets-to-Wizards rename, and Basketball-Reference's matching code change,
-didn't happen until 1997-98, and nba_api never changed WAS's own code at
-all; Charlotte is the mirror image of the other four - nba_api has used
-"CHA" for this franchise continuously across the 2004 expansion and the
-2014-15 Bobcats-to-Hornets rename, but Basketball-Reference switched to
-"CHO" starting with the 2014-15 season, so the remap only starts applying
-partway through this one's history rather than ending partway through.
-Two more codes differ across every era, not just historically (Suns:
-nba_api's "PHX" vs Basketball-Reference's "PHO"; Nets since the Brooklyn
-move: nba_api's "BKN" vs Basketball-Reference's "BRK") - see
-PERMANENT_CODE_MAP below. Every other historical code, including relocated
-franchises, matches directly.
+Eight team codes differ between this project's nba_api-derived codes and
+Basketball-Reference's own, with a different cutoff season - and in one case
+a different direction - per franchise; see LEGACY_CODE_MAP, MODERN_CODE_MAP
+and PERMANENT_CODE_MAP below, each with the live 200/404 pair that fixes its
+boundary. Every other historical code, relocations included, matches directly.
 
 Usage:
     python ingestion/team_payroll_ingest.py --season 2026-27
@@ -54,15 +45,12 @@ MAX_RETRIES = 3
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 # nba_code -> (bbref_code, last season-end-year still under that bbref_code).
-# The first four switched in nba_api's own codes at the 1996-97 season (nba_api
-# never emits "SAN" etc. after that season, so the cutoff here is a formality).
-# WAS is different: nba_api has used "WAS" for this franchise across its
-# entire history, but Basketball-Reference published pages under "WSB"
-# (Bullets) through the 1996-97 season and "WAS" (Wizards) only from the
-# 1997-98 rename onward - confirmed live (basketball-reference.com/teams/
-# WAS/1985.html 404s, WSB/1985.html 200s; WSB/1998.html 404s, WAS/1998.html
-# 200s), discovered when the real backfill (Task 3) crashed on a 404 for
-# WAS/1985.html.
+# The first four also switched in nba_api's own codes at 1996-97, so their
+# cutoff is a formality. WAS's is load-bearing: nba_api has used "WAS" across
+# the franchise's entire history, but bbref published under "WSB" (Bullets)
+# through 1996-97 and "WAS" (Wizards) only from the 1997-98 rename onward.
+# Boundary verified live: WAS/1985.html 404, WSB/1985.html 200;
+# WSB/1998.html 404, WAS/1998.html 200.
 LEGACY_CODE_MAP = {
     "SAN": ("SAS", 1996),  # Spurs
     "GOS": ("GSW", 1996),  # Warriors
@@ -71,24 +59,20 @@ LEGACY_CODE_MAP = {
     "WAS": ("WSB", 1997),  # Bullets -> Wizards, renamed for 1997-98
 }
 
-# nba_code -> (bbref_code, first season-end-year under that bbref_code).
-# The mirror image of LEGACY_CODE_MAP: nba_api kept "CHA" through the 2014-15
-# Bobcats-to-Hornets rename, but Basketball-Reference switched to "CHO" that
-# same season - confirmed live (basketball-reference.com/teams/CHA/2015.html
-# 404s, CHO/2015.html 200s; CHA/2014.html 200s, CHO/2014.html 404s), found
-# the same way as WAS/PHX below: the real backfill (Task 3) would have
-# crashed on this the moment it reached a post-2014-15 Hornets season.
+# nba_code -> (bbref_code, first season-end-year under that bbref_code) - the
+# mirror image of LEGACY_CODE_MAP: nba_api kept "CHA" through the 2014-15
+# Bobcats-to-Hornets rename, bbref switched to "CHO" that same season.
+# Boundary verified live: CHA/2014.html 200, CHO/2014.html 404;
+# CHA/2015.html 404, CHO/2015.html 200.
 MODERN_CODE_MAP = {
-    "CHA": ("CHO", 2015),  # Bobcats -> Hornets, Basketball-Reference's code changed for 2014-15
+    "CHA": ("CHO", 2015),  # Bobcats -> Hornets
 }
 
-# Unlike the codes above, these two mismatches aren't era-limited at all:
-# nba_api has used "PHX" for the Suns and "BKN" for the Nets (since the
-# Brooklyn move) across their entire respective histories in this project's
-# data, but Basketball-Reference has always published under "PHO" and "BRK"
-# - confirmed live (.../PHX/*.html and .../BKN/*.html 404 for every season
-# checked; .../PHO/*.html and .../BRK/*.html 200), discovered when the real
-# backfill (Task 3) crashed on 404s for PHX/1985.html and BKN/2013.html.
+# Unlike the maps above, these two mismatches aren't era-limited: bbref has
+# always published the Suns as "PHO" and the Nets (since the Brooklyn move)
+# as "BRK", for every season this project's data covers.
+# Verified live: PHX/1985.html 404, PHO/1985.html 200; PHX/2025.html 404,
+# PHO/2025.html 200; BKN/2013.html 404, BRK/2013.html 200.
 PERMANENT_CODE_MAP = {
     "PHX": "PHO",  # Suns
     "BKN": "BRK",  # Nets, since the 2012-13 Brooklyn move
@@ -170,28 +154,58 @@ def fetch_team_season_html(team_code: str, season: str) -> str:
     raise RuntimeError("unreachable")
 
 
-def team_season_payroll(nba_code: str, season: str) -> int | None:
-    """Total payroll for one team-season, or None if the page has no salary table
-    (e.g. a franchise's first partial season, or a season Basketball-Reference has
-    no salary data for)."""
+def team_season_payroll(nba_code: str, season: str) -> dict:
+    """{'team_payroll': int|None, 'player_count': int} for one team-season.
+
+    player_count is how many salary rows the total was built from, carried
+    alongside the sum because a sum on its own can't say whether it came from a
+    full roster or from the three players Basketball-Reference happens to have
+    for that season. Two seasons in this backfill's range (1986-87 and 1989-90)
+    are near-empty at the source, and some of their teams still sum to a
+    plausible-looking fraction of that year's cap, so a cap-ratio heuristic
+    alone misses them; the row count is a directly observed fact instead.
+
+    team_payroll is None (never 0) when the page has no salary table - e.g. a
+    franchise's first partial season, or one of the gap seasons above. A real
+    team's payroll is never actually zero, so None can't be mistaken for a
+    genuine value downstream.
+    """
     code = bbref_code(nba_code, season)
     html = fetch_team_season_html(code, season)
     rows = parse_salary_table(html)
     if not rows:
-        return None
-    return sum(r["salary_usd"] for r in rows)
+        return {"team_payroll": None, "player_count": 0}
+    return {"team_payroll": sum(r["salary_usd"] for r in rows), "player_count": len(rows)}
 
 
 def ingest_season(season: str, team_codes: list[str]) -> pd.DataFrame:
-    """Fetch payroll for every team active in `season`, skipping teams with no data."""
+    """Fetch payroll for every team active in `season` - one row per team, always.
+
+    A team with no salary data still gets a row (null payroll, player_count 0)
+    rather than being dropped: a downstream completeness flag can only fire for
+    a team-season that actually exists in the data, so silently skipping one
+    hides the gap instead of marking it.
+    """
     records = []
     for code in team_codes:
-        total = team_season_payroll(code, season)
-        if total is None:
-            log.warning("No salary data for %s %s - skipping", code, season)
-            continue
-        records.append({"season": season, "team_abbreviation": code, "team_payroll": total})
-    return pd.DataFrame.from_records(records, columns=["season", "team_abbreviation", "team_payroll"])
+        result = team_season_payroll(code, season)
+        if result["player_count"] == 0:
+            log.warning("No salary data for %s %s - writing a null-payroll row", code, season)
+        records.append({
+            "season": season,
+            "team_abbreviation": code,
+            "team_payroll": result["team_payroll"],
+            "player_count": result["player_count"],
+        })
+    df = pd.DataFrame.from_records(
+        records, columns=["season", "team_abbreviation", "team_payroll", "player_count"]
+    )
+    # Nullable Int64, not the float64 pandas would infer from the None rows -
+    # payroll stays an exact integer in the parquet instead of picking up a
+    # float type (and float formatting) just because some seasons have gaps.
+    df["team_payroll"] = df["team_payroll"].astype("Int64")
+    df["player_count"] = df["player_count"].astype("int64")
+    return df
 
 
 def write_season(season: str, team_codes: list[str], force: bool = False) -> None:
@@ -202,7 +216,8 @@ def write_season(season: str, team_codes: list[str], force: bool = False) -> Non
         return
     df = ingest_season(season, team_codes)
     df.to_parquet(out_path, index=False)
-    log.info("Wrote %s (%d teams)", out_path, len(df))
+    empty = int((df["player_count"] == 0).sum())
+    log.info("Wrote %s (%d teams, %d with no salary data)", out_path, len(df), empty)
 
 
 def main() -> None:
