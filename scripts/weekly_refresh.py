@@ -136,6 +136,7 @@ def main() -> None:
 
     if ok:
         ok = run_steps(run, [
+            ("dbt_seed", [DBT, "seed", "--profiles-dir", "."], dbt_dir),
             ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
             ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
             ("predict", [PYTHON, "-m", "ml.predict"], None),
