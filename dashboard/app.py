@@ -94,6 +94,7 @@ from dashboard.views import (  # noqa: E402
     advanced,
     arcade,
     dev_lab,
+    finances,
     games,
     overview,
     players,
@@ -117,6 +118,8 @@ nav = {
                 url_path="arcade"),
         st.Page(predictions.render, title="Predictions", icon=":material/query_stats:",
                 url_path="predictions"),
+        st.Page(finances.render, title="Finances", icon=":material/payments:",
+                url_path="finances"),
     ],
 }
 if config.dev_lab_enabled():

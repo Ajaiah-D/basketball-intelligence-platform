@@ -464,6 +464,46 @@ def compare_dumbbell(metrics: list[str], a_vals: list[float], b_vals: list[float
     return fig
 
 
+def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figure:
+    """One team's payroll (solid line) against league cap/tax/apron thresholds
+    (dashed reference lines) across every season in team_df.
+
+    Seasons flagged payroll_likely_incomplete (a real Basketball-Reference
+    source gap, not a display choice - see mart_team_finances's description)
+    are plotted as a gap in the payroll line, not a misleadingly low point:
+    a season where the source simply doesn't have most of a team's salaries
+    should never render as "this team spent almost nothing that year."
+    """
+    fig = go.Figure()
+    payroll_y = team_df["team_payroll"].where(~team_df["payroll_likely_incomplete"])
+    fig.add_scatter(
+        x=team_df["season"], y=payroll_y, name="Team payroll",
+        mode="lines+markers", line=dict(color=T.ACCENT, width=2), connectgaps=False,
+    )
+    thresholds = [
+        ("salary_cap", "Salary cap", T.SERIES[1]),
+        ("luxury_tax", "Luxury tax", T.SERIES[2]),
+        ("first_apron", "First apron", T.SERIES[3]),
+        ("second_apron", "Second apron", T.SERIES[4]),
+    ]
+    merged = cap_df.merge(team_df[["season"]], on="season", how="inner")
+    for col, label, color in thresholds:
+        if merged[col].notna().any():
+            fig.add_scatter(
+                x=merged["season"], y=merged[col], name=label,
+                mode="lines", line=dict(color=color, width=1.5, dash="dash"),
+            )
+    fig.update_layout(**_layout(height=420, showlegend=True))
+    # Season labels like "1984-85" parse as dates unless forced categorical -
+    # same trap career_trend's own comment documents. Without this, Plotly
+    # silently resolves the axis to type="date" and season order/spacing
+    # goes wrong.
+    fig.update_xaxes(title=dict(text="Season", font=dict(color=T.MUTED)),
+                     type="category", automargin=True)
+    fig.update_yaxes(title=dict(text="$", font=dict(color=T.MUTED)), automargin=True)
+    return fig
+
+
 def _empty(message: str) -> go.Figure:
     """Placeholder so a view with no data renders a sentence instead of an
     empty axis box."""

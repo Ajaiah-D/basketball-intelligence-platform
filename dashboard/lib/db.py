@@ -441,6 +441,40 @@ def marts_available() -> bool:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
+def team_finances_available() -> bool:
+    """Whether mart_team_finances exists in the warehouse - same guard pattern
+    as marts_available()/predictions_available(), for a warehouse published
+    before this feature shipped."""
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from main_marts.mart_team_finances limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+def team_payroll_history(team: str | None = None) -> pd.DataFrame:
+    """Payroll vs. cap/tax/apron thresholds, one row per team-season.
+    Filters to one team if given, else returns every team-season (for the
+    all-teams overview chart)."""
+    if team:
+        return q(
+            "select * from main_marts.mart_team_finances where team_abbreviation = ? "
+            "order by season",
+            (team,),
+        )
+    return q("select * from main_marts.mart_team_finances order by season, team_abbreviation")
+
+
+def salary_cap_history() -> pd.DataFrame:
+    """League-wide cap/tax/apron thresholds by season, independent of any team."""
+    return q(
+        "select season, salary_cap, luxury_tax, first_apron, second_apron "
+        "from main.salary_cap_history order by season"
+    )
+
+
+@st.cache_data(ttl=600, show_spinner=False)
 def predictions_available() -> bool:
     """Whether any predictions have been written yet.
 
