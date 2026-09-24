@@ -4,10 +4,36 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.lib import db
+from dashboard.lib import theme as T
 from dashboard.lib import viz
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
                                # acknowledged by them to be partly extrapolated/minimum-filled
+
+# Highest bracket first: a team over the second apron is also, definitionally,
+# over the first apron/tax/cap, so this must be checked in this order.
+_STATUS_TIERS = [
+    ("over_second_apron", "Second apron", T.CRITICAL),
+    ("over_first_apron", "First apron", T.SERIES[1]),
+    ("over_tax", "Luxury tax", T.SERIES[3]),
+    ("over_cap", "Over cap", T.ACCENT),
+]
+
+
+def _status(row) -> tuple[str, str]:
+    """(label, color) for the latest season's KPI card - the highest cap
+    bracket the team's real payroll actually reached, or a plain "data
+    incomplete" flag rather than guessing a bracket for a number the mart
+    itself doesn't trust."""
+    if row["payroll_likely_incomplete"]:
+        return "Data incomplete", T.MUTED
+    for col, label, color in _STATUS_TIERS:
+        # over_tax/over_first_apron/over_second_apron are null, not False,
+        # for a season before that threshold existed (e.g. no apron before
+        # 2023-24) - pd.NA is truthy-ambiguous, so check real values only.
+        if pd.notna(row[col]) and row[col]:
+            return label, color
+    return "Under cap", T.GOOD
 
 
 # mart_team_finances.payroll_incomplete_reason values that really do mean
@@ -107,18 +133,53 @@ def render() -> None:
             "records - treat early-era numbers as directionally right, not exact."
         )
 
-    _render_incomplete_caption(team_df)
+    latest = team_df.sort_values("season").iloc[-1]
+    payroll_str = (f"${latest.team_payroll:,.0f}" if pd.notna(latest.team_payroll)
+                   else "N/A")
+    pct_str = (f"{latest.payroll_pct_of_cap * 100:.0f}%"
+               if pd.notna(latest.payroll_pct_of_cap) else "N/A")
+    status_label, status_color = _status(latest)
+
+    st.markdown(f"### {team} &nbsp;{T.chip(latest.season)}", unsafe_allow_html=True)
+    k1, k2, k3 = st.columns(3)
+    k1.markdown(T.kpi("Payroll", payroll_str), unsafe_allow_html=True)
+    k2.markdown(T.kpi("% of cap", pct_str), unsafe_allow_html=True)
+    k3.markdown(T.kpi("Status", status_label, accent=status_color),
+                unsafe_allow_html=True)
 
     st.plotly_chart(viz.team_finances_trend(team_df, cap_df), width="stretch",
                     config=viz.PLOTLY_CONFIG)
 
-    st.dataframe(
-        team_df[["season", "team_payroll", "salary_cap", "luxury_tax",
-                "first_apron", "second_apron", "payroll_pct_of_cap",
-                "payroll_likely_incomplete", "over_cap", "over_tax",
-                "over_first_apron", "over_second_apron"]],
-        hide_index=True, width="stretch",
-    )
+    _render_incomplete_caption(team_df)
+
+    display_df = team_df[["season", "team_payroll", "salary_cap", "luxury_tax",
+                          "first_apron", "second_apron", "payroll_pct_of_cap",
+                          "payroll_likely_incomplete", "over_cap", "over_tax",
+                          "over_first_apron", "over_second_apron"]].copy()
+    # Stored as a ratio (1.23 = 123% of cap); NumberColumn's printf format
+    # doesn't scale for us, so do it here rather than showing "1%" for a
+    # team at the cap.
+    display_df["payroll_pct_of_cap"] = display_df["payroll_pct_of_cap"] * 100
+
+    with st.expander("Show full season-by-season table"):
+        st.dataframe(
+            display_df,
+            hide_index=True, width="stretch",
+            column_config={
+                "season": st.column_config.TextColumn("Season"),
+                "team_payroll": st.column_config.NumberColumn("Payroll", format="$%,.0f"),
+                "salary_cap": st.column_config.NumberColumn("Salary Cap", format="$%,.0f"),
+                "luxury_tax": st.column_config.NumberColumn("Luxury Tax", format="$%,.0f"),
+                "first_apron": st.column_config.NumberColumn("1st Apron", format="$%,.0f"),
+                "second_apron": st.column_config.NumberColumn("2nd Apron", format="$%,.0f"),
+                "payroll_pct_of_cap": st.column_config.NumberColumn("% of Cap", format="%.0f%%"),
+                "payroll_likely_incomplete": st.column_config.CheckboxColumn("Data Incomplete?"),
+                "over_cap": st.column_config.CheckboxColumn("Over Cap"),
+                "over_tax": st.column_config.CheckboxColumn("Over Tax"),
+                "over_first_apron": st.column_config.CheckboxColumn("Over 1st Apron"),
+                "over_second_apron": st.column_config.CheckboxColumn("Over 2nd Apron"),
+            },
+        )
 
     st.caption("Payroll data via Basketball-Reference.com. League cap/tax/apron "
               "figures are official NBA announcements.")

@@ -464,9 +464,22 @@ def compare_dumbbell(metrics: list[str], a_vals: list[float], b_vals: list[float
     return fig
 
 
+# Background shading for team_finances_trend: which cap bracket a season
+# falls in reads from color instead of cross-referencing the table's boolean
+# columns. Bottom-to-top order - each fills up to the one before it via
+# tonexty, which chains to whatever trace immediately precedes it in
+# fig.data, not by name, so this order is load-bearing.
+_ZONE_COLS = ["salary_cap", "luxury_tax", "first_apron", "second_apron"]
+_ZONE_COLORS = ["rgba(12,163,12,0.10)", "rgba(201,133,0,0.12)",
+                "rgba(217,89,38,0.14)", "rgba(208,59,59,0.16)"]
+_ZONE_CEILING_COLOR = "rgba(208,59,59,0.22)"
+
+
 def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figure:
     """One team's payroll (solid line) against league cap/tax/apron thresholds
-    (dashed reference lines) across every season in team_df.
+    (dashed reference lines) across every season in team_df, with the cap/
+    tax/apron brackets shaded so which one a season fell into reads at a
+    glance.
 
     Seasons flagged payroll_likely_incomplete (a payroll figure the data
     does not support publishing - usually a real Basketball-Reference source
@@ -491,17 +504,47 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
         mode="lines+markers", line=dict(color=T.ACCENT, width=2), connectgaps=False,
         hovertemplate="%{x}<br>$%{y:,.0f}<extra>Team payroll</extra>",
     )
+
+    merged = cap_df.merge(team_df[["season"]], on="season", how="inner")
+    x = merged["season"]
+
+    # A threshold that doesn't exist yet for a season (aprons before
+    # 2023-24, tax before 2002-03/in 2004-05) is NaN, which breaks the fill
+    # for that stretch same as a gapped line does - correct, since that
+    # bracket genuinely didn't exist yet.
+    fig.add_scatter(x=x, y=merged[_ZONE_COLS[0]], mode="lines", line=dict(width=0),
+                    fill="tozeroy", fillcolor=_ZONE_COLORS[0],
+                    showlegend=False, hoverinfo="skip")
+    for col, color in zip(_ZONE_COLS[1:], _ZONE_COLORS[1:]):
+        fig.add_scatter(x=x, y=merged[col], mode="lines", line=dict(width=0),
+                        fill="tonexty", fillcolor=color,
+                        showlegend=False, hoverinfo="skip")
+
+    # A flat cap above the highest real number in view, so "above the
+    # second apron" also reads as a shaded band instead of blank space. Its
+    # own y has to go NaN wherever second_apron is NaN (pre-2023-24) - a
+    # constant value has no gap of its own to break the fill, so without
+    # this the band would wash across the whole chart instead of starting
+    # where the second apron actually does.
+    ceiling_inputs = pd.concat([merged[c] for c in _ZONE_COLS] + [payroll_y])
+    if ceiling_inputs.notna().any():
+        ceiling = ceiling_inputs.max() * 1.12
+        ceiling_y = pd.Series(ceiling, index=merged.index).where(
+            merged["second_apron"].notna())
+        fig.add_scatter(x=x, y=ceiling_y, mode="lines", line=dict(width=0),
+                        fill="tonexty", fillcolor=_ZONE_CEILING_COLOR,
+                        showlegend=False, hoverinfo="skip")
+
     thresholds = [
         ("salary_cap", "Salary cap", T.SERIES[1]),
         ("luxury_tax", "Luxury tax", T.SERIES[2]),
         ("first_apron", "First apron", T.SERIES[3]),
         ("second_apron", "Second apron", T.SERIES[4]),
     ]
-    merged = cap_df.merge(team_df[["season"]], on="season", how="inner")
     for col, label, color in thresholds:
         if merged[col].notna().any():
             fig.add_scatter(
-                x=merged["season"], y=merged[col], name=label,
+                x=x, y=merged[col], name=label,
                 mode="lines", line=dict(color=color, width=1.5, dash="dash"),
                 hovertemplate="%{x}<br>$%{y:,.0f}<extra>" + label + "</extra>",
             )
