@@ -28,6 +28,11 @@ GRID = "#2c2c2a"            # hairline gridlines
 BASELINE = "#383835"        # axis baseline / de-emphasis marks
 BORDER = "rgba(255,255,255,0.10)"
 
+RADIUS = "2px"  # sharp, not rounded - the site-wide corner radius for every
+                # custom card/chip/badge/hero shape (native widgets get the
+                # same value via [theme] baseRadius/buttonRadius in
+                # .streamlit/config.toml, so nothing looks half-rounded)
+
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 # One recognizable color per franchise, brightened where the true primary
@@ -93,7 +98,7 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
                     rgba(23,23,22,.9) 100%),
     linear-gradient(180deg, #1e1e1d 0%, #161615 100%);
   border: 1px solid rgba(57,135,229,.28);
-  border-radius: 20px;
+  border-radius: {RADIUS};
   padding: 1.4rem 1.6rem;
   margin-bottom: 1rem;
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -105,14 +110,14 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 .bip-hero-spot .lbl {{ font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
                        color: {MUTED}; font-weight: 700; }}
 .bip-hero-spot .name {{ font-size: 1.05rem; font-weight: 800; color: {INK}; }}
-.bip-hero-spot .val {{ font-size: 1.35rem; font-weight: 800; color: #f6c65b;
+.bip-hero-spot .val {{ font-size: 1.35rem; font-weight: 800; color: {ACCENT};
                        font-variant-numeric: tabular-nums; }}
 
 /* ---- cards ---- */
 .bip-card {{
   background: linear-gradient(180deg, #1e1e1d 0%, #171716 100%);
   border: 1px solid {BORDER};
-  border-radius: 16px;
+  border-radius: {RADIUS};
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
@@ -145,17 +150,13 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
              color: {MUTED}; font-size: .72rem; font-weight: 700;
              font-variant-numeric: tabular-nums; align-self: center;
              background: rgba(255,255,255,.05); }}
-.bip-rank.r1 {{ background: linear-gradient(135deg, #f6c65b, #b8860b); color: #141414; }}
-.bip-rank.r2 {{ background: linear-gradient(135deg, #d9d9d9, #8f8f8f); color: #141414; }}
-.bip-rank.r3 {{ background: linear-gradient(135deg, #e0a370, #8c5a2b); color: #141414; }}
 .bip-name {{ flex: 1; min-width: 0; font-weight: 600; font-size: .88rem; color: {INK};
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 .bip-team {{ flex: none; color: {MUTED}; font-size: .72rem; font-weight: 700; }}
 .bip-val  {{ font-weight: 800; font-size: .95rem; color: {INK}; font-variant-numeric: tabular-nums; }}
-.bip-row:first-of-type .bip-val {{ color: #f6c65b; }}
 
 /* ---- chips / dots ---- */
-.bip-chip {{ display: inline-block; padding: 3px 12px; border-radius: 999px;
+.bip-chip {{ display: inline-block; padding: 3px 12px; border-radius: {RADIUS};
              background: rgba(57,135,229,.16); color: #7db4f0;
              font-size: .75rem; font-weight: 700; letter-spacing: .02em;
              border: 1px solid rgba(57,135,229,.25); }}
@@ -165,7 +166,7 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 
 /* ---- score cards ---- */
 .bip-game {{ background: linear-gradient(180deg, #1e1e1d 0%, #171716 100%);
-             border: 1px solid {BORDER}; border-radius: 14px;
+             border: 1px solid {BORDER}; border-radius: {RADIUS};
              padding: .7rem .9rem; margin-bottom: .6rem;
              transition: transform .15s ease, border-color .15s ease; }}
 .bip-game:hover {{ transform: translateY(-2px); border-color: rgba(57,135,229,.35); }}
@@ -235,8 +236,10 @@ def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT) -> str:
 
 
 def rank_badge(i: int) -> str:
-    cls = f" r{i}" if i <= 3 else ""
-    return f'<span class="bip-rank{cls}">{i}</span>'
+    # Every rank gets the same neutral treatment now - no gold/silver/bronze
+    # for the top 3, which read as a game-app medal ladder rather than a
+    # plain leaderboard position.
+    return f'<span class="bip-rank">{i}</span>'
 
 
 def chip(text: str, color: str = ACCENT) -> str:

@@ -93,17 +93,18 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
+    # One accent color for all four - matching every other page's KPI row
+    # (Players, Teams, Finances) instead of a different color per tile with
+    # no meaning behind the assignment.
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(T.kpi("Games", f"{len(games):,}", accent=T.SERIES[0]),
-                unsafe_allow_html=True)
-    c2.markdown(T.kpi("Players", f"{len(stats):,}", accent=T.SERIES[1]),
-                unsafe_allow_html=True)
+    c1.markdown(T.kpi("Games", f"{len(games):,}"), unsafe_allow_html=True)
+    c2.markdown(T.kpi("Players", f"{len(stats):,}"), unsafe_allow_html=True)
     avg_pts = (games.home_pts + games.away_pts).mean() if len(games) else float("nan")
     c3.markdown(T.kpi("Avg points / game",
-                      f"{avg_pts:.1f}" if avg_pts == avg_pts else "-",
-                      accent=T.SERIES[2]), unsafe_allow_html=True)
-    c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", "latest season only",
-                      accent=T.SERIES[4]), unsafe_allow_html=True)
+                      f"{avg_pts:.1f}" if avg_pts == avg_pts else "-"),
+                unsafe_allow_html=True)
+    c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", "latest season only"),
+                unsafe_allow_html=True)
 
     st.markdown("#### League leaders")
     l1, l2, l3, l4 = st.columns(4)

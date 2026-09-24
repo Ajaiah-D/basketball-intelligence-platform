@@ -5,6 +5,12 @@ backgroundColor = "#0d0d0d"
 secondaryBackgroundColor = "#1a1a19"
 textColor = "#ffffff"
 font = "sans serif"
+# Sharp corners on native widgets (buttons, inputs, tabs, expanders) to match
+# dashboard/lib/theme.py's RADIUS token used on custom cards/chips - without
+# this, native widgets keep Streamlit's default ~8px rounding and the site
+# looks half-flattened.
+baseRadius = "2px"
+buttonRadius = "2px"
 
 [browser]
 gatherUsageStats = false
