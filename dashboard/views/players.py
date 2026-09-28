@@ -96,10 +96,16 @@ def render() -> None:
     if career:
         table_cols[2:2] = ["seasons", "span"]
 
+    # Scale the PTS bar to the best scorer actually in view, so the column
+    # still reads as a comparison after a search or a min-games filter
+    # narrows the table. Guarded because an empty search result has no max.
+    ppg_max = float(view["ppg"].max()) if len(view) and view["ppg"].notna().any() else 1.0
+
     st.dataframe(
         view[table_cols],
         hide_index=True,
         height=430,
+        row_height=38,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
             "team": st.column_config.TextColumn("Team", width="small"),
@@ -107,7 +113,9 @@ def render() -> None:
             "span": st.column_config.TextColumn("Span", width="medium"),
             "gp": st.column_config.NumberColumn("GP"),
             "mpg": st.column_config.NumberColumn("MIN", format="%.1f"),
-            "ppg": st.column_config.NumberColumn("PTS", format="%.1f"),
+            "ppg": st.column_config.ProgressColumn("PTS", format="%.1f",
+                                                   min_value=0, max_value=ppg_max,
+                                                   color=T.ACCENT, width="medium"),
             "rpg": st.column_config.NumberColumn("REB", format="%.1f"),
             "apg": st.column_config.NumberColumn("AST", format="%.1f"),
             "spg": st.column_config.NumberColumn("STL", format="%.1f"),

@@ -123,8 +123,25 @@ def render() -> None:
     view = view.sort_values("game_score", ascending=False, na_position="last")
 
     cols = CORE_COLS + (EXTRA_COLS if show_all else [])
-    st.dataframe(view[cols], hide_index=True, height=400,
-                 column_config=COLUMN_CONFIG)
+    # Bar the sort column, matching the Players grid. Scaled to the rows
+    # actually in view so it stays a comparison after the minutes filter or a
+    # search narrows the table. The floor tracks the data instead of assuming
+    # zero: game score goes negative for a bad season, and a 0 floor would
+    # render those as an empty bar indistinguishable from a replacement-level
+    # one.
+    scores = view["game_score"].dropna()
+    gs_min = float(min(0.0, scores.min())) if len(scores) else 0.0
+    gs_max = float(scores.max()) if len(scores) else 1.0
+    if gs_max <= gs_min:
+        gs_max = gs_min + 1.0
+    column_config = COLUMN_CONFIG | {
+        "game_score": st.column_config.ProgressColumn(
+            "GmSc", format="%.1f", width="medium", min_value=gs_min,
+            max_value=gs_max, color=T.ACCENT,
+            help="Hollinger game score, about 10 is an average starter"),
+    }
+    st.dataframe(view[cols], hide_index=True, height=400, row_height=38,
+                 column_config=column_config)
 
     has_official = bool(stats["has_official_advanced"].any())
     source_note = ("Net rating and PIE are official NBA figures; everything else is "
