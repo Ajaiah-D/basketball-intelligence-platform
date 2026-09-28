@@ -11,6 +11,10 @@ font = "sans serif"
 # looks half-flattened.
 baseRadius = "2px"
 buttonRadius = "2px"
+# Table chrome. The grid draws its cells into a <canvas>, so these are the
+# only hooks that reach it - CSS in theme.py cannot style dataframe cells.
+dataframeHeaderBackgroundColor = "#232322"
+dataframeBorderColor = "#2c2c2a"
 
 [browser]
 gatherUsageStats = false
