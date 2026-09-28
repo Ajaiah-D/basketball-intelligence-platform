@@ -81,7 +81,7 @@ CSS = f"""
    does the scaling, the px term stops lines and wide tables from stretching
    to an unreadable width on ultrawide displays. */
 .block-container {{ padding-top: 1.2rem; padding-bottom: 5rem;
-                    max-width: min(94vw, 2100px); }}
+                    max-width: min(94vw, 1780px); }}
 html, body, [class*="css"] {{ font-family: {FONT}; }}
 h1, h2, h3 {{ font-weight: 800; letter-spacing: -0.02em; }}
 h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
