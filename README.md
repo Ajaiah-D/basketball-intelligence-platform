@@ -5,8 +5,7 @@
 A local-first NBA data platform: ingest official NBA stats, warehouse them in
 DuckDB, model them with dbt, and serve a public dashboard covering players,
 teams, games, and advanced stats across 47 seasons of NBA history.
-Natural-language Q&A and contract/salary data are not built; see
-Status / roadmap below.
+Natural-language Q&A is not built yet; see Status / roadmap below.
 
 ## Screenshots
 
@@ -76,8 +75,9 @@ retries. Play-by-play is the expensive dataset (~1,300 calls for a full
 season), so by default only the 20 most recent games are pulled; increase with
 `--pbp-games N` or pull everything with `--all-pbp`.
 
-Contract/salary data is **not** available from nba_api and will need a
-separate source in a future session.
+Contract/salary data is not available from nba_api, so team payroll is
+scraped separately from Basketball-Reference
+(`ingestion/team_payroll_ingest.py`), back to 1984-85.
 
 ## Project layout
 
@@ -185,12 +185,16 @@ group by 1 order by ppg desc limit 10;
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging layer (7 models) and marts (2 models), 23 passing tests
+- [x] dbt staging (9 models), intermediate (1) and marts (6), plus a salary
+      cap history seed; 67 passing tests
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors. Official NBA advanced stats pulled for 1996-97 onward (one API
       call per season); earlier seasons derived from box scores, and withheld
       entirely before 1985-86 where the source has no rebound or turnover data
 - [ ] Lineup and on/off data (needs possession-level substitution parsing)
-- [ ] Contract/salary data source + models
+- [x] Team payroll vs salary cap, luxury tax and apron lines
+      (Basketball-Reference payroll, 1984-85 on; Finances page)
+- [x] Game predictions: Elo ratings feeding a ridge model, evaluated with a
+      walk-forward backtest (`ml/`; Predictions page)
 - [ ] Full Q&A dashboard (natural-language questions over marts)
 - [ ] Incremental ingestion (only new games) + scheduling
