@@ -19,16 +19,6 @@ finances.render()
 """
 
 
-def _run(team: str | None = None) -> AppTest:
-    at = AppTest.from_string(SCRIPT)
-    at.run()
-    assert not at.exception, at.exception
-    if team is not None:
-        at.selectbox[0].select(team).run()
-        assert not at.exception, at.exception
-    return at
-
-
 def _captions(at: AppTest) -> str:
     return " ".join(c.value for c in at.get("caption"))
 
@@ -43,6 +33,25 @@ def test_renders_without_a_warehouse(tmp_warehouse_without_marts):
     assert any("hasn't been loaded" in i.value for i in at.get("info"))
 
 
+def _run(team: str | None = None, season: str | None = None) -> AppTest:
+    """selectbox[0] is the season, selectbox[1] the team (a franchise key;
+    the widget shows full names via format_func)."""
+    at = AppTest.from_string(SCRIPT)
+    at.run()
+    assert not at.exception, at.exception
+    if season is not None:
+        at.selectbox[0].select(season).run()
+        assert not at.exception, at.exception
+    if team is not None:
+        at.selectbox[1].select(team).run()
+        assert not at.exception, at.exception
+    return at
+
+
+def _markdown(at: AppTest) -> str:
+    return " ".join(m.value for m in at.markdown)
+
+
 def test_renders_a_team_with_no_flagged_seasons(warehouse_with_finances_mart):
     at = _run("BOS")
     assert len(at.get("dataframe")) == 1
@@ -51,55 +60,78 @@ def test_renders_a_team_with_no_flagged_seasons(warehouse_with_finances_mart):
     assert "unusually low" not in captions
 
 
+def test_says_when_the_salary_data_was_updated(warehouse_with_finances_mart):
+    at = _run()
+    assert "Salary data updated Sep 23, 2026 · covers through 2023-24." in _captions(at)
+
+
+def test_team_summary_explains_the_number_and_its_cause(warehouse_with_finances_mart):
+    at = _run("BOS")
+    text = _markdown(at)
+    assert "In 2023-24 the Boston Celtics spent $180.0M, the highest payroll of 2 teams." in text
+    assert "$7.7M over the first apron and $2.8M under the second apron" in text
+    assert "(Player One, Player Two and Player Three) made up 50% of the payroll" in text
+    assert "Biggest contracts" in text
+
+
+def test_league_summary_and_explainer_render(warehouse_with_finances_mart):
+    at = _run()
+    text = _markdown(at)
+    assert "In 2023-24, 2 of 2 teams were over the salary cap" in text
+    assert "soft" in text  # the how-to-read explainer
+
+
+def test_old_warehouse_without_contracts_or_dates_still_renders(legacy_finances_warehouse):
+    at = _run("BOS")
+    assert "update date not recorded" in _captions(at)
+    assert "Biggest contracts" not in _markdown(at)
+    assert "the highest payroll of 2 teams" in _markdown(at)
+
+
+def test_a_team_with_no_row_that_season_says_so(warehouse_with_finances_mart):
+    at = _run("DEN")  # the fixture's DEN has 1986-87 and 1995-96 only
+    assert any("No payroll data for the Denver Nuggets in 2023-24" in i.value
+               for i in at.get("info"))
+
+
 def test_renders_a_source_gap_team_and_says_the_source_is_missing_rows(
         warehouse_with_finances_mart):
     """DEN's 1986-87 is 'sparse_source_data' - one salary row on record.
     That one really is Basketball-Reference missing the roster, so the
     strong sentence is the correct one here."""
-    at = _run("DEN")
+    at = _run("DEN", season="1986-87")
     captions = _captions(at)
     assert "No reliable payroll total exists for 1986-87" in captions
     assert "salary records for that season are missing" in captions
+    assert "There's no reliable payroll figure for the Denver Nuggets in 1986-87." \
+        in _markdown(at)
 
 
 def test_a_real_but_cheap_roster_is_not_called_a_missing_source(
         warehouse_with_finances_mart):
-    """The bug this page shipped with: MIA's 1988-89 is flagged only for
-    being under half the cap, and it is a complete 13-player inaugural
-    expansion roster. Telling a user Basketball-Reference's records for
-    1988-89 are missing most of Miami's roster is a false published claim
-    about a real NBA season, so the caption must say the number is low -
-    not that the data is absent."""
+    """MIA's 1988-89 is flagged only for being under half the cap, and it is
+    a complete 13-player inaugural expansion roster. The caption must say the
+    number is low - not that the data is absent."""
     at = _run("MIA")
     captions = _captions(at)
     assert "1988-89" in captions
     assert "unusually low relative to" in captions
-    assert "records for that season are missing" not in captions, (
-        "the source-gap sentence must not be used for a below_half_cap season"
-    )
+    assert "records for that season are missing" not in captions
 
 
-def test_merged_franchise_renders_both_codes_as_one_history(
-        warehouse_with_finances_mart):
-    """Selecting GSW must show the GOS seasons too - see db.MERGED_FRANCHISES.
-    The selector must also not offer the legacy code as a separate team."""
-    at = AppTest.from_string(SCRIPT)
-    at.run()
-    assert not at.exception
-    options = at.selectbox[0].options
-    assert "GSW" in options and "GOS" not in options
-
-    at.selectbox[0].select("GSW").run()
+def test_merged_franchise_renders_both_codes_as_one_history(warehouse_with_finances_mart):
+    """GSW must include the GOS seasons, and the selector lists full names,
+    never a legacy code."""
+    at = _run()
+    options = at.selectbox[1].options
+    assert "Golden State Warriors" in options
+    assert "GOS" not in options and "GSW" not in options
+    at.selectbox[1].select("GSW").run()
     assert not at.exception, at.exception
     table = at.get("dataframe")[0].value
-    assert table["season"].tolist() == ["1995-96", "1996-97"], (
-        "the pre-rename GOS season is missing from the merged franchise view"
-    )
-    assert "files under GOS" in _captions(at)
+    assert table["Season"].tolist() == ["1995-96", "1996-97"]
 
 
 @pytest.mark.parametrize("team", ["BOS", "NYK", "DEN", "MIA", "GSW"])
 def test_every_team_in_the_fixture_renders(warehouse_with_finances_mart, team):
-    """Cheap breadth: the selector must not have an entry that crashes the
-    page it belongs to."""
     _run(team)

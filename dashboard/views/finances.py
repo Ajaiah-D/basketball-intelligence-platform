@@ -1,40 +1,25 @@
-"""Team payroll history vs. the league salary cap, luxury tax, and apron lines."""
+"""Finances - what teams spend, against the league's salary cap, luxury tax
+and apron lines.
+
+Reads top to bottom as three questions: how did the league spend that
+season, what do the lines mean, and where does one team sit and why (its
+biggest contracts) - with the franchise's whole history below. Every number
+has a sentence next to it (dashboard/lib/payroll.py): the first version of
+this page showed bare figures and "Over cap" on nearly every team, with no
+word that a soft cap makes that normal.
+"""
+
+import html
 
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db
+from dashboard.lib import db, franchises, payroll
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
                                # acknowledged by them to be partly extrapolated/minimum-filled
-
-# Highest bracket first: a team over the second apron is also, definitionally,
-# over the first apron/tax/cap, so this must be checked in this order.
-_STATUS_TIERS = [
-    ("over_second_apron", "Second apron", T.CRITICAL),
-    ("over_first_apron", "First apron", T.SERIES[1]),
-    ("over_tax", "Luxury tax", T.SERIES[3]),
-    ("over_cap", "Over cap", T.ACCENT),
-]
-
-
-def _status(row) -> tuple[str, str]:
-    """(label, color) for the latest season's KPI card - the highest cap
-    bracket the team's real payroll actually reached, or a plain "data
-    incomplete" flag rather than guessing a bracket for a number the mart
-    itself doesn't trust."""
-    if row["payroll_likely_incomplete"]:
-        return "Data incomplete", T.MUTED
-    for col, label, color in _STATUS_TIERS:
-        # over_tax/over_first_apron/over_second_apron are null, not False,
-        # for a season before that threshold existed (e.g. no apron before
-        # 2023-24) - pd.NA is truthy-ambiguous, so check real values only.
-        if pd.notna(row[col]) and row[col]:
-            return label, color
-    return "Under cap", T.GOOD
-
 
 # mart_team_finances.payroll_incomplete_reason values that really do mean
 # "Basketball-Reference is missing rows", as opposed to "the number is real
@@ -94,6 +79,42 @@ def _render_incomplete_caption(team_df) -> None:
         )
 
 
+def _contracts_card(contracts: pd.DataFrame) -> str:
+    rows = [
+        f'<div class="bip-row">{T.rank_badge(int(r.salary_rank))}'
+        f'<span class="bip-name">{html.escape(str(r.player))}</span>'
+        f'<span class="bip-team">{r.share_of_payroll:.0%}</span>'
+        f'<span class="bip-val">{payroll.money(r.salary_usd)}</span></div>'
+        for r in contracts.head(5).itertuples()
+    ]
+    return f'<div class="bip-card"><h4>Biggest contracts</h4>{"".join(rows)}</div>'
+
+
+def _render_team_season(team_df: pd.DataFrame, league: pd.DataFrame,
+                        team_name: str, season: str) -> None:
+    row_df = team_df[team_df["season"] == season]
+    if row_df.empty:
+        st.info(f"No payroll data for the {team_name} in {season}.")
+        return
+    row = row_df.iloc[0]
+    contracts = (db.team_contracts(season, row["team_abbreviation"])
+                 if db.team_contracts_available() else None)
+    rank = payroll.league_rank(league, row["team_abbreviation"])
+    st.markdown(payroll.team_summary(row, row["era_name"], rank, contracts))
+
+    label, color = payroll.bracket(row)
+    reliable = label != "Data incomplete"
+    k1, k2, k3 = st.columns(3)
+    k1.markdown(T.kpi("Payroll", payroll.money(row["team_payroll"]) if reliable else "N/A"),
+                unsafe_allow_html=True)
+    k2.markdown(T.kpi("League rank",
+                      f"{payroll.ordinal(rank[0])} of {rank[1]}" if rank else "N/A"),
+                unsafe_allow_html=True)
+    k3.markdown(T.kpi("Status", label, accent=color), unsafe_allow_html=True)
+    if contracts is not None and len(contracts) and reliable:
+        st.markdown(_contracts_card(contracts), unsafe_allow_html=True)
+
+
 def render() -> None:
     st.markdown("## Finances", unsafe_allow_html=True)
 
@@ -105,81 +126,78 @@ def render() -> None:
     if all_seasons.empty:
         st.info("No payroll data available.")
         return
-
-    # One entry per franchise, not per abbreviation: GOS/GSW, PHL/PHI,
-    # SAN/SAS and UTH/UTA are each one team under nba_api's 1996-97 code
-    # rename, and listing both halves separately hands the user a 12-season
-    # chart and a 30-season chart instead of the 42-season history this page
-    # exists to show. See db.MERGED_FRANCHISES.
-    teams = db.franchise_options(all_seasons["team_abbreviation"])
-    default_ix = teams.index("BOS") if "BOS" in teams else 0
-    team = st.selectbox("Team", teams, index=default_ix, label_visibility="visible")
-
-    codes = db.franchise_codes(team)
-    team_df = all_seasons[all_seasons["team_abbreviation"].isin(codes)]
+    all_seasons = franchises.annotate(all_seasons)
     cap_df = db.salary_cap_history()
 
-    if len(codes) > 1:
-        legacy = ", ".join(c for c in codes if c != team)
-        st.caption(
-            f"{team} includes this franchise's pre-1996-97 seasons, which the "
-            f"source data files under {legacy} - same team, renamed code."
-        )
+    fetched = (all_seasons["payroll_fetched_at_utc"].max()
+               if "payroll_fetched_at_utc" in all_seasons else None)
+    st.caption(payroll.freshness_text(fetched, all_seasons["season"].max(),
+                                      cap_df["season"].max()))
 
+    seasons = sorted(all_seasons["season"].unique(), reverse=True)
+    teams = sorted(all_seasons["franchise"].unique(), key=franchises.franchise_name)
+    f1, f2 = st.columns(2)
+    season = f1.selectbox("Season", seasons, index=0)
+    team = f2.selectbox("Team", teams, index=teams.index("BOS") if "BOS" in teams else 0,
+                        format_func=franchises.franchise_name)
+    team_name = franchises.franchise_name(team)
+    team_df = all_seasons[all_seasons["franchise"] == team].sort_values("season")
+    league = all_seasons[all_seasons["season"] == season]
+
+    # --- The league that season ---------------------------------------------
+    st.markdown(f"### The league in {season}")
+    st.markdown(payroll.league_summary(league, season))
+    snapshot = payroll.reliable(league).copy()
+    snapshot["team_name"] = snapshot["era_name"]
+    snapshot["bar_color"] = [payroll.bracket(r)[1] for _, r in snapshot.iterrows()]
+    this_season = team_df[team_df["season"] == season]
+    highlight = this_season["era_name"].iloc[0] if len(this_season) else None
+    st.plotly_chart(viz.league_payroll_snapshot(snapshot, highlight=highlight),
+                    width="stretch", config=viz.PLOTLY_CONFIG)
+
+    with st.expander("How to read this", expanded=True):
+        st.markdown(payroll.HOW_TO_READ)
+
+    # --- The team -------------------------------------------------------------
+    st.markdown(f"### {team_name}")
+    note = franchises.FRANCHISE_NOTES.get(team)
+    if note:
+        st.caption(note)
+    _render_team_season(team_df, league, team_name, season)
+
+    st.markdown("#### Payroll history")
     if (team_df["season"] < EARLY_ERA_CUTOFF).any():
         st.caption(
             "Seasons before 1996-97 use payroll figures Basketball-Reference "
             "itself notes are partly reconstructed for players with missing "
             "records - treat early-era numbers as directionally right, not exact."
         )
-
-    latest = team_df.sort_values("season").iloc[-1]
-    payroll_str = (f"${latest.team_payroll:,.0f}" if pd.notna(latest.team_payroll)
-                   else "N/A")
-    pct_str = (f"{latest.payroll_pct_of_cap * 100:.0f}%"
-               if pd.notna(latest.payroll_pct_of_cap) else "N/A")
-    status_label, status_color = _status(latest)
-
-    st.markdown(f"### {team} &nbsp;{T.chip(latest.season)}", unsafe_allow_html=True)
-    k1, k2, k3 = st.columns(3)
-    k1.markdown(T.kpi("Payroll", payroll_str), unsafe_allow_html=True)
-    k2.markdown(T.kpi("% of cap", pct_str), unsafe_allow_html=True)
-    k3.markdown(T.kpi("Status", status_label, accent=status_color),
-                unsafe_allow_html=True)
-
-    st.plotly_chart(viz.team_finances_trend(team_df, cap_df), width="stretch",
-                    config=viz.PLOTLY_CONFIG)
-
+    st.plotly_chart(viz.team_finances_trend(team_df, cap_df,
+                                            eras=franchises.era_spans(team_df)),
+                    width="stretch", config=viz.PLOTLY_CONFIG)
     _render_incomplete_caption(team_df)
 
-    display_df = team_df[["season", "team_payroll", "salary_cap", "luxury_tax",
-                          "first_apron", "second_apron", "payroll_pct_of_cap",
-                          "payroll_likely_incomplete", "over_cap", "over_tax",
-                          "over_first_apron", "over_second_apron"]].copy()
+    display_df = team_df[["season", "era_name", "team_payroll", "salary_cap", "luxury_tax",
+                          "first_apron", "second_apron", "payroll_pct_of_cap"]].copy()
     # Stored as a ratio (1.23 = 123% of cap); NumberColumn's printf format
-    # doesn't scale for us, so do it here rather than showing "1%" for a
-    # team at the cap.
+    # doesn't scale for us.
     display_df["payroll_pct_of_cap"] = display_df["payroll_pct_of_cap"] * 100
-
+    display_df["status"] = [payroll.bracket(r)[0] for _, r in team_df.iterrows()]
+    display_df = display_df.rename(columns={
+        "season": "Season", "era_name": "Team", "team_payroll": "Payroll",
+        "salary_cap": "Salary cap", "luxury_tax": "Luxury tax",
+        "first_apron": "1st apron", "second_apron": "2nd apron",
+        "payroll_pct_of_cap": "% of cap", "status": "Status",
+    })
+    money_col = st.column_config.NumberColumn(format="$%,.0f")
     with st.expander("Show full season-by-season table"):
         st.dataframe(
-            display_df,
-            hide_index=True, width="stretch",
+            display_df, hide_index=True, width="stretch",
             column_config={
-                "season": st.column_config.TextColumn("Season"),
-                "team_payroll": st.column_config.NumberColumn("Payroll", format="$%,.0f"),
-                "salary_cap": st.column_config.NumberColumn("Salary Cap", format="$%,.0f"),
-                "luxury_tax": st.column_config.NumberColumn("Luxury Tax", format="$%,.0f"),
-                "first_apron": st.column_config.NumberColumn("1st Apron", format="$%,.0f"),
-                "second_apron": st.column_config.NumberColumn("2nd Apron", format="$%,.0f"),
-                "payroll_pct_of_cap": st.column_config.NumberColumn("% of Cap", format="%.0f%%"),
-                "payroll_likely_incomplete": st.column_config.CheckboxColumn("Data Incomplete?"),
-                "over_cap": st.column_config.CheckboxColumn("Over Cap"),
-                "over_tax": st.column_config.CheckboxColumn("Over Tax"),
-                "over_first_apron": st.column_config.CheckboxColumn("Over 1st Apron"),
-                "over_second_apron": st.column_config.CheckboxColumn("Over 2nd Apron"),
+                "Payroll": money_col, "Salary cap": money_col, "Luxury tax": money_col,
+                "1st apron": money_col, "2nd apron": money_col,
+                "% of cap": st.column_config.NumberColumn(format="%.0f%%"),
             },
         )
 
-    st.caption("Payroll data via Basketball-Reference.com. League cap/tax/apron "
-              "figures are official NBA announcements.")
+    st.caption(payroll.METHOD_NOTE)
