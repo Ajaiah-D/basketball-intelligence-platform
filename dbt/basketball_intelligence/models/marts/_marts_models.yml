@@ -119,6 +119,8 @@ models:
           (or player_count) to decide whether a value is trustworthy.
       - name: player_count
         tests: [not_null]
+      - name: payroll_fetched_at_utc
+        description: When this team-season's salary page was last scraped (naive UTC).
       - name: salary_cap
         tests: [not_null]
       - name: payroll_likely_incomplete
@@ -146,3 +148,17 @@ models:
         tests:
           - accepted_values:
               values: ['no_source_data', 'sparse_source_data', 'below_half_cap']
+
+  - name: mart_team_contracts
+    description: >
+      One row per player per team-season: salary paid by that team, its rank
+      on the team's payroll (1 = biggest) and its share of the payroll.
+      Sums to mart_team_finances.team_payroll for every team-season with
+      player rows (see assert_team_contracts_sum_to_payroll).
+    columns:
+      - name: player
+        tests: [not_null]
+      - name: salary_usd
+        tests: [not_null]
+      - name: salary_rank
+        tests: [not_null]

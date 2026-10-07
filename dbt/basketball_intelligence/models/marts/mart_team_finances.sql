@@ -74,6 +74,10 @@
 -- so a future re-scrape that introduces a new gap is caught without another
 -- manual audit - condition 3 is the one place that audit still matters.
 
+-- payroll_fetched_at_utc is when this team-season's page was last scraped,
+-- so the dashboard can say how current its salary figures are. Null for a
+-- row scraped before timestamps were recorded.
+
 with payroll as (
     select * from {{ ref('stg_team_payroll') }}
 ),
@@ -87,6 +91,7 @@ select
     p.team_abbreviation,
     p.team_payroll,
     p.player_count,
+    p.fetched_at_utc as payroll_fetched_at_utc,
     c.salary_cap,
     c.luxury_tax,
     c.first_apron,
