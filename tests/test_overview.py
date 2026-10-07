@@ -1,33 +1,39 @@
 import pandas as pd
 
+from dashboard.lib import glossary
 from dashboard.views import overview
 
 
-def _stats(gp_max: int) -> pd.DataFrame:
-    return pd.DataFrame({
-        "player": ["Volume Shooter", "Three For Three", "Solid"],
-        "gp": [gp_max, 3, gp_max],
-        "fg3_pct": [41.0, 100.0, 38.0],
-        "tpa_total": [500, 3, 300],
+def test_ast_to_leaders_need_real_playmaking_volume():
+    """A center with 40 assists and 8 turnovers has a 5.0 ratio and no
+    business leading a playmaking list; the per-game floor keeps him off."""
+    stats = pd.DataFrame({
+        "player": ["Point Guard", "Low-Usage Big", "Wing"],
+        "apg": [9.0, 0.6, 4.0],
+        "ast_to": [4.1, 5.0, 2.2],
     })
+    leaders = overview.ast_to_leaders(stats)
+    assert leaders["player"].tolist() == ["Point Guard", "Wing"]
 
 
-def test_shooting_leaders_need_real_volume():
-    """A bench player who went 3-for-3 must not top a 3P% leaderboard."""
-    leaders, floor = overview.shooting_leaders(_stats(82), "fg3_pct", "tpa_total", 100)
-    assert floor == 100
-    assert leaders["player"].tolist() == ["Volume Shooter", "Solid"]
+def test_close_game_share_counts_five_points_or_fewer():
+    games = pd.DataFrame({"home_pts": [100, 110, 99, 120],
+                          "away_pts": [105, 104, 100, 90]})
+    # margins 5, 6, 1, 30 -> two of four within five
+    assert overview.close_game_share(games) == 0.5
+    assert overview.close_game_share(games.iloc[0:0]) is None
 
 
-def test_shooting_floor_scales_with_the_season_so_far():
-    """Ten games into a season nobody has 100 threes yet; the cut scales."""
-    _, floor = overview.shooting_leaders(_stats(10), "fg3_pct", "tpa_total", 100)
-    assert floor == 12  # 100 * 10/82, rounded
+def test_best_record_spotlight_names_the_team_and_record(monkeypatch):
+    monkeypatch.setattr(overview.media, "team_logo_data_uri", lambda team_id: None)
+    standings = pd.DataFrame({"team_id": [1610612765], "team": ["DET"],
+                              "team_name": ["Detroit Pistons"], "w": [60], "l": [22]})
+    html = overview.best_record_spot(standings)
+    assert "Best record" in html
+    assert "Detroit Pistons" in html and "60-22" in html
+    assert overview.best_record_spot(standings.iloc[0:0]) == ""
 
 
-def test_points_per_game_is_one_teams_average_not_both_combined():
-    """The KPI used to add home and away scores and show ~231 under a label
-    every fan reads as one team's points per game (~115)."""
-    games = pd.DataFrame({"home_pts": [120, 110], "away_pts": [100, 130]})
-    assert overview.team_points_per_game(games) == 115.0
-    assert overview.team_points_per_game(games.iloc[0:0]) is None
+def test_new_terms_are_explained():
+    assert "turnover" in glossary.TERMS["AST/TO"].lower()
+    assert "5 points" in glossary.TERMS["Close games"]
