@@ -554,7 +554,10 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame,
         for i, (first, _last, name) in enumerate(eras):
             if i:
                 fig.add_vline(x=first, line=dict(color=T.MUTED, width=1, dash="dot"))
-            fig.add_annotation(x=first, y=0.98, xref="x", yref="paper", text=name,
+            # Alternating heights: short eras (New Orleans renames three
+            # times in 2002-13) would otherwise print on top of each other.
+            fig.add_annotation(x=first, y=0.98 if i % 2 == 0 else 0.91,
+                               xref="x", yref="paper", text=name,
                                showarrow=False, xanchor="left", yanchor="top",
                                font=dict(color=T.MUTED, size=11))
     fig.update_layout(**_layout(height=420, showlegend=True))
