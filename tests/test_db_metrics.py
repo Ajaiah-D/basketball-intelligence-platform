@@ -171,3 +171,14 @@ def test_salary_cap_history_has_no_apron_before_2023_24(warehouse_with_finances_
     df = db.salary_cap_history()
     pre_apron = df[df["season"] < "2023-24"]
     assert pre_apron["first_apron"].isna().all()
+
+
+def test_team_contracts(warehouse_with_finances_mart):
+    assert db.team_contracts_available() is True
+    df = db.team_contracts("2023-24", "BOS")
+    assert df["salary_rank"].tolist() == [1, 2, 3]
+    assert df["player"].iloc[0] == "Player One"
+
+
+def test_team_contracts_unavailable_on_an_old_warehouse(legacy_finances_warehouse):
+    assert db.team_contracts_available() is False

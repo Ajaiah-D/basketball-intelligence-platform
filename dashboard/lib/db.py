@@ -486,6 +486,28 @@ def salary_cap_history() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
+def team_contracts_available() -> bool:
+    """Whether mart_team_contracts exists - a warehouse published before
+    per-player salaries were scraped has the finances mart but not this."""
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from main_marts.mart_team_contracts limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+def team_contracts(season: str, team_abbreviation: str) -> pd.DataFrame:
+    """One team-season's salaries, biggest first."""
+    return q(
+        "select player, salary_usd, salary_rank, share_of_payroll "
+        "from main_marts.mart_team_contracts "
+        "where season = ? and team_abbreviation = ? order by salary_rank",
+        (season, team_abbreviation),
+    )
+
+
+@st.cache_data(ttl=600, show_spinner=False)
 def predictions_available() -> bool:
     """Whether any predictions have been written yet.
 
