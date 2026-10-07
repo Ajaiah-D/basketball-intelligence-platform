@@ -23,6 +23,14 @@ def shooting_leaders(stats, pct_col: str, attempts_col: str, full_season_attempt
     return stats[stats[attempts_col] >= floor].nlargest(n, pct_col), floor
 
 
+def team_points_per_game(games) -> float | None:
+    """What one team scores in an average game. A game's two scores are two
+    teams' outputs, so their sum (~231) is not "points per game" to a fan."""
+    if not len(games):
+        return None
+    return float((games.home_pts + games.away_pts).mean() / 2)
+
+
 def leaders_card(title: str, df, stat: str, help: str = "") -> str:
     rows = []
     for i, r in enumerate(df.itertuples(), 1):
@@ -101,9 +109,11 @@ def render() -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(T.kpi("Games", f"{len(games):,}"), unsafe_allow_html=True)
     c2.markdown(T.kpi("Players", f"{len(stats):,}"), unsafe_allow_html=True)
-    avg_pts = (games.home_pts + games.away_pts).mean() if len(games) else float("nan")
-    c3.markdown(T.kpi("Avg points / game",
-                      f"{avg_pts:.1f}" if avg_pts == avg_pts else "-"),
+    team_ppg = team_points_per_game(games)
+    c3.markdown(T.kpi("Points / game", f"{team_ppg:.1f}" if team_ppg is not None else "-",
+                      help=("Average points one team scores in a game this season. "
+                            + (f"Both teams together average {team_ppg * 2:.1f}."
+                               if team_ppg is not None else ""))),
                 unsafe_allow_html=True)
     c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", note="latest season only"),
                 unsafe_allow_html=True)
