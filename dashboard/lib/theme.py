@@ -141,7 +141,10 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 /* ---- KPI tiles ---- */
 .bip-kpi {{ border-left: 3px solid {ACCENT}; }}
 .bip-kpi-label {{ font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
-                  color: {MUTED}; font-weight: 600; }}
+                  color: {MUTED}; font-weight: 600;
+                  display: flex; justify-content: space-between; gap: .5rem; }}
+.bip-kpi-note  {{ text-transform: none; letter-spacing: 0; font-weight: 500;
+                  color: {MUTED}; white-space: nowrap; }}
 .bip-kpi-value {{ font-size: 1.85rem; font-weight: 800; color: {INK}; line-height: 1.2;
                   font-variant-numeric: tabular-nums; }}
 .bip-kpi-sub   {{ font-size: .75rem; color: {INK_2}; }}
@@ -233,10 +236,13 @@ def card(st, title: str, body_html: str) -> None:
     )
 
 
-def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT) -> str:
+def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT, note: str = "") -> str:
+    # `note` is a short qualifier on the label's own line (keeps the card the
+    # same height as its neighbours); `sub` adds a line under the value.
+    note_html = f'<span class="bip-kpi-note">{note}</span>' if note else ""
     sub_html = f'<div class="bip-kpi-sub">{sub}</div>' if sub else ""
     return (f'<div class="bip-card bip-kpi" style="border-left-color:{accent}">'
-            f'<div class="bip-kpi-label">{label}</div>'
+            f'<div class="bip-kpi-label">{label}{note_html}</div>'
             f'<div class="bip-kpi-value">{value}</div>{sub_html}</div>')
 
 
