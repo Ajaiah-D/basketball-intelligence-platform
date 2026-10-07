@@ -93,3 +93,11 @@ models:
       - name: player_count
         description: Salary rows the total was summed from; 0 means no data.
         tests: [not_null]
+
+  - name: stg_team_payroll_players
+    description: One row per salary line per team-season, typed.
+    columns:
+      - name: bbref_player_id
+        tests: [not_null]
+      - name: salary_usd
+        tests: [not_null]

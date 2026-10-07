@@ -41,3 +41,12 @@ sources:
           0) where the source page has no salary table; player_count records how
           many player rows the total was summed from, so an incomplete season is
           an observed fact rather than something inferred from the cap ratio.
+          fetched_at_utc is when the page was scraped (naive UTC).
+      - name: team_payroll_players
+        description: >
+          One row per salary line on a team's Basketball-Reference season page
+          (the salaries2 table), 1984-85 on - the rows team_payroll sums,
+          written by ingestion/team_payroll_ingest.py from the same fetch.
+          Basketball-Reference lists the players a team finished the season
+          with plus anyone on 10-day contracts along the way (at the amount
+          paid); a traded player appears only on the team he ended with.

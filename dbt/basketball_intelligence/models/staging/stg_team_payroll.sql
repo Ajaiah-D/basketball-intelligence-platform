@@ -11,5 +11,6 @@ select
     cast(season as varchar)            as season,
     cast(team_abbreviation as varchar) as team_abbreviation,
     cast(team_payroll as bigint)       as team_payroll,
-    cast(player_count as integer)      as player_count
+    cast(player_count as integer)      as player_count,
+    cast(fetched_at_utc as timestamp)  as fetched_at_utc
 from {{ source('raw', 'team_payroll') }}
