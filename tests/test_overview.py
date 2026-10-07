@@ -23,3 +23,11 @@ def test_shooting_floor_scales_with_the_season_so_far():
     """Ten games into a season nobody has 100 threes yet; the cut scales."""
     _, floor = overview.shooting_leaders(_stats(10), "fg3_pct", "tpa_total", 100)
     assert floor == 12  # 100 * 10/82, rounded
+
+
+def test_points_per_game_is_one_teams_average_not_both_combined():
+    """The KPI used to add home and away scores and show ~231 under a label
+    every fan reads as one team's points per game (~115)."""
+    games = pd.DataFrame({"home_pts": [120, 110], "away_pts": [100, 130]})
+    assert overview.team_points_per_game(games) == 115.0
+    assert overview.team_points_per_game(games.iloc[0:0]) is None
