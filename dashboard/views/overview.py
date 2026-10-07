@@ -103,7 +103,7 @@ def render() -> None:
     c3.markdown(T.kpi("Avg points / game",
                       f"{avg_pts:.1f}" if avg_pts == avg_pts else "-"),
                 unsafe_allow_html=True)
-    c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", "latest season only"),
+    c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", note="latest season only"),
                 unsafe_allow_html=True)
 
     st.markdown("#### League leaders")
