@@ -183,3 +183,23 @@ def test_write_season_refetches_a_season_missing_its_player_file(tmp_path, monke
 
     team_payroll_ingest.write_season("2009-10", ["BOS"])
     assert calls == ["BOS"], "with both files present the season is skipped"
+
+
+def test_fetch_decodes_pages_as_utf8_even_without_a_declared_charset(monkeypatch):
+    """Basketball-Reference serves UTF-8 with a bare "text/html" content type,
+    and requests decodes that as ISO-8859-1 - which published "Luka DonÄ\x8diÄ\x87"
+    for every accented name until the fetch forced UTF-8."""
+    import requests
+
+    def fake_get(url, headers, timeout):
+        resp = requests.Response()
+        resp.status_code = 200
+        resp.headers["Content-Type"] = "text/html"
+        resp._content = "Luka Dončić".encode("utf-8")
+        # What requests' HTTP adapter does to every real response.
+        resp.encoding = requests.utils.get_encoding_from_headers(resp.headers)
+        return resp
+
+    monkeypatch.setattr(team_payroll_ingest, "_throttle", lambda: None)
+    monkeypatch.setattr(team_payroll_ingest.requests, "get", fake_get)
+    assert team_payroll_ingest.fetch_team_season_html("DAL", "2023-24") == "Luka Dončić"

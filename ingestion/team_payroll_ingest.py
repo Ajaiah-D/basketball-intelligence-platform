@@ -165,6 +165,9 @@ def fetch_team_season_html(team_code: str, season: str) -> str:
         try:
             resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
+            # The site serves UTF-8 under a bare "text/html", which requests
+            # decodes as ISO-8859-1 - "Luka Dončić" came out "DonÄ\x8diÄ\x87".
+            resp.encoding = "utf-8"
             return resp.text
         except requests.RequestException as exc:
             if attempt == MAX_RETRIES:
