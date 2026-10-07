@@ -79,6 +79,13 @@ def _render_incomplete_caption(team_df) -> None:
         )
 
 
+def _prose(text: str) -> str:
+    """Escape dollar signs for st.markdown, which reads a pair of them as a
+    LaTeX formula: "$190.2M ... That's $2.3M" rendered the words between as
+    math until this."""
+    return text.replace("$", "\\$")
+
+
 def _contracts_card(contracts: pd.DataFrame) -> str:
     rows = [
         f'<div class="bip-row">{T.rank_badge(int(r.salary_rank))}'
@@ -100,7 +107,7 @@ def _render_team_season(team_df: pd.DataFrame, league: pd.DataFrame,
     contracts = (db.team_contracts(season, row["team_abbreviation"])
                  if db.team_contracts_available() else None)
     rank = payroll.league_rank(league, row["team_abbreviation"])
-    st.markdown(payroll.team_summary(row, row["era_name"], rank, contracts))
+    st.markdown(_prose(payroll.team_summary(row, row["era_name"], rank, contracts)))
 
     label, color = payroll.bracket(row)
     reliable = label != "Data incomplete"
@@ -116,29 +123,36 @@ def _render_team_season(team_df: pd.DataFrame, league: pd.DataFrame,
 
 
 def render() -> None:
-    st.markdown("## Finances", unsafe_allow_html=True)
-
     if not db.team_finances_available():
+        st.markdown("## Finances", unsafe_allow_html=True)
         st.info("Payroll data hasn't been loaded into this warehouse yet.")
         return
 
     all_seasons = db.team_payroll_history()
     if all_seasons.empty:
+        st.markdown("## Finances", unsafe_allow_html=True)
         st.info("No payroll data available.")
         return
     all_seasons = franchises.annotate(all_seasons)
     cap_df = db.salary_cap_history()
 
+    # The sidebar's season, like every other page - a second season picker
+    # here would disagree with it. Payroll starts in 1984-85 while games go
+    # back to 1979-80, so an earlier pick falls back to the latest season.
+    latest = all_seasons["season"].max()
+    picked = st.session_state.get("season") or latest
+    season = picked if picked in set(all_seasons["season"]) else latest
+
+    st.markdown(f"## Finances &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     fetched = (all_seasons["payroll_fetched_at_utc"].max()
                if "payroll_fetched_at_utc" in all_seasons else None)
-    st.caption(payroll.freshness_text(fetched, all_seasons["season"].max(),
-                                      cap_df["season"].max()))
+    st.caption(payroll.freshness_text(fetched, latest, cap_df["season"].max()))
+    if season != picked:
+        st.caption(f"No salary data for {picked} (it starts in "
+                   f"{all_seasons['season'].min()}), so this shows {season}.")
 
-    seasons = sorted(all_seasons["season"].unique(), reverse=True)
     teams = sorted(all_seasons["franchise"].unique(), key=franchises.franchise_name)
-    f1, f2 = st.columns(2)
-    season = f1.selectbox("Season", seasons, index=0)
-    team = f2.selectbox("Team", teams, index=teams.index("BOS") if "BOS" in teams else 0,
+    team = st.selectbox("Team", teams, index=teams.index("BOS") if "BOS" in teams else 0,
                         format_func=franchises.franchise_name)
     team_name = franchises.franchise_name(team)
     team_df = all_seasons[all_seasons["franchise"] == team].sort_values("season")
@@ -146,7 +160,7 @@ def render() -> None:
 
     # --- The league that season ---------------------------------------------
     st.markdown(f"### The league in {season}")
-    st.markdown(payroll.league_summary(league, season))
+    st.markdown(_prose(payroll.league_summary(league, season)))
     snapshot = payroll.reliable(league).copy()
     snapshot["team_name"] = snapshot["era_name"]
     snapshot["bar_color"] = [payroll.bracket(r)[1] for _, r in snapshot.iterrows()]
@@ -156,7 +170,7 @@ def render() -> None:
                     width="stretch", config=viz.PLOTLY_CONFIG)
 
     with st.expander("How to read this", expanded=True):
-        st.markdown(payroll.HOW_TO_READ)
+        st.markdown(_prose(payroll.HOW_TO_READ))
 
     # --- The team -------------------------------------------------------------
     st.markdown(f"### {team_name}")

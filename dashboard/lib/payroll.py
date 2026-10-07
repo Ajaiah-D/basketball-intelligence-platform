@@ -14,11 +14,15 @@ import pandas as pd
 
 from . import theme as T
 
+# Over the cap is normal, so it gets a quiet gray: in a season where all 30
+# teams are over it, a bright neutral would outweigh the handful of
+# taxpayers the snapshot exists to point out.
+OVER_CAP_GRAY = "#5f5e59"
+
 # (mart column, label, color), lowest line first. The same color means the
 # same line everywhere: both charts, the status card and the bar colors.
-# The cap is neutral on purpose - being over it is normal.
 LINES = [
-    ("salary_cap", "Salary cap", T.INK_2),
+    ("salary_cap", "Salary cap", OVER_CAP_GRAY),
     ("luxury_tax", "Luxury tax", T.SERIES[3]),
     ("first_apron", "First apron", T.SERIES[1]),
     ("second_apron", "Second apron", T.CRITICAL),

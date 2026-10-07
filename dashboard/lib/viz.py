@@ -599,7 +599,7 @@ def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> g
             fig.add_scatter(x=[value, value], y=ends, mode="lines", name=label,
                             line=dict(color=color, width=1.5, dash="dash"),
                             hovertemplate=f"{label}<br>$%{{x:,.0f}}<extra></extra>")
-    fig.update_layout(**_layout(height=max(320, 22 * len(d) + 80), showlegend=True,
+    fig.update_layout(**_layout(height=max(320, 19 * len(d) + 80), showlegend=True,
                                 bargap=0.25))
     fig.update_xaxes(tickprefix="$", automargin=True)
     fig.update_yaxes(type="category", automargin=True)

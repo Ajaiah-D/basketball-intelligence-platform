@@ -34,22 +34,31 @@ def test_renders_without_a_warehouse(tmp_warehouse_without_marts):
 
 
 def _run(team: str | None = None, season: str | None = None) -> AppTest:
-    """selectbox[0] is the season, selectbox[1] the team (a franchise key;
-    the widget shows full names via format_func)."""
+    """The season comes from the sidebar (session_state["season"]), as on
+    every page; the page's one selectbox is the team (a franchise key; the
+    widget shows full names via format_func)."""
     at = AppTest.from_string(SCRIPT)
+    if season is not None:
+        at.session_state["season"] = season
     at.run()
     assert not at.exception, at.exception
-    if season is not None:
-        at.selectbox[0].select(season).run()
-        assert not at.exception, at.exception
     if team is not None:
-        at.selectbox[1].select(team).run()
+        at.selectbox[0].select(team).run()
         assert not at.exception, at.exception
     return at
 
 
 def _markdown(at: AppTest) -> str:
-    return " ".join(m.value for m in at.markdown)
+    # Dollar signs reach st.markdown escaped (finances._prose); compare
+    # against the text a reader actually sees.
+    return " ".join(m.value for m in at.markdown).replace("\\$", "$")
+
+
+def test_dollar_signs_are_escaped_so_markdown_does_not_render_math(
+        warehouse_with_finances_mart):
+    raw = " ".join(m.value for m in _run("BOS").markdown)
+    assert "\\$180.0M" in raw
+    assert "spent $" not in raw
 
 
 def test_renders_a_team_with_no_flagged_seasons(warehouse_with_finances_mart):
@@ -123,10 +132,10 @@ def test_merged_franchise_renders_both_codes_as_one_history(warehouse_with_finan
     """GSW must include the GOS seasons, and the selector lists full names,
     never a legacy code."""
     at = _run()
-    options = at.selectbox[1].options
+    options = at.selectbox[0].options
     assert "Golden State Warriors" in options
     assert "GOS" not in options and "GSW" not in options
-    at.selectbox[1].select("GSW").run()
+    at.selectbox[0].select("GSW").run()
     assert not at.exception, at.exception
     table = at.get("dataframe")[0].value
     assert table["Season"].tolist() == ["1995-96", "1996-97"]
@@ -135,3 +144,10 @@ def test_merged_franchise_renders_both_codes_as_one_history(warehouse_with_finan
 @pytest.mark.parametrize("team", ["BOS", "NYK", "DEN", "MIA", "GSW"])
 def test_every_team_in_the_fixture_renders(warehouse_with_finances_mart, team):
     _run(team)
+
+
+def test_a_sidebar_season_before_payroll_data_falls_back_to_the_latest(
+        warehouse_with_finances_mart):
+    at = _run(season="1980-81")
+    assert "No salary data for 1980-81 (it starts in 1986-87), so this shows 2023-24."         in _captions(at)
+    assert "In 2023-24, 2 of 2 teams were over the salary cap" in _markdown(at)
