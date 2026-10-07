@@ -3,6 +3,9 @@ the validated dark-mode steps from the dataviz reference palette. Team
 colors are brand-adjacent hues tuned for legibility on the dark surface
 (identity accents on UI chrome, not chart series colors)."""
 
+import html
+
+
 # Categorical series slots (dark-surface steps, fixed order - never cycle).
 # This is the reference palette's own slot order: blue, orange, aqua,
 # yellow, magenta, green, violet, red. An earlier shuffle of these same
@@ -149,6 +152,27 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
                   font-variant-numeric: tabular-nums; }}
 .bip-kpi-sub   {{ font-size: .75rem; color: {INK_2}; }}
 
+/* ---- explanation icon (glossary.py terms) ----
+   The bubble inherits nothing from an uppercase, letter-spaced card title:
+   it resets case, spacing and size itself. Shown on :focus too, so a tap
+   opens it on a phone. */
+.bip-tip {{ position: relative; display: inline-flex; align-items: center;
+            justify-content: center; width: 13px; height: 13px; margin-left: 6px;
+            border: 1px solid {MUTED}; border-radius: 50%; color: {MUTED};
+            font-size: 9px; font-weight: 700; font-style: normal; line-height: 1;
+            text-transform: none; letter-spacing: 0; vertical-align: 1px;
+            cursor: help; outline: none; }}
+.bip-tip:hover, .bip-tip:focus {{ color: {INK}; border-color: {INK}; }}
+.bip-tip::after {{ content: attr(data-tip); position: absolute; z-index: 1000;
+                   left: -8px; top: calc(100% + 8px); width: max-content;
+                   max-width: 260px; padding: .5rem .65rem;
+                   background: {SURFACE}; color: {INK}; border: 1px solid {BORDER};
+                   border-radius: {RADIUS}; box-shadow: 0 6px 24px rgba(0,0,0,.45);
+                   font-size: .78rem; font-weight: 400; line-height: 1.4;
+                   text-align: left; white-space: normal;
+                   opacity: 0; pointer-events: none; transition: opacity .12s ease; }}
+.bip-tip:hover::after, .bip-tip:focus::after {{ opacity: 1; }}
+
 /* ---- leader rows ---- */
 .bip-row {{ display: flex; align-items: baseline; gap: .55rem; padding: .42rem 0;
             border-bottom: 1px solid rgba(255,255,255,.06); }}
@@ -229,20 +253,33 @@ def inject(st) -> None:
     st.markdown(CSS, unsafe_allow_html=True)
 
 
-def card(st, title: str, body_html: str) -> None:
-    st.markdown(
-        f'<div class="bip-card"><h4>{title}</h4>{body_html}</div>',
-        unsafe_allow_html=True,
-    )
+def tip(text: str) -> str:
+    """A small ⓘ that shows `text` on hover - or on tap/keyboard focus, via
+    tabindex, since phones have no hover. Pure CSS (.bip-tip), no script."""
+    safe = html.escape(text, quote=True)
+    return (f'<span class="bip-tip" tabindex="0" role="note" aria-label="{safe}" '
+            f'data-tip="{safe}">i</span>')
 
 
-def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT, note: str = "") -> str:
+def card_html(title: str, body_html: str, help: str = "") -> str:
+    return (f'<div class="bip-card"><h4>{title}{tip(help) if help else ""}</h4>'
+            f'{body_html}</div>')
+
+
+def card(st, title: str, body_html: str, help: str = "") -> None:
+    st.markdown(card_html(title, body_html, help), unsafe_allow_html=True)
+
+
+def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT, note: str = "",
+        help: str = "") -> str:
     # `note` is a short qualifier on the label's own line (keeps the card the
-    # same height as its neighbours); `sub` adds a line under the value.
+    # same height as its neighbours); `sub` adds a line under the value;
+    # `help` adds a hoverable explanation icon after the label.
     note_html = f'<span class="bip-kpi-note">{note}</span>' if note else ""
     sub_html = f'<div class="bip-kpi-sub">{sub}</div>' if sub else ""
+    tip_html = tip(help) if help else ""
     return (f'<div class="bip-card bip-kpi" style="border-left-color:{accent}">'
-            f'<div class="bip-kpi-label">{label}{note_html}</div>'
+            f'<div class="bip-kpi-label"><span>{label}{tip_html}</span>{note_html}</div>'
             f'<div class="bip-kpi-value">{value}</div>{sub_html}</div>')
 
 
