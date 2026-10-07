@@ -24,6 +24,19 @@ def test_parse_salary_table_extracts_every_player_row():
     assert rows[0]["salary_usd"] == 19795712
     assert rows[1]["player"] == "Ray Allen"
     assert rows[1]["salary_usd"] == 18776860
+    assert rows[0]["bbref_player_id"] == "piercpa01"
+    assert rows[1]["bbref_player_id"] == "allenra02"
+
+
+def test_parse_salary_table_unescapes_player_names():
+    html = ('<table id="salaries2"><tr>'
+            '<td class="left" data-append-csv="oneilsh01" data-stat="player" >'
+            '<a href="/players/o/oneilsh01.html">Shaquille O&#x27;Neal</a></td>'
+            '<td class="right" data-stat="salary" csk="17142000" >$17,142,000</td>'
+            '</tr></table>')
+    rows = parse_salary_table(html)
+    assert rows == [{"bbref_player_id": "oneilsh01", "player": "Shaquille O'Neal",
+                     "salary_usd": 17142000}]
 
 
 def test_parse_salary_table_total_matches_known_payroll():
@@ -84,6 +97,8 @@ def test_team_season_payroll_reports_row_count_alongside_total(monkeypatch):
     result = team_season_payroll("BOS", "2009-10")
     assert result["team_payroll"] == 83552174
     assert result["player_count"] == 14
+    assert len(result["players"]) == 14
+    assert result["players"][0]["player"] == "Paul Pierce"
 
 
 def test_team_season_payroll_with_no_salary_table_is_none_not_zero(monkeypatch):
@@ -93,6 +108,7 @@ def test_team_season_payroll_with_no_salary_table_is_none_not_zero(monkeypatch):
     result = team_season_payroll("BOS", "1986-87")
     assert result["team_payroll"] is None
     assert result["player_count"] == 0
+    assert result["players"] == []
 
 
 def test_ingest_season_writes_a_row_for_a_team_with_no_data(monkeypatch):
@@ -101,7 +117,7 @@ def test_ingest_season_writes_a_row_for_a_team_with_no_data(monkeypatch):
     # doesn't exist. Every requested team must produce a row.
     html = FIXTURE.read_text(encoding="utf-8")
     _fake_pages({"BOS": html, "DAL": "<html>nothing</html>"}, monkeypatch)
-    df = team_payroll_ingest.ingest_season("1986-87", ["BOS", "DAL"])
+    df, players = team_payroll_ingest.ingest_season("1986-87", ["BOS", "DAL"])
 
     assert len(df) == 2
     assert sorted(df["team_abbreviation"]) == ["BOS", "DAL"]
@@ -111,21 +127,59 @@ def test_ingest_season_writes_a_row_for_a_team_with_no_data(monkeypatch):
     bos = df[df["team_abbreviation"] == "BOS"].iloc[0]
     assert bos["team_payroll"] == 83552174
     assert bos["player_count"] == 14
+    assert len(players) == 14
+    assert set(players["team_abbreviation"]) == {"BOS"}
 
 
-def test_ingest_season_columns_include_player_count(monkeypatch):
+TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count",
+                 "fetched_at_utc"]
+PLAYER_COLUMNS = ["season", "team_abbreviation", "bbref_player_id", "player",
+                  "salary_usd", "fetched_at_utc"]
+
+
+def test_ingest_season_columns(monkeypatch):
     _fake_pages({"BOS": FIXTURE.read_text(encoding="utf-8")}, monkeypatch)
-    df = team_payroll_ingest.ingest_season("2009-10", ["BOS"])
-    assert list(df.columns) == ["season", "team_abbreviation", "team_payroll", "player_count"]
+    df, players = team_payroll_ingest.ingest_season("2009-10", ["BOS"])
+    assert list(df.columns) == TOTAL_COLUMNS
+    assert list(players.columns) == PLAYER_COLUMNS
+    # The two files describe the same scrape, so they must agree to the dollar.
+    assert players["salary_usd"].sum() == df["team_payroll"].sum() == 83552174
+    assert df["fetched_at_utc"].notna().all()
+    assert players["fetched_at_utc"].notna().all()
 
 
-def test_write_season_parquet_round_trips_player_count(tmp_path, monkeypatch):
+def test_write_season_parquet_round_trips(tmp_path, monkeypatch):
     _fake_pages({"BOS": FIXTURE.read_text(encoding="utf-8"), "DAL": "<html>x</html>"}, monkeypatch)
-    monkeypatch.setattr(team_payroll_ingest, "RAW_DIR", tmp_path)
+    monkeypatch.setattr(team_payroll_ingest, "RAW_DIR", tmp_path / "team_payroll")
+    monkeypatch.setattr(team_payroll_ingest, "PLAYERS_DIR", tmp_path / "team_payroll_players")
     team_payroll_ingest.write_season("2009-10", ["BOS", "DAL"])
 
-    df = pd.read_parquet(tmp_path / "2009-10.parquet")
-    assert list(df.columns) == ["season", "team_abbreviation", "team_payroll", "player_count"]
-    assert len(df) == 2
-    assert df["player_count"].notna().all()
+    df = pd.read_parquet(tmp_path / "team_payroll" / "2009-10.parquet")
+    assert list(df.columns) == TOTAL_COLUMNS
     assert set(df["player_count"]) == {0, 14}
+    players = pd.read_parquet(tmp_path / "team_payroll_players" / "2009-10.parquet")
+    assert list(players.columns) == PLAYER_COLUMNS
+    assert len(players) == 14
+
+
+def test_write_season_refetches_a_season_missing_its_player_file(tmp_path, monkeypatch):
+    """Seasons backfilled before per-player rows were kept have only the
+    totals file. Skipping them would leave the contracts list empty forever,
+    so the skip needs both files present."""
+    calls = []
+
+    def fake_fetch(team_code, season):
+        calls.append(team_code)
+        return FIXTURE.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(team_payroll_ingest, "fetch_team_season_html", fake_fetch)
+    monkeypatch.setattr(team_payroll_ingest, "RAW_DIR", tmp_path / "team_payroll")
+    monkeypatch.setattr(team_payroll_ingest, "PLAYERS_DIR", tmp_path / "team_payroll_players")
+    (tmp_path / "team_payroll").mkdir()
+    pd.DataFrame({"season": ["2009-10"]}).to_parquet(tmp_path / "team_payroll" / "2009-10.parquet")
+
+    team_payroll_ingest.write_season("2009-10", ["BOS"])
+    assert calls == ["BOS"], "a season without its player file must be re-fetched"
+
+    team_payroll_ingest.write_season("2009-10", ["BOS"])
+    assert calls == ["BOS"], "with both files present the season is skipped"
