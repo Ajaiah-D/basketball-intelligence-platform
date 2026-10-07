@@ -166,8 +166,15 @@ def render() -> None:
     snapshot["bar_color"] = [payroll.bracket(r)[1] for _, r in snapshot.iterrows()]
     this_season = team_df[team_df["season"] == season]
     highlight = this_season["era_name"].iloc[0] if len(this_season) else None
-    st.plotly_chart(viz.league_payroll_snapshot(snapshot, highlight=highlight),
-                    width="stretch", config=viz.PLOTLY_CONFIG)
+    # A snapshot of a few surviving teams compares nothing (1986-87 has one
+    # usable payroll out of 23), so below half the league it says so instead.
+    if len(snapshot) * 2 < len(league):
+        st.info(f"Too few teams have reliable salary data in {season} to compare "
+                "them - Basketball-Reference's records for that season are "
+                "missing most rosters.")
+    else:
+        st.plotly_chart(viz.league_payroll_snapshot(snapshot, highlight=highlight),
+                        width="stretch", config=viz.PLOTLY_CONFIG)
 
     with st.expander("How to read this", expanded=True):
         st.markdown(_prose(payroll.HOW_TO_READ))

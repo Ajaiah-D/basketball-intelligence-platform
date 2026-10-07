@@ -106,3 +106,18 @@ def test_league_snapshot_with_no_rows_says_so():
     fig = viz.league_payroll_snapshot(empty)
     assert len(fig.data) == 0
     assert "No reliable payroll" in fig.layout.annotations[0].text
+
+
+def test_era_labels_alternate_heights_so_short_eras_do_not_overlap():
+    """New Orleans changes name three times in eleven seasons (2002-13); at
+    one shared height those labels printed on top of each other."""
+    seasons = ["2001-02", "2002-03", "2005-06", "2007-08"]
+    team_df = _team_df([{"season": s, "team_payroll": 50_000_000,
+                         "payroll_likely_incomplete": False} for s in seasons])
+    eras = [("2001-02", "2001-02", "Charlotte Hornets"),
+            ("2002-03", "2002-03", "New Orleans Hornets"),
+            ("2005-06", "2005-06", "New Orleans/Oklahoma City Hornets"),
+            ("2007-08", "2007-08", "New Orleans Hornets")]
+    fig = viz.team_finances_trend(team_df, _cap_df(seasons), eras=eras)
+    ys = [a.y for a in fig.layout.annotations]
+    assert ys[0] != ys[1] and ys[1] != ys[2] and ys[2] != ys[3]

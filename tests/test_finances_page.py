@@ -151,3 +151,12 @@ def test_a_sidebar_season_before_payroll_data_falls_back_to_the_latest(
     at = _run(season="1980-81")
     assert "No salary data for 1980-81 (it starts in 1986-87), so this shows 2023-24."         in _captions(at)
     assert "In 2023-24, 2 of 2 teams were over the salary cap" in _markdown(at)
+
+
+def test_a_season_with_too_few_reliable_payrolls_skips_the_comparison(
+        warehouse_with_finances_mart):
+    """1986-87's source is missing most rosters (1 of 23 teams usable in the
+    real data); a 'league snapshot' of one bar compares nothing."""
+    at = _run("DEN", season="1986-87")
+    assert any("Too few teams have reliable salary data in 1986-87" in i.value
+               for i in at.get("info"))
