@@ -1,11 +1,14 @@
-"""Ingest historical team payroll totals from Basketball-Reference.
+"""Ingest historical team payroll from Basketball-Reference.
 
 For each team-season, fetches https://www.basketball-reference.com/teams/
-{BBREF_CODE}/{END_YEAR}.html, sums the "Salaries Table" (id="salaries2") on
-that page, and writes one row per team-season to data/raw/team_payroll/
-{season}.parquet with columns:
+{BBREF_CODE}/{END_YEAR}.html, reads the "Salaries Table" (id="salaries2") on
+that page, and writes two files per season:
 
-    season, team_abbreviation, team_payroll, player_count
+    data/raw/team_payroll/{season}.parquet - one row per team:
+        season, team_abbreviation, team_payroll, player_count, fetched_at_utc
+    data/raw/team_payroll_players/{season}.parquet - one row per salary line:
+        season, team_abbreviation, bbref_player_id, player, salary_usd,
+        fetched_at_utc
 
 Every requested team gets a row, including one whose page has no salary
 table at all (team_payroll null, player_count 0) - see ingest_season.
@@ -30,16 +33,26 @@ what main() points you at - this module fetches one season per invocation.
 from __future__ import annotations
 
 import argparse
+import html as html_lib
 import logging
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import requests
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payroll"
+# One row per salary line - the rows team_payroll sums. Kept so the dashboard
+# can show which contracts a payroll is made of, not just its total.
+PLAYERS_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payroll_players"
+
+TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count",
+                 "fetched_at_utc"]
+PLAYER_COLUMNS = ["season", "team_abbreviation", "bbref_player_id", "player",
+                  "salary_usd", "fetched_at_utc"]
 
 MIN_SECONDS_BETWEEN_REQUESTS = 3.5
 REQUEST_TIMEOUT = 30
@@ -84,7 +97,7 @@ log = logging.getLogger("team_payroll_ingest")
 _last_request_at = 0.0
 
 _SALARY_ROW_RE = re.compile(
-    r'<td[^>]*data-append-csv="[^"]*"[^>]*data-stat="player"[^>]*><a[^>]*>([^<]+)</a></td>'
+    r'<td[^>]*data-append-csv="([^"]*)"[^>]*data-stat="player"[^>]*><a[^>]*>([^<]+)</a></td>'
     r'<td[^>]*data-stat="salary"[^>]*csk="(\d+)"',
 )
 
@@ -116,7 +129,13 @@ def bbref_code(nba_code: str, season: str) -> str:
 
 
 def parse_salary_table(html: str) -> list[dict]:
-    """Extract [{'player': str, 'salary_usd': int}, ...] from a team-season page."""
+    """Extract [{'bbref_player_id', 'player', 'salary_usd'}, ...] from a team-season page.
+
+    bbref_player_id is Basketball-Reference's own id (e.g. "piercpa01") - the
+    only stable key for a player across teams and seasons, since names repeat
+    and change spelling. A player on two 10-day contracts with the same team
+    appears twice; that is two real salary lines, not a duplicate.
+    """
     salaries_section = html.split('id="salaries2"', 1)
     if len(salaries_section) < 2:
         return []
@@ -125,8 +144,9 @@ def parse_salary_table(html: str) -> list[dict]:
     if end != -1:
         table_html = table_html[:end]
     return [
-        {"player": player, "salary_usd": int(salary)}
-        for player, salary in _SALARY_ROW_RE.findall(table_html)
+        {"bbref_player_id": player_id, "player": html_lib.unescape(player),
+         "salary_usd": int(salary)}
+        for player_id, player, salary in _SALARY_ROW_RE.findall(table_html)
     ]
 
 
@@ -171,26 +191,33 @@ def team_season_payroll(nba_code: str, season: str) -> dict:
     franchise's first partial season, or one of the gap seasons above. A real
     team's payroll is never actually zero, so None can't be mistaken for a
     genuine value downstream.
+
+    players is the parsed salary rows the total was summed from.
     """
     code = bbref_code(nba_code, season)
     html = fetch_team_season_html(code, season)
     rows = parse_salary_table(html)
     if not rows:
-        return {"team_payroll": None, "player_count": 0}
-    return {"team_payroll": sum(r["salary_usd"] for r in rows), "player_count": len(rows)}
+        return {"team_payroll": None, "player_count": 0, "players": []}
+    return {"team_payroll": sum(r["salary_usd"] for r in rows),
+            "player_count": len(rows), "players": rows}
 
 
-def ingest_season(season: str, team_codes: list[str]) -> pd.DataFrame:
-    """Fetch payroll for every team active in `season` - one row per team, always.
+def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch payroll for every team active in `season`.
 
-    A team with no salary data still gets a row (null payroll, player_count 0)
-    rather than being dropped: a downstream completeness flag can only fire for
-    a team-season that actually exists in the data, so silently skipping one
-    hides the gap instead of marking it.
+    Returns (totals, players): one totals row per team, always - a team with
+    no salary data still gets a row (null payroll, player_count 0) rather than
+    being dropped, because a downstream completeness flag can only fire for a
+    team-season that actually exists - and one players row per salary line.
+
+    fetched_at_utc is stamped per team at fetch time (naive UTC), so the
+    dashboard can say when its salary figures were last refreshed.
     """
-    records = []
+    records, player_records = [], []
     for code in team_codes:
         result = team_season_payroll(code, season)
+        fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if result["player_count"] == 0:
             log.warning("No salary data for %s %s - writing a null-payroll row", code, season)
         records.append({
@@ -198,28 +225,41 @@ def ingest_season(season: str, team_codes: list[str]) -> pd.DataFrame:
             "team_abbreviation": code,
             "team_payroll": result["team_payroll"],
             "player_count": result["player_count"],
+            "fetched_at_utc": fetched_at,
         })
-    df = pd.DataFrame.from_records(
-        records, columns=["season", "team_abbreviation", "team_payroll", "player_count"]
-    )
+        for row in result["players"]:
+            player_records.append({"season": season, "team_abbreviation": code,
+                                   **row, "fetched_at_utc": fetched_at})
+    df = pd.DataFrame.from_records(records, columns=TOTAL_COLUMNS)
     # Nullable Int64, not the float64 pandas would infer from the None rows -
     # payroll stays an exact integer in the parquet instead of picking up a
     # float type (and float formatting) just because some seasons have gaps.
     df["team_payroll"] = df["team_payroll"].astype("Int64")
     df["player_count"] = df["player_count"].astype("int64")
-    return df
+    df["fetched_at_utc"] = pd.to_datetime(df["fetched_at_utc"])
+
+    players = pd.DataFrame.from_records(player_records, columns=PLAYER_COLUMNS)
+    players["salary_usd"] = players["salary_usd"].astype("int64")
+    players["fetched_at_utc"] = pd.to_datetime(players["fetched_at_utc"])
+    return df, players
 
 
 def write_season(season: str, team_codes: list[str], force: bool = False) -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    PLAYERS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RAW_DIR / f"{season}.parquet"
-    if out_path.exists() and not force:
+    players_path = PLAYERS_DIR / f"{season}.parquet"
+    # Skip only when BOTH files exist: a season backfilled before per-player
+    # rows were kept has the totals file alone and must be fetched again.
+    if out_path.exists() and players_path.exists() and not force:
         log.info("%s already ingested, skipping (use --force to redo)", season)
         return
-    df = ingest_season(season, team_codes)
+    df, players = ingest_season(season, team_codes)
     df.to_parquet(out_path, index=False)
+    players.to_parquet(players_path, index=False)
     empty = int((df["player_count"] == 0).sum())
-    log.info("Wrote %s (%d teams, %d with no salary data)", out_path, len(df), empty)
+    log.info("Wrote %s (%d teams, %d salary lines, %d teams with no salary data)",
+             season, len(df), len(players), empty)
 
 
 def main() -> None:
