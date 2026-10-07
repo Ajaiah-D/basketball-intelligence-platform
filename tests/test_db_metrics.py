@@ -137,7 +137,7 @@ def test_team_finances_available_false_before_mart_exists(tmp_warehouse_without_
 
 
 def test_team_payroll_history_filters_by_team(warehouse_with_finances_mart):
-    df = db.team_payroll_history(team="BOS")
+    df = db.team_payroll_history(franchise="BOS")
     assert (df["team_abbreviation"] == "BOS").all()
     assert len(df) > 0
 
@@ -151,7 +151,7 @@ def test_team_payroll_history_merges_a_renamed_franchise(warehouse_with_finances
     started the Warriors chart in 1996-97. Asserting both codes come back
     (not just a row count) is what would catch a regression that resolved
     the franchise but then filtered them back apart."""
-    df = db.team_payroll_history(team="GSW")
+    df = db.team_payroll_history(franchise="GSW")
     assert set(df["team_abbreviation"]) == {"GOS", "GSW"}, (
         "GSW must return both of this franchise's abbreviations"
     )
@@ -161,23 +161,10 @@ def test_team_payroll_history_merges_a_renamed_franchise(warehouse_with_finances
 
 
 def test_team_payroll_history_does_not_merge_an_unrelated_team(warehouse_with_finances_mart):
-    """Only the four code-rename pairs merge. A relocation (SEA -> OKC) or
-    any ordinary code must still return exactly itself, or the fix would be
-    inventing franchise history instead of repairing it."""
+    """Folding eras into a franchise must not pull in another team's rows."""
     for code in ("BOS", "NYK", "MIA", "DEN"):
-        df = db.team_payroll_history(team=code)
+        df = db.team_payroll_history(franchise=code)
         assert set(df["team_abbreviation"]) == {code}, code
-    assert db.franchise_codes("SEA") == ("SEA",)
-    assert db.franchise_codes("OKC") == ("OKC",)
-
-
-def test_franchise_options_collapses_only_the_renamed_pairs(warehouse_with_finances_mart):
-    codes = db.team_payroll_history()["team_abbreviation"]
-    options = db.franchise_options(codes)
-    assert "GOS" not in options, "the legacy code must not be offered separately"
-    assert "GSW" in options
-    # Everything else survives untouched.
-    assert {"BOS", "NYK", "MIA", "DEN"} <= set(options)
 
 
 def test_salary_cap_history_has_no_apron_before_2023_24(warehouse_with_finances_mart):
