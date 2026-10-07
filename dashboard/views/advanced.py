@@ -11,7 +11,7 @@ gated on minutes played rather than showing the whole league.
 
 import streamlit as st
 
-from dashboard.lib import db, media
+from dashboard.lib import db, glossary, media
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 
@@ -31,30 +31,21 @@ COMPARE_METRICS = ["TS%", "USG%", "AST%", "REB%", "STL%", "BLK%", "Game score"]
 COLUMN_CONFIG = {
     "player_name": st.column_config.TextColumn("Player", width="medium"),
     "team_abbreviation": st.column_config.TextColumn("Team", width="small"),
-    "games_played": st.column_config.NumberColumn("GP"),
-    "minutes_per_game": st.column_config.NumberColumn("MIN", format="%.1f"),
+    "games_played": st.column_config.NumberColumn(**glossary.described("GP")),
+    "minutes_per_game": st.column_config.NumberColumn(**glossary.described("MIN"),
+                                                      format="%.1f"),
     "points_per_game": st.column_config.NumberColumn("PTS", format="%.1f"),
-    "true_shooting_pct": st.column_config.NumberColumn(
-        "TS%", format="%.1f", help="Points per shooting possession, counts 3s and free throws"),
-    "effective_fg_pct": st.column_config.NumberColumn(
-        "eFG%", format="%.1f", help="Field goal percentage with 3-pointers weighted 1.5x"),
-    "usage_pct": st.column_config.NumberColumn(
-        "USG%", format="%.1f", help="Share of team possessions ended while on the floor"),
-    "assist_pct": st.column_config.NumberColumn(
-        "AST%", format="%.1f", help="Share of teammate field goals assisted"),
-    "rebound_pct": st.column_config.NumberColumn(
-        "REB%", format="%.1f", help="Share of available rebounds grabbed"),
-    "game_score": st.column_config.NumberColumn(
-        "GmSc", format="%.1f", help="Hollinger game score, about 10 is an average starter"),
-    "turnover_pct": st.column_config.NumberColumn("TOV%", format="%.1f"),
-    "steal_pct": st.column_config.NumberColumn("STL%", format="%.1f"),
-    "block_pct": st.column_config.NumberColumn("BLK%", format="%.1f"),
-    "points_per_36": st.column_config.NumberColumn("P/36", format="%.1f"),
-    "points_per_100": st.column_config.NumberColumn("P/100", format="%.1f"),
-    "net_rating": st.column_config.NumberColumn(
-        "NET", format="%.1f", help="Team net rating with the player on the floor (1996-97 on)"),
-    "player_impact_estimate": st.column_config.NumberColumn(
-        "PIE", format="%.1f", help="Player impact estimate, official NBA metric (1996-97 on)"),
+    # Every rate metric is jargon to a casual fan: marked with an icon and
+    # explained on header hover (dashboard/lib/glossary.py).
+    **{col: st.column_config.NumberColumn(**glossary.marked(label), format="%.1f")
+       for col, label in [
+           ("true_shooting_pct", "TS%"), ("effective_fg_pct", "eFG%"),
+           ("usage_pct", "USG%"), ("assist_pct", "AST%"), ("rebound_pct", "REB%"),
+           ("game_score", "GmSc"), ("turnover_pct", "TOV%"), ("steal_pct", "STL%"),
+           ("block_pct", "BLK%"), ("points_per_36", "P/36"),
+           ("points_per_100", "P/100"), ("net_rating", "NET"),
+           ("player_impact_estimate", "PIE"),
+       ]},
 }
 
 
@@ -68,7 +59,7 @@ def leader_card(title: str, df, col: str, fmt: str = "{:.1f}") -> str:
             f'{r.team_abbreviation}</span>'
             f'<span class="bip-val">{fmt.format(getattr(r, col))}</span></div>'
         )
-    return f'<div class="bip-card"><h4>{title}</h4>{"".join(rows)}</div>'
+    return T.card_html(title, "".join(rows), glossary.TERMS.get(title, ""))
 
 
 def render() -> None:
@@ -136,9 +127,8 @@ def render() -> None:
         gs_max = gs_min + 1.0
     column_config = COLUMN_CONFIG | {
         "game_score": st.column_config.ProgressColumn(
-            "GmSc", format="%.1f", width="medium", min_value=gs_min,
-            max_value=gs_max, color=T.ACCENT,
-            help="Hollinger game score, about 10 is an average starter"),
+            **glossary.marked("GmSc"), format="%.1f", width="medium",
+            min_value=gs_min, max_value=gs_max, color=T.ACCENT),
     }
     st.dataframe(view[cols], hide_index=True, height=400, row_height=38,
                  column_config=column_config)

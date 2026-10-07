@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from dashboard.lib import db
+from dashboard.lib import db, glossary
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 from dashboard.views.overview import game_card
@@ -69,7 +69,7 @@ def render() -> None:
         "player": st.column_config.TextColumn("Player", width="medium"),
         "min": "MIN", "pts": "PTS", "reb": "REB", "ast": "AST",
         "stl": "STL", "blk": "BLK", "fg": "FG", "tp": "3P",
-        "plus_minus": st.column_config.NumberColumn("+/-", format="%d"),
+        "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%d"),
     }
     cols_show = ["player", "min", "pts", "reb", "ast", "stl", "blk", "fg", "tp", "plus_minus"]
     b1, b2 = st.columns(2)

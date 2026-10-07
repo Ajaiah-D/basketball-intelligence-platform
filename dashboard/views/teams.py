@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from dashboard.lib import db
+from dashboard.lib import db, glossary
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 
@@ -15,9 +15,14 @@ def form_dots(form: str) -> str:
 
 
 def standings_table(df) -> str:
+    def th(label: str, term: str) -> str:
+        return f"{label}{T.tip(glossary.TERMS[term])}"
+
     head = ('<table class="bip-table"><tr><th class="lft">#</th><th class="lft">Team</th>'
-            "<th>W</th><th>L</th><th>PCT</th><th>PTS</th><th>OPP</th><th>+/-</th>"
-            '<th style="text-align:left;padding-left:.8rem">Form</th></tr>')
+            f"<th>W</th><th>L</th><th>{th('PCT', 'PCT')}</th><th>PTS</th>"
+            f"<th>{th('OPP', 'OPP')}</th><th>{th('+/-', 'Team +/-')}</th>"
+            '<th style="text-align:left;padding-left:.8rem">'
+            f'{th("Form", "Form")}</th></tr>')
     rows = []
     for i, r in enumerate(df.itertuples(), 1):
         diff_cls = "pos" if r.net > 0 else ("neg" if r.net < 0 else "")
@@ -69,7 +74,8 @@ def render() -> None:
     t1, t2, t3, t4, t5 = st.columns(5)
     t1.markdown(T.kpi("Points / game", f"{row.ppg:.1f}"), unsafe_allow_html=True)
     t2.markdown(T.kpi("Opp points / game", f"{row.opp_ppg:.1f}"), unsafe_allow_html=True)
-    t3.markdown(T.kpi("Net / game", f"{row.net:+.1f}"), unsafe_allow_html=True)
+    t3.markdown(T.kpi("Net / game", f"{row.net:+.1f}", help=glossary.TERMS["Net / game"]),
+                unsafe_allow_html=True)
     t4.markdown(T.kpi("Home", f"{int(home.is_win.sum())}-{int((~home.is_win).sum())}"),
                 unsafe_allow_html=True)
     t5.markdown(T.kpi("Away", f"{int(away.is_win.sum())}-{int((~away.is_win).sum())}"),
@@ -91,12 +97,15 @@ def render() -> None:
                     "pace so a fast team and a slow one compare fairly")
         e1, e2, e3, e4 = st.columns(4)
         e1.markdown(T.kpi("Offensive rating", f"{a.offensive_rating:.1f}",
-                          "points scored per 100"), unsafe_allow_html=True)
+                          "points scored per 100",
+                          help=glossary.TERMS["Offensive rating"]), unsafe_allow_html=True)
         e2.markdown(T.kpi("Defensive rating", f"{a.defensive_rating:.1f}",
-                          "points allowed per 100"), unsafe_allow_html=True)
-        e3.markdown(T.kpi("Net rating", f"{a.net_rating:+.1f}"), unsafe_allow_html=True)
-        e4.markdown(T.kpi("Pace", f"{a.pace:.1f}", "possessions per 48 min"),
-                    unsafe_allow_html=True)
+                          "points allowed per 100",
+                          help=glossary.TERMS["Defensive rating"]), unsafe_allow_html=True)
+        e3.markdown(T.kpi("Net rating", f"{a.net_rating:+.1f}",
+                          help=glossary.TERMS["Net rating"]), unsafe_allow_html=True)
+        e4.markdown(T.kpi("Pace", f"{a.pace:.1f}", "possessions per 48 min",
+                          help=glossary.TERMS["Pace"]), unsafe_allow_html=True)
 
         st.plotly_chart(viz.rating_quadrant(adv, highlight=row.team),
                         config=viz.PLOTLY_CONFIG, width="stretch")
@@ -111,11 +120,12 @@ def render() -> None:
         hide_index=True,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
-            "gp": "GP", "mpg": st.column_config.NumberColumn("MIN", format="%.1f"),
+            "gp": st.column_config.NumberColumn(**glossary.described("GP")),
+            "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
             "ppg": st.column_config.NumberColumn("PTS", format="%.1f"),
             "rpg": st.column_config.NumberColumn("REB", format="%.1f"),
             "apg": st.column_config.NumberColumn("AST", format="%.1f"),
-            "fg_pct": st.column_config.NumberColumn("FG%", format="%.1f"),
-            "plus_minus": st.column_config.NumberColumn("+/-", format="%.1f"),
+            "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
+            "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
         },
     )

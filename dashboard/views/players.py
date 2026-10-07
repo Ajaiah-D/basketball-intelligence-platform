@@ -8,7 +8,7 @@ outliers (a center shooting 100% on three 3PA) are visible at a glance.
 
 import streamlit as st
 
-from dashboard.lib import db, media
+from dashboard.lib import db, glossary, media
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 
@@ -111,8 +111,8 @@ def render() -> None:
             "team": st.column_config.TextColumn("Team", width="small"),
             "seasons": st.column_config.NumberColumn("Yrs"),
             "span": st.column_config.TextColumn("Span", width="medium"),
-            "gp": st.column_config.NumberColumn("GP"),
-            "mpg": st.column_config.NumberColumn("MIN", format="%.1f"),
+            "gp": st.column_config.NumberColumn(**glossary.described("GP")),
+            "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
             "ppg": st.column_config.ProgressColumn("PTS", format="%.1f",
                                                    min_value=0, max_value=ppg_max,
                                                    color=T.ACCENT, width="medium"),
@@ -120,19 +120,15 @@ def render() -> None:
             "apg": st.column_config.NumberColumn("AST", format="%.1f"),
             "spg": st.column_config.NumberColumn("STL", format="%.1f"),
             "bpg": st.column_config.NumberColumn("BLK", format="%.1f"),
-            "fg_pct": st.column_config.NumberColumn("FG%", format="%.1f"),
-            "fga_pg": st.column_config.NumberColumn("FGA", format="%.1f",
-                                                    help="Field goal attempts per game"),
-            "tpg": st.column_config.NumberColumn("3PM", format="%.1f"),
-            "tpa_pg": st.column_config.NumberColumn("3PA", format="%.1f",
-                                                    help="Three-point attempts per game"),
-            "fg3_pct": st.column_config.NumberColumn("3P%", format="%.1f"),
-            "ft_pct": st.column_config.NumberColumn("FT%", format="%.1f"),
-            "fta_pg": st.column_config.NumberColumn("FTA", format="%.1f",
-                                                    help="Free throw attempts per game"),
-            "ts_pct": st.column_config.NumberColumn("TS%", format="%.1f",
-                                                    help="True shooting: pts / (2 x (FGA + 0.44 x FTA))"),
-            "plus_minus": st.column_config.NumberColumn("+/-", format="%.1f"),
+            "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
+            "fga_pg": st.column_config.NumberColumn(**glossary.described("FGA"), format="%.1f"),
+            "tpg": st.column_config.NumberColumn(**glossary.described("3PM"), format="%.1f"),
+            "tpa_pg": st.column_config.NumberColumn(**glossary.described("3PA"), format="%.1f"),
+            "fg3_pct": st.column_config.NumberColumn(**glossary.described("3P%"), format="%.1f"),
+            "ft_pct": st.column_config.NumberColumn(**glossary.described("FT%"), format="%.1f"),
+            "fta_pg": st.column_config.NumberColumn(**glossary.described("FTA"), format="%.1f"),
+            "ts_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
+            "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
         },
     )
     if career:
@@ -179,7 +175,8 @@ def render() -> None:
         ("3P%", fmt(row.fg3_pct), f"on {fmt(row.tpa_pg)} 3PA/g ({row.tpa_total} total)"),
         ("TS%", fmt(row.ts_pct), "true shooting"),
     ]):
-        col.markdown(T.kpi(label, val, sub), unsafe_allow_html=True)
+        col.markdown(T.kpi(label, val, sub, help=glossary.TERMS.get(label, "")),
+                     unsafe_allow_html=True)
 
     if row.tpa_total and row.tpa_total < 50 and row.fg3_pct == row.fg3_pct:
         when = "across a whole career" if career else "all season"
