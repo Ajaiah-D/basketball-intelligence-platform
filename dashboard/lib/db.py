@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from . import franchises
+
 DB_PATH = Path(__file__).resolve().parents[2] / "warehouse" / "basketball.duckdb"
 
 # nba_api's static team data has no conference field, so map it here.
@@ -460,75 +462,19 @@ def team_finances_available() -> bool:
         return False
 
 
-# Four franchises appear under two abbreviations in this data purely because
-# nba_api renamed its own codes at 1996-97 - the franchise, city and team
-# never changed. Left to itself the mart lists both codes as separate teams,
-# and a Finances page whose entire point is 42 years of history would show a
-# Warriors chart that silently starts in 1996-97, with the other 12 seasons
-# filed under "GOS".
-#
-# ingestion/team_payroll_ingest.py's LEGACY_CODE_MAP is the authoritative
-# list. It carries a fifth entry, WAS -> WSB, which is NOT one of these:
-# that one is Basketball-Reference's own code for the Bullets, and nba_api
-# (and therefore this warehouse) has only ever used WAS, so there is no
-# second code here to merge.
-#
-# This is deliberately only the code-rename artifacts. A real relocation -
-# SEA -> OKC, VAN -> MEM, NJN -> BKN, CHH -> NOH - stays two distinct teams,
-# because those really are different franchises' eras in different cities
-# and merging them would invent a history nobody lived.
-MERGED_FRANCHISES = {
-    "GSW": ("GOS", "GSW"),  # Warriors
-    "PHI": ("PHL", "PHI"),  # 76ers
-    "SAS": ("SAN", "SAS"),  # Spurs
-    "UTA": ("UTH", "UTA"),  # Jazz
-}
-
-# legacy code -> the modern code it is displayed under.
-_LEGACY_TO_MODERN = {
-    legacy: modern
-    for modern, codes in MERGED_FRANCHISES.items()
-    for legacy in codes
-    if legacy != modern
-}
-
-
-def franchise_codes(team: str) -> tuple[str, ...]:
-    """Every abbreviation belonging to the franchise displayed as `team`.
-
-    One code for all but the four MERGED_FRANCHISES, so callers can use this
-    unconditionally instead of special-casing."""
-    return MERGED_FRANCHISES.get(team, (team,))
-
-
-def display_code(team_abbreviation: str) -> str:
-    """The abbreviation a raw mart code should be listed under - itself, for
-    everything but the four legacy codes above."""
-    return _LEGACY_TO_MODERN.get(team_abbreviation, team_abbreviation)
-
-
-def franchise_options(team_abbreviations) -> list[str]:
-    """Raw mart codes collapsed to one entry per franchise, sorted."""
-    return sorted({display_code(code) for code in team_abbreviations})
-
-
-def team_payroll_history(team: str | None = None) -> pd.DataFrame:
+def team_payroll_history(franchise: str | None = None) -> pd.DataFrame:
     """Payroll vs. cap/tax/apron thresholds, one row per team-season.
-    Filters to one franchise if given, else returns every team-season (for
-    the all-teams overview chart).
 
-    `team` is a display code, so asking for GSW returns the GOS rows too -
-    see MERGED_FRANCHISES. Ordering by season alone is enough to make that a
-    single continuous series, since the two codes never overlap in time."""
-    if team:
-        codes = franchise_codes(team)
-        placeholders = ", ".join("?" for _ in codes)
-        return q(
-            "select * from main_marts.mart_team_finances "
-            f"where team_abbreviation in ({placeholders}) order by season",
-            codes,
-        )
-    return q("select * from main_marts.mart_team_finances order by season, team_abbreviation")
+    With a franchise key (see dashboard/lib/franchises.py), returns every
+    season of that franchise under any code it has played under - OKC
+    includes the 1984-2008 SEA rows, NOP the 1988-2002 CHH rows - annotated
+    with franchise and era_name. The franchise mapping is season-aware, which
+    a SQL `in (codes)` filter could not express, so it is applied here."""
+    df = q("select * from main_marts.mart_team_finances order by season, team_abbreviation")
+    if franchise is None:
+        return df
+    df = franchises.annotate(df)
+    return df[df["franchise"] == franchise].reset_index(drop=True)
 
 
 def salary_cap_history() -> pd.DataFrame:
