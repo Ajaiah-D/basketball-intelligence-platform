@@ -1,46 +1,70 @@
 """Overview - league pulse: KPIs, leaders, standings snapshot, recent games."""
 
+import pandas as pd
 import streamlit as st
 
 from dashboard.lib import db, glossary, media
 from dashboard.lib import theme as T
 
-# Shooting-percentage cutoffs for a full season - the same volumes the
-# Players page ranks percentiles against, so "qualified" means one thing.
-FULL_SEASON_FGA = 300
-FULL_SEASON_3PA = 100
+# Assist-to-turnover only means something for players who actually run an
+# offense: a center with 40 assists and 8 turnovers would otherwise lead.
+AST_TO_MIN_APG = 3.0
+CLOSE_GAME_MARGIN = 5
 
 
-def shooting_leaders(stats, pct_col: str, attempts_col: str, full_season_attempts: int,
-                     n: int = 5):
-    """(top n by pct_col among players with enough attempts, the cutoff used).
-
-    Without a volume floor a bench player who went 3-for-3 leads 3P% at 100%.
-    The floor scales with how far into the season the league is, so it isn't
-    empty in November."""
-    progress = min(1.0, stats["gp"].max() / 82) if len(stats) else 1.0
-    floor = max(1, round(full_season_attempts * progress))
-    return stats[stats[attempts_col] >= floor].nlargest(n, pct_col), floor
+def ast_to_leaders(stats, n: int = 5):
+    """Top n by assists per turnover among players averaging 3+ assists."""
+    return stats[stats["apg"] >= AST_TO_MIN_APG].nlargest(n, "ast_to")
 
 
-def team_points_per_game(games) -> float | None:
-    """What one team scores in an average game. A game's two scores are two
-    teams' outputs, so their sum (~231) is not "points per game" to a fan."""
+def close_game_share(games) -> float | None:
+    """Share of games decided by CLOSE_GAME_MARGIN points or fewer."""
     if not len(games):
         return None
-    return float((games.home_pts + games.away_pts).mean() / 2)
+    margin = (games.home_pts - games.away_pts).abs()
+    return float((margin <= CLOSE_GAME_MARGIN).mean())
 
 
-def leaders_card(title: str, df, stat: str, help: str = "") -> str:
+def best_record_spot(standings) -> str:
+    """The banner's right side: the team with the league's best record."""
+    if standings.empty:
+        return ""
+    top = standings.iloc[0]  # db.standings() is already ordered best record first
+    color = T.team_color(top.team)
+    return (
+        f'<div class="bip-hero-spot">'
+        f'<div><div class="lbl">Best record</div>'
+        f'<div class="name">{top.team_name}</div>'
+        f'<div class="val" style="color:{color}">{top.w}-{top.l}</div></div>'
+        f'{media.team_logo_html(int(top.team_id), top.team, size=86, color=color)}'
+        f'</div>'
+    )
+
+
+def leaders_card(title: str, df, stat: str, help: str = "", fmt: str = "{:.1f}") -> str:
     rows = []
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'
             f'<span class="bip-name">{r.player}</span>'
             f'<span class="bip-team" style="color:{T.team_color(r.team)}">{r.team}</span>'
-            f'<span class="bip-val">{getattr(r, stat):.1f}</span></div>'
+            f'<span class="bip-val">{fmt.format(getattr(r, stat))}</span></div>'
         )
     return T.card_html(title, "".join(rows), help)
+
+
+def adv_leaders_card(title: str, df, stat: str) -> str:
+    """Same card as leaders_card, for the advanced mart's column names."""
+    rows = []
+    for i, r in enumerate(df.itertuples(), 1):
+        rows.append(
+            f'<div class="bip-row">{T.rank_badge(i)}'
+            f'<span class="bip-name">{r.player_name}</span>'
+            f'<span class="bip-team" style="color:{T.team_color(r.team_abbreviation)}">'
+            f'{r.team_abbreviation}</span>'
+            f'<span class="bip-val">{getattr(r, stat):.1f}</span></div>'
+        )
+    return T.card_html(title, "".join(rows), glossary.TERMS.get(title, ""))
 
 
 def standings_mini(df) -> str:
@@ -82,24 +106,13 @@ def render() -> None:
     min_gp = db.qualification_threshold(stats)
     qualified = stats[stats.gp >= min_gp]
 
-    leader = qualified.nlargest(1, "ppg")
-    spotlight = ""
-    if len(leader):
-        top = leader.iloc[0]
-        spotlight = (
-            f'<div class="bip-hero-spot">'
-            f'<div><div class="lbl">Scoring leader</div>'
-            f'<div class="name">{top.player}</div>'
-            f'<div class="val">{top.ppg:.1f} PPG</div></div>'
-            f'{media.avatar_html(int(top.player_id), top.player, size=86, ring=T.team_color(top.team))}'
-            f'</div>'
-        )
+    standings = db.standings(season)
     st.markdown(
         f'<div class="bip-hero">'
         f'<div><div class="bip-hero-title">{season} Regular Season</div>'
         f'<div class="bip-hero-sub">{len(games):,} games &middot; '
         f'{len(stats):,} players &middot; league pulse, leaders and form</div></div>'
-        f'{spotlight}</div>',
+        f'{best_record_spot(standings)}</div>',
         unsafe_allow_html=True,
     )
 
@@ -109,12 +122,9 @@ def render() -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(T.kpi("Games", f"{len(games):,}"), unsafe_allow_html=True)
     c2.markdown(T.kpi("Players", f"{len(stats):,}"), unsafe_allow_html=True)
-    team_ppg = team_points_per_game(games)
-    c3.markdown(T.kpi("Points / game", f"{team_ppg:.1f}" if team_ppg is not None else "-",
-                      help=("Average points one team scores in a game this season. "
-                            + (f"Both teams together average {team_ppg * 2:.1f}."
-                               if team_ppg is not None else ""))),
-                unsafe_allow_html=True)
+    close = close_game_share(games)
+    c3.markdown(T.kpi("Close games", f"{close:.0%}" if close is not None else "-",
+                      help=glossary.TERMS["Close games"]), unsafe_allow_html=True)
     c4.markdown(T.kpi("Play-by-play games", f"{pbp_n}", note="latest season only"),
                 unsafe_allow_html=True)
 
@@ -130,26 +140,33 @@ def render() -> None:
                 unsafe_allow_html=True)
     st.caption(f"Per-game averages, minimum {min_gp} games played.")
 
-    # A second row of stats any fan knows. Efficiency metrics (true shooting,
-    # usage, rebound rate) live on the Advanced page, with explanations -
-    # they read as jargon on a landing page.
-    fg, fga_floor = shooting_leaders(qualified, "fg_pct", "fga_total", FULL_SEASON_FGA)
-    tp, tpa_floor = shooting_leaders(qualified, "fg3_pct", "tpa_total", FULL_SEASON_3PA)
-    m1, m2, m3, m4 = st.columns(4)
-    m1.markdown(leaders_card("Steals", qualified.nlargest(5, "spg"), "spg"),
-                unsafe_allow_html=True)
-    m2.markdown(leaders_card("Blocks", qualified.nlargest(5, "bpg"), "bpg"),
-                unsafe_allow_html=True)
-    m3.markdown(leaders_card("FG%", fg, "fg_pct", help=glossary.TERMS["FG%"]),
-                unsafe_allow_html=True)
-    m4.markdown(leaders_card("3P%", tp, "fg3_pct", help=glossary.TERMS["3P%"]),
-                unsafe_allow_html=True)
-    st.caption(f"FG% needs {fga_floor}+ shot attempts and 3P% {tpa_floor}+ "
-               "three-point attempts, scaled to the season so far. Efficiency "
-               "stats like true shooting and usage are on the Advanced page.")
+    # Counting stats alone reward volume, so give efficiency its own row.
+    # Skipped silently when the warehouse has no marts: this is a bonus
+    # section, not a reason for the landing page to fail.
+    adv = db.player_advanced(season) if db.marts_available() else pd.DataFrame()
+    if not adv.empty:
+        floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
+        eff = adv[adv.minutes >= floor]
+        if len(eff) >= 5:
+            st.markdown("#### Efficiency leaders")
+            e1, e2, e3, e4 = st.columns(4)
+            e1.markdown(adv_leaders_card("True shooting",
+                                         eff.nlargest(5, "true_shooting_pct"),
+                                         "true_shooting_pct"), unsafe_allow_html=True)
+            e2.markdown(adv_leaders_card("Usage", eff.nlargest(5, "usage_pct"),
+                                         "usage_pct"), unsafe_allow_html=True)
+            e3.markdown(adv_leaders_card("Game score", eff.nlargest(5, "game_score"),
+                                         "game_score"), unsafe_allow_html=True)
+            # Assist-to-turnover replaces rebound rate here: a playmaking
+            # efficiency most fans already read, where rebound rate was jargon.
+            e4.markdown(leaders_card("AST/TO", ast_to_leaders(qualified), "ast_to",
+                                     help=glossary.TERMS["AST/TO"], fmt="{:.2f}"),
+                        unsafe_allow_html=True)
+            st.caption(f"True shooting, usage and game score: minimum {floor} minutes. "
+                       f"AST/TO: players averaging {AST_TO_MIN_APG:.0f}+ assists. "
+                       "Full detail on the Advanced page.")
 
     st.markdown("#### Standings")
-    standings = db.standings(season)
     e, w = st.columns(2)
     with e:
         T.card(st, "Eastern Conference",

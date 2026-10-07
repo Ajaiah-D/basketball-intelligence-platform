@@ -14,6 +14,7 @@ import requests
 import streamlit as st
 
 HEADSHOT_URL = "https://cdn.nba.com/headshots/nba/latest/260x190/{pid}.png"
+LOGO_URL = "https://cdn.nba.com/logos/nba/{tid}/global/L/logo.svg"
 
 
 @st.cache_data(ttl=86400, show_spinner=False, max_entries=512)
@@ -29,6 +30,32 @@ def headshot_data_uri(player_id: int) -> str | None:
         return f"data:image/png;base64,{b64}"
     except requests.RequestException:
         return None
+
+
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=64)
+def team_logo_data_uri(team_id: int) -> str | None:
+    """Base64 data URI for a team's logo SVG, or None (cached 24h)."""
+    try:
+        r = requests.get(LOGO_URL.format(tid=int(team_id)), timeout=5)
+        if r.status_code != 200 or not r.content:
+            return None
+        return "data:image/svg+xml;base64," + base64.b64encode(r.content).decode()
+    except requests.RequestException:
+        return None
+
+
+def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = "#3987e5") -> str:
+    """Team logo; a team-color disc with the abbreviation if the CDN has none."""
+    uri = team_logo_data_uri(team_id)
+    if uri:
+        return (f'<img src="{uri}" alt="{abbr}" '
+                f'style="width:{size}px;height:{size}px;object-fit:contain"/>')
+    return (
+        f'<span style="display:inline-flex;width:{size}px;height:{size}px;'
+        f'border-radius:50%;border:2px solid {color};background:{color}26;'
+        f'color:{color};align-items:center;justify-content:center;'
+        f'font-weight:800;font-size:{size * 0.3:.0f}px">{abbr}</span>'
+    )
 
 
 def avatar_html(player_id: int, name: str, size: int = 72,

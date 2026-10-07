@@ -69,6 +69,9 @@ TERMS = {
     "Game score": _GMSC,
     "Rebound rate": _REB,
     "Impact (PIE)": _PIE,
+    "AST/TO": ("Assist-to-turnover ratio: assists per turnover. Higher means a "
+               "player sets up teammates without giving the ball away; about 3 is "
+               "excellent for a lead guard."),
     # Team metrics
     "PCT": "Winning percentage: wins divided by games played.",
     "OPP": "Points allowed per game.",
@@ -81,6 +84,8 @@ TERMS = {
     "Net rating": ("Offensive rating minus defensive rating: how many points per 100 "
                    "possessions a team outscores opponents by."),
     "Pace": "Possessions per 48 minutes - how fast a team plays.",
+    "Close games": ("The share of games decided by 5 points or fewer - how "
+                    "competitive the season has been."),
     # Predictions
     "Accuracy": "The share of games where the predicted winner actually won.",
     "Brier score": ("How well-calibrated the win probabilities were: 0 is perfect, "

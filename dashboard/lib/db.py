@@ -111,6 +111,7 @@ _PLAYER_SEASON_SQL = """
              else round(sum(points) / nullif(2 * (sum(field_goals_attempted)
                   + 0.44 * sum(free_throws_attempted)), 0) * 100, 1)
         end                                   as ts_pct,
+        round(sum(assists) / nullif(sum(turnovers), 0), 2) as ast_to,
         round(avg(plus_minus), 1)             as plus_minus
     from main_staging.stg_player_game_logs
     where season = ?
