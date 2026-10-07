@@ -313,8 +313,14 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
         )
         if pbp_games is not None:
             game_ids = game_ids[:pbp_games]
-        pbp = fetch_play_by_play(game_ids, latest)
-        write_parquet(pbp, "play_by_play", latest)
+        if not game_ids:
+            # current_season() rolls over on October 1, about three weeks
+            # before opening night. Until then the new season has no games,
+            # and the last season's play-by-play already on disk stays put.
+            log.info("No games played yet in %s - skipping play-by-play", latest)
+        else:
+            pbp = fetch_play_by_play(game_ids, latest)
+            write_parquet(pbp, "play_by_play", latest)
 
     write_parquet(fetch_players(latest), "players")
     write_parquet(fetch_teams(), "teams")
