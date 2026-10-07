@@ -51,6 +51,7 @@ def con():
 def _reset_finances_cache() -> None:
     db.q.clear()
     db.team_finances_available.clear()
+    db.team_contracts_available.clear()
 
 
 @pytest.fixture
@@ -120,8 +121,8 @@ def warehouse_with_finances_mart(tmp_path, monkeypatch):
         insert into main_marts.mart_team_finances values
             ('2022-23', 'BOS', 178000000, 15, 123655000, 150267000, NULL, NULL,
              1.440, false, NULL, true, true, NULL, NULL),
-            ('2023-24', 'BOS', 185000000, 15, 136021000, 165294000, 172346000, 182794000,
-             1.360, false, NULL, true, true, true, false),
+            ('2023-24', 'BOS', 180000000, 15, 136021000, 165294000, 172346000, 182794000,
+             1.323, false, NULL, true, true, true, false),
             ('2023-24', 'NYK', 150000000, 14, 136021000, 165294000, 172346000, 182794000,
              1.103, false, NULL, true, false, false, false),
             ('1986-87', 'DEN', 75000, 1, 4945000, NULL, NULL, NULL,
@@ -137,8 +138,35 @@ def warehouse_with_finances_mart(tmp_path, monkeypatch):
             ('1996-97', 'GSW', 25000000, 14, 24363000, NULL, NULL, NULL,
              1.026, false, NULL, true, NULL, NULL, NULL)
     """)
+    # Rows scraped after fetch dates were recorded carry one.
+    con.execute("alter table main_marts.mart_team_finances "
+                "add column payroll_fetched_at_utc timestamp")
+    con.execute("update main_marts.mart_team_finances "
+                "set payroll_fetched_at_utc = timestamp '2026-09-23 20:58:40'")
+    con.execute("""
+        create table main_marts.mart_team_contracts as
+        select * from (values
+            ('2023-24', 'BOS', 'one01', 'Player One', 45000000, 1, 0.25),
+            ('2023-24', 'BOS', 'two01', 'Player Two', 27000000, 2, 0.15),
+            ('2023-24', 'BOS', 'three01', 'Player Three', 18000000, 3, 0.10)
+        ) t(season, team_abbreviation, bbref_player_id, player, salary_usd,
+            salary_rank, share_of_payroll)
+    """)
     con.close()
     monkeypatch.setattr(db, "DB_PATH", path)
     _reset_finances_cache()
     yield path
     _reset_finances_cache()
+
+
+@pytest.fixture
+def legacy_finances_warehouse(warehouse_with_finances_mart):
+    """The same warehouse as published before per-player salaries existed:
+    no contracts mart and no fetch date. The deployed app reads whatever the
+    last release published, so the page has to keep working on this."""
+    con = duckdb.connect(str(warehouse_with_finances_mart))
+    con.execute("drop table main_marts.mart_team_contracts")
+    con.execute("alter table main_marts.mart_team_finances drop column payroll_fetched_at_utc")
+    con.close()
+    _reset_finances_cache()
+    yield warehouse_with_finances_mart

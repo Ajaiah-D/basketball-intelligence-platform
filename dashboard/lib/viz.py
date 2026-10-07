@@ -10,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+from . import payroll
 from . import theme as T
 
 PLOTLY_CONFIG = {"displayModeBar": False}
@@ -470,12 +471,16 @@ def compare_dumbbell(metrics: list[str], a_vals: list[float], b_vals: list[float
 # tonexty, which chains to whatever trace immediately precedes it in
 # fig.data, not by name, so this order is load-bearing.
 _ZONE_COLS = ["salary_cap", "luxury_tax", "first_apron", "second_apron"]
-_ZONE_COLORS = ["rgba(12,163,12,0.10)", "rgba(201,133,0,0.12)",
-                "rgba(217,89,38,0.14)", "rgba(208,59,59,0.16)"]
-_ZONE_CEILING_COLOR = "rgba(208,59,59,0.22)"
+# Each band is tinted like the bracket it represents (payroll.LINES): under
+# the cap green, cap-to-tax neutral (over the cap is normal), then tax,
+# first apron and second apron in their line colors.
+_ZONE_COLORS = ["rgba(12,163,12,0.10)", "rgba(195,194,183,0.06)",
+                "rgba(201,133,0,0.14)", "rgba(217,89,38,0.16)"]
+_ZONE_CEILING_COLOR = "rgba(208,59,59,0.20)"
 
 
-def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figure:
+def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame,
+                        eras: list[tuple[str, str, str]] | None = None) -> go.Figure:
     """One team's payroll (solid line) against league cap/tax/apron thresholds
     (dashed reference lines) across every season in team_df, with the cap/
     tax/apron brackets shaded so which one a season fell into reads at a
@@ -489,6 +494,9 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
     misleadingly low point: a season where the source simply doesn't have
     most of a team's salaries should never render as "this team spent almost
     nothing that year."
+
+    `eras` is franchises.era_spans() output; with more than one era, each
+    gets a label at its first season and a dotted line marks every change.
     """
     payroll_y = team_df["team_payroll"].where(~team_df["payroll_likely_incomplete"])
     if payroll_y.notna().sum() == 0:
@@ -535,19 +543,20 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
                         fill="tonexty", fillcolor=_ZONE_CEILING_COLOR,
                         showlegend=False, hoverinfo="skip")
 
-    thresholds = [
-        ("salary_cap", "Salary cap", T.SERIES[1]),
-        ("luxury_tax", "Luxury tax", T.SERIES[2]),
-        ("first_apron", "First apron", T.SERIES[3]),
-        ("second_apron", "Second apron", T.SERIES[4]),
-    ]
-    for col, label, color in thresholds:
+    for col, label, color in payroll.LINES:
         if merged[col].notna().any():
             fig.add_scatter(
                 x=x, y=merged[col], name=label,
                 mode="lines", line=dict(color=color, width=1.5, dash="dash"),
                 hovertemplate="%{x}<br>$%{y:,.0f}<extra>" + label + "</extra>",
             )
+    if eras and len(eras) > 1:
+        for i, (first, _last, name) in enumerate(eras):
+            if i:
+                fig.add_vline(x=first, line=dict(color=T.MUTED, width=1, dash="dot"))
+            fig.add_annotation(x=first, y=0.98, xref="x", yref="paper", text=name,
+                               showarrow=False, xanchor="left", yanchor="top",
+                               font=dict(color=T.MUTED, size=11))
     fig.update_layout(**_layout(height=420, showlegend=True))
     # Season labels like "1984-85" parse as dates unless forced categorical -
     # same trap career_trend's own comment documents. Without this, Plotly
@@ -556,6 +565,44 @@ def team_finances_trend(team_df: pd.DataFrame, cap_df: pd.DataFrame) -> go.Figur
     fig.update_xaxes(title=dict(text="Season", font=dict(color=T.MUTED)),
                      type="category", automargin=True)
     fig.update_yaxes(title=dict(text="$", font=dict(color=T.MUTED)), automargin=True)
+    return fig
+
+
+def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> go.Figure:
+    """Every team's payroll for one season as a horizontal bar, highest at the
+    top, against that season's cap/tax/apron lines.
+
+    df: team_name, team_payroll, bar_color (payroll.bracket's color), and the
+    season's salary_cap/luxury_tax/first_apron/second_apron, the same on every
+    row. Rows without a reliable payroll should already be dropped -
+    plotting them would show a source gap as a cheap team. `highlight` is a
+    team_name to outline.
+    """
+    if df.empty:
+        return _empty("No reliable payroll figures for this season.")
+    d = df.sort_values("team_payroll")  # Plotly draws the last row at the top
+    fig = go.Figure()
+    fig.add_bar(
+        x=d["team_payroll"], y=d["team_name"], orientation="h",
+        marker=dict(color=d["bar_color"].tolist(),
+                    line=dict(color=T.INK,
+                              width=[2 if n == highlight else 0 for n in d["team_name"]])),
+        hovertemplate="%{y}<br>$%{x:,.0f}<extra></extra>", showlegend=False,
+    )
+    first = d.iloc[0]
+    ends = [d["team_name"].iloc[0], d["team_name"].iloc[-1]]
+    for col, label, color in payroll.LINES:
+        value = first[col]
+        if pd.notna(value):
+            # A two-point line from the bottom bar to the top bar: a real
+            # legend entry, which add_vline can't have.
+            fig.add_scatter(x=[value, value], y=ends, mode="lines", name=label,
+                            line=dict(color=color, width=1.5, dash="dash"),
+                            hovertemplate=f"{label}<br>$%{{x:,.0f}}<extra></extra>")
+    fig.update_layout(**_layout(height=max(320, 22 * len(d) + 80), showlegend=True,
+                                bargap=0.25))
+    fig.update_xaxes(tickprefix="$", automargin=True)
+    fig.update_yaxes(type="category", automargin=True)
     return fig
 
 

@@ -61,3 +61,48 @@ def test_fully_flagged_team_renders_a_placeholder_not_an_empty_chart():
     assert len(fig.data) == 0
     assert len(fig.layout.annotations) == 1
     assert "incomplete" in fig.layout.annotations[0].text.lower()
+
+
+def test_trend_labels_each_era_and_marks_the_boundary():
+    team_df = _team_df([
+        {"season": s, "team_payroll": 50_000_000, "payroll_likely_incomplete": False}
+        for s in ["2006-07", "2007-08", "2008-09"]
+    ])
+    eras = [("2006-07", "2007-08", "Seattle SuperSonics"),
+            ("2008-09", "2008-09", "Oklahoma City Thunder")]
+    fig = viz.team_finances_trend(team_df, _cap_df(team_df["season"].tolist()), eras=eras)
+    texts = [a.text for a in fig.layout.annotations]
+    assert texts == ["Seattle SuperSonics", "Oklahoma City Thunder"]
+    assert len(fig.layout.shapes) == 1 and fig.layout.shapes[0].x0 == "2008-09"
+
+
+def test_trend_with_one_era_draws_no_labels():
+    team_df = _team_df([
+        {"season": "2008-09", "team_payroll": 50_000_000, "payroll_likely_incomplete": False},
+    ])
+    fig = viz.team_finances_trend(team_df, _cap_df(["2008-09"]),
+                                  eras=[("2008-09", "2008-09", "Oklahoma City Thunder")])
+    assert len(fig.layout.annotations) == 0
+    assert len(fig.layout.shapes) == 0
+
+
+def test_league_snapshot_puts_the_highest_payroll_on_top():
+    df = pd.DataFrame({
+        "team_name": ["A", "B", "C"], "team_payroll": [150e6, 200e6, 120e6],
+        "bar_color": ["#111111"] * 3, "salary_cap": [140e6] * 3,
+        "luxury_tax": [170e6] * 3, "first_apron": [None] * 3, "second_apron": [None] * 3,
+    })
+    fig = viz.league_payroll_snapshot(df, highlight="B")
+    bars = fig.data[0]
+    # Plotly draws the last category at the top of a horizontal bar chart.
+    assert list(bars.y) == ["C", "A", "B"]
+    assert {t.name for t in fig.data[1:]} == {"Salary cap", "Luxury tax"}
+    assert list(bars.marker.line.width) == [0, 0, 2]
+
+
+def test_league_snapshot_with_no_rows_says_so():
+    empty = pd.DataFrame(columns=["team_name", "team_payroll", "bar_color", "salary_cap",
+                                  "luxury_tax", "first_apron", "second_apron"])
+    fig = viz.league_payroll_snapshot(empty)
+    assert len(fig.data) == 0
+    assert "No reliable payroll" in fig.layout.annotations[0].text
