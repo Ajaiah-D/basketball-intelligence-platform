@@ -786,3 +786,17 @@ def player_impact_meta() -> dict:
     total, fit quality) as a dict; empty if the table has no row."""
     df = q("select * from main.player_impact_meta limit 1")
     return df.iloc[0].to_dict() if len(df) else {}
+
+
+def all_team_net_ratings() -> pd.DataFrame:
+    """Every team-season's net rating from 1985-86 on (season, team,
+    net_rating), oldest first. The Arcade's all-time Build mode draws its
+    opponents from these; 1985-86 is where the impact pool starts too."""
+    return q(
+        """
+        select season, team_abbreviation as team, net_rating
+        from main_marts.mart_team_season
+        where season >= '1985-86' and net_rating is not null
+        order by season, team_abbreviation
+        """
+    )

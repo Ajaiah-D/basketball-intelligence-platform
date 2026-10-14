@@ -221,3 +221,45 @@ def warehouse_with_player_impact(tmp_path, monkeypatch):
     _reset_finances_cache()
     yield path
     _reset_finances_cache()
+
+
+@pytest.fixture
+def warehouse_for_team_builder(warehouse_with_player_impact):
+    """warehouse_with_player_impact plus what the Arcade's Build a team tab
+    reads on top of it:
+
+      - a tiny main_marts.mart_team_season (season, team_abbreviation,
+        team_id, net_rating): six teams in each of 2023-24 and 2024-25, one
+        with no net rating, and a 1984-85 row that all_team_net_ratings()
+        must leave out (it starts at 1985-86, like the impact pool);
+      - 50 more 2024-25 player-seasons (ids 11..60, impact below every base
+        row, cost 1), so a 6-team, 8-round draft (48 picks) has enough
+        players to finish.
+    """
+    con = duckdb.connect(str(warehouse_with_player_impact))
+    con.execute("create schema main_marts")
+    con.execute("""
+        create table main_marts.mart_team_season (
+            season varchar, team_abbreviation varchar, team_id bigint,
+            net_rating double
+        )
+    """)
+    teams = [("BOS", 1, 8.0), ("CHI", 2, 3.5), ("NYK", 3, 1.0),
+             ("MIA", 4, -2.5), ("DET", 5, -7.0), ("LAL", 6, None)]
+    rows = [(s, abbr, tid, None if net is None else net + shift)
+            for s, shift in (("2023-24", 0.0), ("2024-25", 0.5))
+            for abbr, tid, net in teams]
+    rows.append(("1984-85", "BOS", 1, 9.9))
+    con.executemany("insert into main_marts.mart_team_season values (?,?,?,?)", rows)
+    extra = [
+        ("2024-25", pid, f"Player {pid}", "NYK", 50, 20.0, 8.0, 3.0, 1.5,
+         round(-1.0 - pid * 0.01, 2), 0.9, 1)
+        for pid in range(11, 61)
+    ]
+    con.executemany(
+        "insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", extra
+    )
+    con.close()
+    _reset_finances_cache()
+    yield warehouse_with_player_impact
+    _reset_finances_cache()
