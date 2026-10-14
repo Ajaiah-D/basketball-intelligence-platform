@@ -139,9 +139,15 @@ def _training_rows(team_rows: pd.DataFrame, net: pd.DataFrame) -> pd.DataFrame:
 
 
 def _holdout_corr(train: pd.DataFrame) -> float:
-    """Fit on all but the last HOLDOUT_SEASONS seasons, score on those."""
+    """Fit on all but the last HOLDOUT_SEASONS seasons, score on those.
+
+    NaN when the warehouse is too short to have both halves (CI's fixture
+    warehouse, a fresh partial build) - a missing score, not a crash.
+    """
     seasons = sorted(train["season"].unique())
     held = train["season"].isin(seasons[-HOLDOUT_SEASONS:])
+    if (~held).sum() == 0 or held.sum() < 2:
+        return float("nan")
     coef, intercept = fit_impact(train[~held])
     pred = _predict(train[held], coef, intercept)
     return float(np.corrcoef(pred, train.loc[held, "rel_pm"].to_numpy(float))[0, 1])

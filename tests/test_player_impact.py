@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml.player_impact import STATS, build, fit_impact, relative_rates, write
+from ml.player_impact import (FIRST_PM_SEASON, HOLDOUT_SEASONS, STATS, build,
+                               fit_impact, relative_rates, write)
 
 
 def _zero_stats(n):
@@ -91,10 +92,102 @@ def test_write_creates_both_tables_with_the_exact_schema():
     assert con.execute("select count(*) from player_impact_meta").fetchone()[0] == 1
 
 
+# --- Synthetic warehouse: build() end to end, runs in CI ----------------------
+
+META_KEYS = {"fitted_at", "n_train", "holdout_corr", "team_scale", "team_offset",
+             "team_r2", "team_mae", "usage_league_total", "coef_json"}
+TRADED = 99
+TRADE_SEASON = "1997-98"
+
+
+def _synthetic_warehouse(n_seasons):
+    """Two teams, five regulars each, 50 head-to-head games a season. Player
+    99 plays every game; in TRADE_SEASON he starts on BBB and is traded to
+    AAA halfway through, so his path must read "BBB → AAA" even though AAA
+    sorts first."""
+    rng = np.random.default_rng(7)
+    seasons = [f"{1996 + i}-{(97 + i) % 100:02d}" for i in range(n_seasons)]
+    roster = {"AAA": [1, 2, 3, 4, 5], "BBB": [6, 7, 8, 9, 10]}
+    skill = {p: rng.uniform(0.6, 1.6) for p in [*range(1, 11), TRADED]}
+    rows = []
+    for season in seasons:
+        start = pd.Timestamp(f"{season[:4]}-11-01")
+        for g in range(50):
+            day = start + pd.Timedelta(days=2 * g)
+            traded_team = "BBB" if season == TRADE_SEASON and g < 25 else "AAA"
+            for team, players in roster.items():
+                lineup = players + ([TRADED] if team == traded_team else [])
+                for pid in lineup:
+                    k = skill[pid]
+                    rows.append({
+                        "season": season, "player_id": pid,
+                        "player_name": f"Player {pid}", "team_abbreviation": team,
+                        "game_date": day.date(), "minutes_played": 30,
+                        "points": rng.poisson(14 * k), "offensive_rebounds": rng.poisson(2),
+                        "defensive_rebounds": rng.poisson(4), "total_rebounds": 0,
+                        "assists": rng.poisson(3 * k), "steals": rng.poisson(1),
+                        "blocks": rng.poisson(0.6), "turnovers": rng.poisson(2),
+                        "field_goals_attempted": rng.poisson(11 * k),
+                        "free_throws_attempted": rng.poisson(4),
+                        "three_pointers_made": rng.poisson(1.5 * k),
+                        "personal_fouls": rng.poisson(2.5),
+                        "plus_minus": int(rng.normal(8 * (k - 1.1), 10)),
+                    })
+    logs = pd.DataFrame(rows)
+    logs["total_rebounds"] = logs["offensive_rebounds"] + logs["defensive_rebounds"]
+    teams = pd.DataFrame([{"season": s, "team_abbreviation": t,
+                           "net_rating": rng.normal(0, 5)}
+                          for s in seasons for t in roster])
+    con = duckdb.connect(":memory:")
+    con.execute("create schema main_staging")
+    con.execute("create schema main_marts")
+    con.register("_logs", logs)
+    con.register("_teams", teams)
+    con.execute("create table main_staging.stg_player_game_logs as select * from _logs")
+    con.execute("create table main_marts.mart_team_season as select * from _teams")
+    return con
+
+
+def test_build_runs_end_to_end_on_a_synthetic_warehouse():
+    impact, meta = build(_synthetic_warehouse(8))
+
+    assert set(meta) == META_KEYS
+    assert np.isfinite(meta["holdout_corr"])
+    assert set(json.loads(meta["coef_json"])) == {"intercept", *STATS}
+
+    # Everyone here is eligible, so the minutes-weighted usage of the pool
+    # is the whole league's: exactly 1.0 each season.
+    mins = impact["gp"] * impact["mpg"]
+    weighted = (impact["usage"] * mins).groupby(impact["season"]).sum()         / mins.groupby(impact["season"]).sum()
+    assert weighted.tolist() == pytest.approx([1.0] * 8)
+
+    assert impact["cost"].between(1, 10).all()
+    by_impact = impact.sort_values("impact")
+    assert by_impact["cost"].is_monotonic_increasing
+
+    traded = impact[impact["player_id"] == TRADED].set_index("season")["team"]
+    assert traded[TRADE_SEASON] == "BBB → AAA"
+    assert traded["1996-97"] == "AAA"
+    assert impact.loc[(impact["player_id"] == TRADED)
+                      & (impact["season"] == TRADE_SEASON), "gp"].item() == 50
+
+
+def test_build_survives_a_warehouse_too_short_for_a_holdout():
+    _, meta = build(_synthetic_warehouse(3))
+    assert np.isnan(meta["holdout_corr"])
+
+
 # --- Real warehouse ------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def built(con):
+    n = con.execute(
+        "select count(distinct season) from main_staging.stg_player_game_logs "
+        "where season >= ?", [FIRST_PM_SEASON]).fetchone()[0]
+    if n < HOLDOUT_SEASONS + 1:
+        # CI's fixture warehouse has a single post-1996 season. The rankings
+        # and calibration checks below only mean anything on the full one.
+        pytest.skip(f"needs the full warehouse ({n} plus-minus seasons here)")
     return build(con)
 
 
