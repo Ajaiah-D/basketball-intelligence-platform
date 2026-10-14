@@ -609,6 +609,46 @@ def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> g
     return fig
 
 
+def calibration_chart(df: pd.DataFrame) -> go.Figure:
+    """Predicted home-win chance against how often the home team really won,
+    one dot per probability bin (db.calibration_bins). A well-calibrated model
+    sits on the dashed y = x line; dot area carries the number of games behind
+    the bin, so a lonely extreme bin does not read as loudly as a crowded one."""
+    if df.empty:
+        return _empty("Not enough settled games to chart yet")
+
+    fig = go.Figure()
+    fig.add_scatter(
+        x=[0, 1], y=[0, 1], mode="lines",
+        line=dict(color=T.MUTED, width=1, dash="dash"),
+        hoverinfo="skip", showlegend=False,
+    )
+    fig.add_scatter(
+        x=df["predicted_mean"], y=df["actual_rate"],
+        mode="lines+markers",
+        line=dict(color=T.ACCENT, width=2),
+        marker=dict(color=T.ACCENT, size=df["n"], sizemode="area",
+                    sizeref=2.0 * float(df["n"].max()) / (26 ** 2), sizemin=6,
+                    line=dict(color=T.SURFACE, width=2)),
+        customdata=df[["n"]],
+        hovertemplate=("Model said %{x:.0%}<br>Home team won %{y:.0%}"
+                       "<br>%{customdata[0]} games<extra></extra>"),
+        showlegend=False,
+    )
+    fig.update_layout(**_layout(
+        height=360,
+        xaxis=dict(title=dict(text="Chance the model gave the home team",
+                              font=dict(color=T.MUTED)),
+                   range=[0, 1], tickformat=".0%", gridcolor=T.GRID,
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True),
+        yaxis=dict(title=dict(text="How often the home team won",
+                              font=dict(color=T.MUTED)),
+                   range=[0, 1], tickformat=".0%", gridcolor=T.GRID,
+                   tickfont=dict(color=T.MUTED), fixedrange=True, automargin=True),
+    ))
+    return fig
+
+
 def _empty(message: str) -> go.Figure:
     """Placeholder so a view with no data renders a sentence instead of an
     empty axis box."""

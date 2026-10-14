@@ -109,6 +109,15 @@ TERMS = {
                     "0.25 is what always guessing 50/50 would score. Lower is better."),
     "Margin error": ("How many points the predicted margin missed the real final "
                      "margin by, on average."),
+    "Win probability": ("The model's chance that the home team wins, from 0% to 100%. "
+                        "60% means that in 10 games like this one, the home team "
+                        "would be expected to win about 6."),
+    "Predicted margin": ("How many points the model expects the favorite to win by. "
+                         "It is a best guess, and real margins swing widely around it."),
+    "Calibration": ("Whether the percentages can be trusted. Games are grouped by the "
+                    "chance the model gave the home team; if it is well calibrated, "
+                    "teams given 70% win about 70% of those games, and the dots sit "
+                    "on the dashed line."),
     # Arcade team builder
     "Impact": ("The team builder's rating of one player-season: about how many points "
                "of margin he adds per 36 minutes, read from his box-score rates "
