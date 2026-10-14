@@ -139,6 +139,7 @@ def main() -> None:
             ("dbt_seed", [DBT, "seed", "--profiles-dir", "."], dbt_dir),
             ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
             ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
+            ("player_impact", [PYTHON, "-m", "ml.player_impact"], None),
             ("predict", [PYTHON, "-m", "ml.predict"], None),
             ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
             ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
