@@ -52,6 +52,7 @@ def _reset_finances_cache() -> None:
     db.q.clear()
     db.team_finances_available.clear()
     db.team_contracts_available.clear()
+    db.player_impact_available.clear()
 
 
 @pytest.fixture
@@ -170,3 +171,53 @@ def legacy_finances_warehouse(warehouse_with_finances_mart):
     con.close()
     _reset_finances_cache()
     yield warehouse_with_finances_mart
+
+
+@pytest.fixture
+def warehouse_with_player_impact(tmp_path, monkeypatch):
+    """A tiny warehouse holding main.player_impact (20 synthetic rows, 10 in
+    each of 2023-24 and 2024-25) and its one-row main.player_impact_meta, the
+    tables ml/player_impact.py writes. Player ids 1..10 appear in both seasons
+    so all-time mode has the same player in two different seasons. Impact
+    falls with the id, so ordering by impact desc is ordering by id.
+
+    Built to be extended: the Arcade page tests add their own tables (e.g. a
+    tiny main_marts.mart_team_season) by opening this file after the fixture.
+    """
+    path = tmp_path / "with_player_impact.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute("""
+        create table main.player_impact (
+            season varchar, player_id bigint, player varchar, team varchar,
+            gp integer, mpg double, ppg double, rpg double, apg double,
+            impact double, usage double, cost integer
+        )
+    """)
+    rows = []
+    for season, shift in (("2023-24", 0.0), ("2024-25", 0.25)):
+        for pid in range(1, 11):
+            rows.append((
+                season, pid, f"Player {pid}", "BOS" if pid % 2 else "CHI → BOS",
+                60 + pid, 36.0 - pid, 30.0 - pid, 8.0 - pid / 2, 6.0 - pid / 3,
+                round(6.0 - pid * 0.5 - shift, 2), round(1.5 - pid * 0.08, 2),
+                max(1, 11 - pid),
+            ))
+    con.executemany(
+        "insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", rows
+    )
+    con.execute("""
+        create table main.player_impact_meta (
+            fitted_at timestamp, n_train integer, holdout_corr double,
+            team_scale double, team_offset double, team_r2 double,
+            team_mae double, usage_league_total double, coef_json varchar
+        )
+    """)
+    con.execute("""
+        insert into main.player_impact_meta values
+        (timestamp '2026-10-01 12:00:00', 5000, 0.62, 1.9, -0.4, 0.71, 2.3, 5.0, '{}')
+    """)
+    con.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    _reset_finances_cache()
+    yield path
+    _reset_finances_cache()
