@@ -44,6 +44,21 @@ changes.
 5. Deploy. First boot downloads the warehouse (spinner shows), then it's
    cached on disk for subsequent runs.
 
+## Shipping a code change
+
+Push to `main`, wait for the Tests workflow to pass, then open the live app
+and check the change is there. Community Cloud is supposed to redeploy on
+every push, but this app has repeatedly kept serving the previous code
+(three times in September-October 2026). When that happens: share.streamlit.io,
+the app's **⋮** menu, **Reboot app**. A reboot also re-downloads the
+warehouse. If reboots stop working, delete the app and recreate it from the
+same repo with the same secrets and custom subdomain.
+
+A change that needs new data (a new dbt model, seed or column) is not live
+until the warehouse is republished too: run `python scripts/weekly_refresh.py`
+once after pushing, or wait for the next scheduled run. Pages are written to
+keep working against an older warehouse in the meantime.
+
 ## Security checklist for going public
 
 - [ ] `.env` was never committed (`git log --all --oneline -- .env` shows nothing)
@@ -67,15 +82,20 @@ changes.
     accounts/subscriptions are the point where a custom frontend
     (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
 - **Data refresh cadence**: `scripts/weekly_refresh.py` runs the pipeline
-  end to end (ingest, DuckDB, dbt, republish to the `data-v1` Release) and
-  is meant to be triggered by a local Windows Task Scheduler job, not
+  end to end (ingest game data, load DuckDB, scrape the current season's
+  salaries, dbt seed/run/test, predict and score games, republish to the
+  `data-v1` Release) and is meant to be triggered by a local Windows Task Scheduler job, not
   GitHub Actions. stats.nba.com silently blocks requests from cloud/
   datacenter IP ranges (AWS, Azure, GCP, and GitHub-hosted Actions runners
   all fall in that bucket, confirmed by a failed test run: every request
   timed out from GitHub's network but worked instantly from a home IP), so
   the ingestion step has to run from a real residential connection. The
   live app checks a version marker next to the Release asset hourly and
-  re-downloads on its own when it changes, no manual reboot needed.
+  re-downloads on its own when it changes, so new *data* needs no manual
+  reboot (new *code* sometimes does - see "Shipping a code change" above).
+  The salary scrape is the one step allowed to fail without stopping the
+  run: the rest of the refresh still publishes, and the failure is recorded
+  in the run log.
 
   It's registered as a Windows Scheduled Task named
   `BasketballIntelligence-WeeklyRefresh` (action: this repo's
@@ -90,12 +110,16 @@ changes.
   Set-ScheduledTask -TaskName "BasketballIntelligence-WeeklyRefresh" -Trigger (
       New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At "2026-10-13T06:00:00")
   ```
-  **Current state (set 2026-07-13):** paused for the offseason - the
-  weekly Tuesday 6 AM trigger's start boundary is pushed to
-  **2026-10-13** (second week of October, ahead of the 2026-27 season
-  opener), so it won't fire again until then. It stayed *enabled* rather
-  than disabled specifically so it resumes itself with no follow-up
-  needed - update the date above if the actual season start differs.
+  **Current state (as of 2026-10-13):** running weekly, Tuesdays at 6 AM.
+  It was paused over the 2026 offseason by pushing the trigger's start
+  boundary to 2026-10-13, and resumed itself on that date as intended
+  (`logs/refresh_runs.jsonl` has the run). To pause it again next summer,
+  push the start boundary forward the same way rather than disabling the
+  task, so it resumes with no follow-up.
+
+  Between October 1 and opening night the new season exists but has no
+  games. The refresh handles that: it skips play-by-play, and the salary
+  step keeps using the last season that has games.
 
   If this ever moves to a new machine (e.g. a mini PC), the Scheduled
   Task has to be recreated there; nothing about it migrates with `git
