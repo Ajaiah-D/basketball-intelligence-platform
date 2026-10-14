@@ -17,7 +17,7 @@ from dashboard.lib import viz
 
 # The default table: enough to answer "who is efficient and how involved
 # were they" without becoming a spreadsheet.
-CORE_COLS = ["player_name", "team_abbreviation", "games_played", "minutes_per_game",
+CORE_COLS = ["player_name", "team_label", "games_played", "minutes_per_game",
              "points_per_game", "true_shooting_pct", "effective_fg_pct",
              "usage_pct", "assist_pct", "rebound_pct", "game_score"]
 
@@ -30,7 +30,9 @@ COMPARE_METRICS = ["TS%", "USG%", "AST%", "REB%", "STL%", "BLK%", "Game score"]
 
 COLUMN_CONFIG = {
     "player_name": st.column_config.TextColumn("Player", width="medium"),
-    "team_abbreviation": st.column_config.TextColumn("Team", width="small"),
+    "team_label": st.column_config.TextColumn(
+        "Team", width="small",
+        help="Two teams (CHI → BOS) means traded mid-season; the line covers both"),
     "games_played": st.column_config.NumberColumn(**glossary.described("GP")),
     "minutes_per_game": st.column_config.NumberColumn(**glossary.described("MIN"),
                                                       format="%.1f"),
@@ -91,6 +93,8 @@ def render() -> None:
         return
 
     stats = db.player_advanced(season)
+    if not stats.empty:
+        stats = db.with_team_labels(stats, season, team_col="team_abbreviation")
     if stats.empty:
         st.info("No player data for this season yet.")
         return

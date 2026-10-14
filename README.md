@@ -17,8 +17,8 @@ Status / roadmap below.
 shooting-vs-league comparison
 ![Players](site_pictures/players.png)
 
-**Teams** - standings with last-5 form; team detail with a per-game margin
-chart
+**Teams** - one team in depth: ratings with league ranks, the Four Factors,
+record splits and its roster, with full standings in their own tab
 ![Teams](site_pictures/teams.png)
 
 **Games** - results browser; game detail with a score-margin flow chart and
@@ -155,8 +155,14 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Players**: filterable season stats table; player detail with scoring
   trend (5-game rolling average) and shooting-vs-league comparison; a career
   view pooling every season
-- **Teams**: full standings with last-5 form, team detail with per-game
-  margin chart, efficiency ratings and top contributors
+- **Teams**: a Team tab with record and seed, net/offensive/defensive rating
+  and pace with league ranks, the team's payroll, the Four Factors (shooting,
+  turnovers, rebounding, free throws - offense and defense, against the
+  league average), home/away, last-10, streak, close-game and vs-winning-team
+  records, a per-game margin chart and its roster; a Standings tab with
+  last-5 form for either conference or the whole league. A player traded
+  mid-season counts on each roster only for the games he played there, and
+  the Players and Advanced tables label him with both teams (CHI → BOS)
 - **Games**: results browser; game detail with box scores and, for games
   with play-by-play ingested, a game-flow (score margin) chart and shot chart
 - **Advanced**: rate metrics (true shooting, usage, assist/rebound/steal/block

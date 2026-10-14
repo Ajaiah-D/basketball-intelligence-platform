@@ -86,6 +86,23 @@ TERMS = {
     "Pace": "Possessions per 48 minutes - how fast a team plays.",
     "Close games": ("The share of games decided by 5 points or fewer - how "
                     "competitive the season has been."),
+    "Four Factors": ("Dean Oliver's four things that decide most games: shooting, "
+                     "turnovers, rebounding and free throws. Each is measured on "
+                     "offense and again on defense (what opponents managed)."),
+    "Shooting": ("Effective FG% - field goal percentage with 3-pointers counted as "
+                 "1.5 makes. Offense: higher is better. Defense: what opponents shot; "
+                 "lower is better."),
+    "Turnovers": ("Turnovers per 100 plays. Offense: lower is better. Defense: how "
+                  "many the team forced from opponents; higher is better."),
+    "Rebounding": ("Offense: the share of its own misses a team rebounds. Defense: "
+                   "the share of opponents' misses it rebounds. Higher is better on "
+                   "both."),
+    "Free throws": ("Free throws made per field goal attempt - how often a team gets "
+                    "to the line and scores. Offense: higher is better. Defense: lower "
+                    "is better, it means fouling less."),
+    "Seed": "Where the team sits in its conference standings.",
+    "Close-game record": "Wins and losses in games decided by 5 points or fewer.",
+    "Vs winning teams": "Record against teams that finished the season above .500.",
     # Predictions
     "Accuracy": "The share of games where the predicted winner actually won.",
     "Brier score": ("How well-calibrated the win probabilities were: 0 is perfect, "

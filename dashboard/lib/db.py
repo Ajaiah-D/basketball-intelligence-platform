@@ -124,6 +124,52 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
     return q(_PLAYER_SEASON_SQL, (season, min_games))
 
 
+# The same per-player season line, counting only games played for one team.
+# A player traded mid-season appears on both teams' rosters, each with just
+# the games he played there - player_season_stats() sums his whole season
+# under his last team, which credited the old team's games to the new one.
+_TEAM_ROSTER_SQL = _PLAYER_SEASON_SQL.replace(
+    "    where season = ?\n", "    where season = ? and team_abbreviation = ?\n")
+assert _TEAM_ROSTER_SQL != _PLAYER_SEASON_SQL
+
+
+def team_roster(season: str, team: str, min_games: int = 1) -> pd.DataFrame:
+    return q(_TEAM_ROSTER_SQL, (season, team, min_games))
+
+
+def player_team_paths(season: str) -> pd.DataFrame:
+    """Every team each player played for in a season, in order: player_id,
+    team_path ("CHI → BOS"), n_teams. Ordered by each stint's first game."""
+    return q(
+        """
+        select player_id,
+               string_agg(team_abbreviation, ' → ' order by first_game) as team_path,
+               count(*)                                                 as n_teams
+        from (
+            select player_id, team_abbreviation, min(game_date) as first_game
+            from main_staging.stg_player_game_logs
+            where season = ?
+            group by player_id, team_abbreviation
+        )
+        group by player_id
+        """,
+        (season,),
+    )
+
+
+def with_team_labels(stats: pd.DataFrame, season: str, id_col: str = "player_id",
+                     team_col: str = "team") -> pd.DataFrame:
+    """A copy of a player-season frame with team_label: "CHI → BOS" for a
+    player who changed teams mid-season, his one team otherwise. The season
+    line itself still covers his whole season - this only makes that
+    visible instead of filing it silently under the last team."""
+    paths = player_team_paths(season)
+    out = stats.merge(paths[["player_id", "team_path"]].rename(columns={"player_id": id_col}),
+                      on=id_col, how="left")
+    out["team_label"] = out["team_path"].where(out["team_path"].notna(), out[team_col])
+    return out.drop(columns="team_path")
+
+
 def qualification_threshold(stats: pd.DataFrame, full_season: int = 25) -> int:
     """Minimum games to appear on a rate-stat leaderboard.
 

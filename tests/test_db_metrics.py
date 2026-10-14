@@ -182,3 +182,25 @@ def test_team_contracts(warehouse_with_finances_mart):
 
 def test_team_contracts_unavailable_on_an_old_warehouse(legacy_finances_warehouse):
     assert db.team_contracts_available() is False
+
+
+def test_a_traded_player_is_split_across_both_rosters(con):
+    """Each team's roster counts only the games a player played for it, and
+    the stints add back up to his whole season."""
+    season = db.latest_season()
+    paths = db.player_team_paths(season)
+    traded = paths[paths["n_teams"] == 2]
+    if traded.empty:
+        pytest.skip(f"no two-team player in {season} in this warehouse")
+    pick = traded.iloc[0]
+    first, second = pick["team_path"].split(" → ")
+    whole = db.player_season_stats(season)
+    whole_gp = int(whole.loc[whole["player_id"] == pick["player_id"], "gp"].iloc[0])
+    stints = []
+    for team in (first, second):
+        roster = db.team_roster(season, team)
+        row = roster[roster["player_id"] == pick["player_id"]]
+        assert len(row) == 1, f"{pick['team_path']}: missing from {team}'s roster"
+        assert row["team"].iloc[0] == team
+        stints.append(int(row["gp"].iloc[0]))
+    assert sum(stints) == whole_gp

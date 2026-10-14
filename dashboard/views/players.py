@@ -12,7 +12,7 @@ from dashboard.lib import db, glossary, media
 from dashboard.lib import theme as T
 from dashboard.lib import viz
 
-TABLE_COLS = ["player", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg",
+TABLE_COLS = ["player", "team_label", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg",
               "fg_pct", "fga_pg", "tpg", "tpa_pg", "fg3_pct", "ft_pct", "fta_pg",
               "ts_pct", "plus_minus"]
 
@@ -64,12 +64,13 @@ def render() -> None:
 
     if career:
         stats = db.player_career_stats()
+        stats["team_label"] = stats["team"]
         stats["span"] = stats["first_season"].where(
             stats["seasons"] == 1,
             stats["first_season"] + " to " + stats["last_season"])
         min_gp = f2.slider("Min career games", 1, 1500, 200)
     else:
-        stats = db.player_season_stats(season)
+        stats = db.with_team_labels(db.player_season_stats(season), season)
         min_gp = f2.slider("Min games", 1, 82, 25)
 
     with head:
@@ -87,7 +88,8 @@ def render() -> None:
 
     view = stats[stats.gp >= min_gp]
     if team != "All teams":
-        view = view[view.team == team]
+        # A traded player is listed under every team he played for.
+        view = view[view.team_label.str.contains(team, regex=False)]
     if search:
         view = view[view.player.str.contains(search, case=False, na=False)]
     view = view.sort_values("ppg", ascending=False)
@@ -108,7 +110,9 @@ def render() -> None:
         row_height=38,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
-            "team": st.column_config.TextColumn("Team", width="small"),
+            "team_label": st.column_config.TextColumn(
+                "Team", width="small",
+                help="Two teams (CHI → BOS) means traded mid-season; the line covers both"),
             "seasons": st.column_config.NumberColumn("Yrs"),
             "span": st.column_config.TextColumn("Span", width="medium"),
             "gp": st.column_config.NumberColumn(**glossary.described("GP")),
@@ -152,7 +156,7 @@ def render() -> None:
     tc = T.team_color(row.team)
     chip_text = (f"{row.team} &middot; {row.seasons} seasons &middot; {row.gp} GP"
                  if career else
-                 f"{row.team} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG")
+                 f"{row.team_label} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG")
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:14px;margin:.4rem 0 .8rem 0">'
         f'{media.avatar_html(int(row.player_id), row.player, size=84, ring=tc)}'

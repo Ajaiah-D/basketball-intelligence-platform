@@ -36,6 +36,7 @@ with paired as (
         o.field_goals_made        as opp_field_goals_made,
         o.field_goals_attempted   as opp_field_goals_attempted,
         o.three_pointers_made     as opp_three_pointers_made,
+        o.free_throws_made        as opp_free_throws_made,
         o.free_throws_attempted   as opp_free_throws_attempted,
         o.offensive_rebounds      as opp_offensive_rebounds,
         o.defensive_rebounds      as opp_defensive_rebounds,
@@ -75,6 +76,7 @@ totals as (
                or opp_field_goals_made is null
                or opp_field_goals_attempted is null
                or opp_three_pointers_made is null
+               or opp_free_throws_made is null
                or opp_free_throws_attempted is null
                or opp_offensive_rebounds is null
                or opp_defensive_rebounds is null
@@ -99,6 +101,7 @@ totals as (
         sum(opp_field_goals_made)      as opp_field_goals_made,
         sum(opp_field_goals_attempted) as opp_field_goals_attempted,
         sum(opp_three_pointers_made)   as opp_three_pointers_made,
+        sum(opp_free_throws_made)      as opp_free_throws_made,
         sum(opp_free_throws_attempted) as opp_free_throws_attempted,
         sum(opp_offensive_rebounds)    as opp_offensive_rebounds,
         sum(opp_defensive_rebounds)    as opp_defensive_rebounds,
@@ -186,6 +189,11 @@ select
         round(100 * t.defensive_rebounds
             / nullif(t.defensive_rebounds + t.opp_offensive_rebounds, 0), 1) end
                                                               as defensive_rebound_pct,
+    -- The fourth defensive factor: free throws the opponent made per field
+    -- goal it tried. Lower is better - it measures how often a defense fouls.
+    case when t.incomplete_games > 0 then null else
+        round(100 * t.opp_free_throws_made / nullif(t.opp_field_goals_attempted, 0), 1) end
+                                                              as opp_free_throw_rate,
 
     case when t.incomplete_games > 0 then null else
         round(100 * t.points / nullif(2 * (t.field_goals_attempted
