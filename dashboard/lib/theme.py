@@ -151,6 +151,18 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 .bip-kpi-value {{ font-size: 1.85rem; font-weight: 800; color: {INK}; line-height: 1.2;
                   font-variant-numeric: tabular-nums; }}
 .bip-kpi-sub   {{ font-size: .75rem; color: {INK_2}; }}
+/* Equal-height KPI rows. Streamlit already stretches each column to the
+   row's height, but the card inside stays as tall as its own content, so a
+   tile with a sub-line stood taller than its neighbours. Every wrapper
+   between the column and the card is made a growing flex box so the card
+   fills the column. */
+[data-testid="stColumn"] [data-testid="stElementContainer"]:has(.bip-kpi) {{
+  flex: 1 1 auto; display: flex; }}
+[data-testid="stColumn"] [data-testid="stElementContainer"]:has(.bip-kpi) [data-testid="stMarkdown"],
+[data-testid="stColumn"] [data-testid="stElementContainer"]:has(.bip-kpi) [data-testid="stMarkdown"] > div,
+[data-testid="stColumn"] [data-testid="stElementContainer"]:has(.bip-kpi) [data-testid="stMarkdownContainer"] {{
+  flex: 1 1 auto; display: flex; flex-direction: column; width: 100%; }}
+[data-testid="stColumn"] .bip-kpi {{ flex: 1 1 auto; }}
 
 /* ---- explanation icon (glossary.py terms) ----
    The bubble inherits nothing from an uppercase, letter-spaced card title:
