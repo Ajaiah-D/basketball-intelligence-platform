@@ -66,7 +66,7 @@
       "seed": 53710185,
       "version": 1,
       "versionNonce": 1592467582,
-      "text": "Generated 2026-09-25. Three lanes: data pipeline (bottom), GitHub bridge (middle), deployed app (top).",
+      "text": "Updated 2026-10-13. Three lanes: data pipeline (bottom), GitHub bridge (middle), deployed app (top).",
       "rawText": "Generated 2026-09-25. Three lanes: data pipeline (bottom), GitHub bridge (middle), deployed app (top).",
       "fontSize": 14,
       "fontFamily": 2,
@@ -74,7 +74,7 @@
       "verticalAlign": "middle",
       "baseline": 11,
       "containerId": null,
-      "originalText": "Generated 2026-09-25. Three lanes: data pipeline (bottom), GitHub bridge (middle), deployed app (top).",
+      "originalText": "Updated 2026-10-13. Three lanes: data pipeline (bottom), GitHub bridge (middle), deployed app (top).",
       "lineHeight": 1.25
     },
     {
@@ -198,7 +198,7 @@
       "seed": 1453201079,
       "version": 1,
       "versionNonce": 1590571866,
-      "text": "Streamlit Community Cloud\n(auto-redeploy on push to main)",
+      "text": "Streamlit Community Cloud\n(redeploys on push; may need a reboot)",
       "rawText": "Streamlit Community Cloud\n(auto-redeploy on push to main)",
       "fontSize": 15,
       "fontFamily": 2,
@@ -206,7 +206,7 @@
       "verticalAlign": "middle",
       "baseline": 24,
       "containerId": null,
-      "originalText": "Streamlit Community Cloud\n(auto-redeploy on push to main)",
+      "originalText": "Streamlit Community Cloud\n(redeploys on push; may need a reboot)",
       "lineHeight": 1.25
     },
     {
@@ -330,7 +330,7 @@
       "seed": 63989048,
       "version": 1,
       "versionNonce": 201209006,
-      "text": "dashboard/lib/\ndb.py, viz.py, theme.py,\nconfig.py, media.py",
+      "text": "dashboard/lib/\ndb, viz, theme, config, media,\nfranchises, payroll, glossary",
       "rawText": "dashboard/lib/\ndb.py, viz.py, theme.py,\nconfig.py, media.py",
       "fontSize": 13,
       "fontFamily": 2,
@@ -338,7 +338,7 @@
       "verticalAlign": "middle",
       "baseline": 31,
       "containerId": null,
-      "originalText": "dashboard/lib/\ndb.py, viz.py, theme.py,\nconfig.py, media.py",
+      "originalText": "dashboard/lib/\ndb, viz, theme, config, media,\nfranchises, payroll, glossary",
       "lineHeight": 1.25
     },
     {
@@ -924,7 +924,7 @@
       "seed": 207696844,
       "version": 1,
       "versionNonce": 770902344,
-      "text": "ingestion/team_payroll_\ningest.py (3.5s throttled)",
+      "text": "ingestion/team_payroll_\ningest.py (team + player pay)",
       "rawText": "ingestion/team_payroll_\ningest.py (3.5s throttled)",
       "fontSize": 13,
       "fontFamily": 2,
@@ -932,7 +932,7 @@
       "verticalAlign": "middle",
       "baseline": 20,
       "containerId": null,
-      "originalText": "ingestion/team_payroll_\ningest.py (3.5s throttled)",
+      "originalText": "ingestion/team_payroll_\ningest.py (team + player pay)",
       "lineHeight": 1.25
     },
     {

@@ -27,10 +27,10 @@ current architecture:
 
 2. **Monetization is constrained by the data source's terms, not by a
    formal license.** The data comes from stats.nba.com, an *unofficial*
-   API accessed via `nba_api` (`README.md:37`) - there is no data license,
+   API accessed via `nba_api` (`README.md`, "Data sources") - there is no data license,
    formal or informal, only the general expectation that heavy or
    commercial use of an unofficial, throttled endpoint is not what it is
-   meant for (`DEPLOYMENT.md:61`: "Terms allow hobby/portfolio use; it is
+   meant for (`DEPLOYMENT.md`, "Capacity and the monetization path": "Terms allow hobby/portfolio use; it is
    not meant for a commercial product"). This is a real constraint on any
    future monetization plan, but it is a terms-of-use risk to manage, not
    a licensing agreement to renegotiate.

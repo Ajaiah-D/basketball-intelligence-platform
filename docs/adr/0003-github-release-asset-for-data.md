@@ -16,9 +16,9 @@ in the repo it deploys from.
 
 Publish the warehouse file as a GitHub Release asset instead, under the
 `data-v1` tag. The tag is reused indefinitely across refreshes rather than
-cut fresh each time (`scripts/weekly_refresh.py:29`), so the download URL
+cut fresh each time (`RELEASE_TAG` in `scripts/weekly_refresh.py`), so the download URL
 configured in the app's `WAREHOUSE_URL` secret never has to change
-(`DEPLOYMENT.md:21-36`). The live app downloads the asset on first boot and
+(`DEPLOYMENT.md`, "One-time setup"). The live app downloads the asset on first boot and
 re-checks it hourly via `bootstrap_warehouse()` in `dashboard/app.py`,
 comparing against a small `version.txt` published alongside it so a fresh
 refresh reaches the app without a manual redeploy.

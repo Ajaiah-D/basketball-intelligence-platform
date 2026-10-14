@@ -4,6 +4,11 @@ Research pass conducted 2026-09-22 to scope a possible future "Contracts & Salar
 (team payrolls, individual contract terms, league cap/tax thresholds) alongside the existing
 performance-stats platform. **No implementation decisions made here — findings only.**
 
+**Outcome (added 2026-10-13):** team payroll and per-player salaries were since built from
+Basketball-Reference alone, the lowest-risk source below; cap, tax and apron levels are a
+hand-curated dbt seed. Individual contract terms (options, guarantees, future years) remain
+unbuilt. See the README's "Data sources" section for what shipped.
+
 `nba_api` (this project's existing ingestion library) does not cover contracts/salaries at all,
 so this is a genuinely new data-sourcing problem, not an extension of the existing pipeline.
 
