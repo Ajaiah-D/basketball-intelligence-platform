@@ -747,3 +747,42 @@ def arcade_pool(min_gp: int = 50, min_ppg: float = 14.0) -> pd.DataFrame:
         """,
         (min_gp, min_ppg),
     )
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def player_impact_available() -> bool:
+    """Whether the team builder's tables exist - a warehouse published before
+    ml/player_impact.py first ran has neither."""
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select 1 from main.player_impact limit 1")
+            con.execute("select 1 from main.player_impact_meta limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+def player_impact_pool(season: str | None) -> pd.DataFrame:
+    """The team builder's pool: one season's player-seasons, or every season
+    when `season` is None, best impact first."""
+    cols = (
+        "season, player_id, player, team, gp, mpg, ppg, rpg, apg, "
+        "impact, usage, cost"
+    )
+    if season is None:
+        return q(
+            f"select {cols} from main.player_impact "
+            "order by impact desc, player_id, season"
+        )
+    return q(
+        f"select {cols} from main.player_impact where season = ? "
+        "order by impact desc, player_id",
+        (season,),
+    )
+
+
+def player_impact_meta() -> dict:
+    """The impact model's single metadata row (calibration, league usage
+    total, fit quality) as a dict; empty if the table has no row."""
+    df = q("select * from main.player_impact_meta limit 1")
+    return df.iloc[0].to_dict() if len(df) else {}
