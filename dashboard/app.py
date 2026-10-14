@@ -43,8 +43,10 @@ def bootstrap_warehouse() -> None:
     """On cloud deploys the DuckDB file is not in the repo: download it from
     WAREHOUSE_URL (e.g. a GitHub Release asset). Re-checked hourly (cache
     ttl) against a small version.txt sitting next to the asset, so a fresh
-    weekly data refresh (see .github/workflows/refresh-data.yml) reaches the
-    live app without a manual reboot.
+    weekly data refresh reaches the live app without a manual reboot. That
+    refresh is scripts/weekly_refresh.py, run by the local Windows Scheduled
+    Task BasketballIntelligence-WeeklyRefresh, which publishes the warehouse
+    to the data-v1 GitHub release (see DEPLOYMENT.md and docs/adr/0004).
 
     cache_resource serializes concurrent sessions - on cloud boot several
     sessions start at once and racing downloads collide on the temp file."""
