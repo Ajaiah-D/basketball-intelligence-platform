@@ -115,9 +115,11 @@ TERMS = {
                "compared with that season's league, so eras compare fairly. 0 is a "
                "typical rotation player, +2 is star level and the best seasons ever "
                "reach about +5."),
-    "Team rating": ("Your eight-man team's net rating: how many points per 100 "
-                    "possessions it should outscore an average NBA team by. 0 is a "
-                    ".500 team; +10 is one of the best teams ever."),
+    "Team rating": ("Your eight-man team's net rating, in points per 100 "
+                    "possessions. In Build mode it's against an average NBA team: 0 "
+                    "is a .500 team, +10 is one of the best ever, and stacked rosters "
+                    "level off below +15. In Draft mode it's against the average "
+                    "team in your six-team draft league."),
     "Projected record": ("The median record over 1,000 simulated 82-game seasons: half "
                          "the simulations went better, half worse. The same team always "
                          "gets the same projection."),

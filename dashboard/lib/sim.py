@@ -33,6 +33,9 @@ N_SIMS = 1000
 # How much of the usage a roster has beyond a league-average lineup it
 # loses: there is only one ball. Heuristic, documented in the Arcade page.
 USAGE_PENALTY = 0.5
+# Ceiling for a roster's net rating (see soft_cap); the best real teams
+# reached about +13.
+ABS_NET_CAP = 15.0
 
 PLAYOFF_TEAMS = 4
 SERIES_GAMES = 7
@@ -79,6 +82,21 @@ def team_net_rating(
     mean_positive = float(positive.mean()) if positive.size else 0.0
     penalty = USAGE_PENALTY * excess * max(0.0, mean_positive)
     return offset + scale * weighted_impact - penalty
+
+
+def soft_cap(net, cap: float = ABS_NET_CAP):
+    """Squash a net rating smoothly towards +-cap: cap * tanh(net / cap).
+
+    Real team net ratings top out around +13 (the 1995-96 Bulls, +13.4).
+    The impact calibration is linear, so a fantasy roster of eight star
+    seasons extrapolates far past anything real (+38 and up); the soft
+    ceiling keeps such superteams near the best ever, while a realistic
+    rating is barely changed (+5 comes out about +4.8). Works on floats
+    (returns a float) and numpy arrays (returns an array).
+    """
+    cap = ABS_NET_CAP if cap is None else cap
+    out = cap * np.tanh(np.asarray(net, dtype=float) / cap)
+    return float(out) if out.ndim == 0 else out
 
 
 def _norm_cdf(x):

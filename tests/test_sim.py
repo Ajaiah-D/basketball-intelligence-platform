@@ -229,3 +229,17 @@ def test_roster_seed_is_order_independent_and_stable():
     assert sim.roster_seed([1, 2, 3]) != sim.roster_seed([1, 2, 4])
     assert isinstance(sim.roster_seed(["a", "b"]), int)
     assert 0 <= sim.roster_seed([1]) < 2**32
+
+
+def test_soft_cap_is_monotone_and_bounded():
+    xs = np.linspace(-60, 60, 241)
+    capped = sim.soft_cap(xs)
+    assert np.all(np.diff(capped) > 0)
+    assert np.all(np.abs(capped) < sim.ABS_NET_CAP)
+
+
+def test_soft_cap_is_near_linear_for_real_teams_and_saturates_for_superteams():
+    assert abs(sim.soft_cap(5.0) - 5.0) < 0.3
+    assert 14.0 < sim.soft_cap(40.0) < 15.0
+    assert sim.soft_cap(-40.0) == pytest.approx(-sim.soft_cap(40.0))
+    assert isinstance(sim.soft_cap(3.0), float)
