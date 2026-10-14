@@ -20,8 +20,13 @@ def test_rotation_weights_sum_to_five():
     w = sim.rotation_weights()
     assert len(w) == sim.ROSTER_SIZE
     assert w.sum() == pytest.approx(5.0)
-    assert w[0] == pytest.approx(5 * 32 / 208)
-    assert w[-1] == pytest.approx(5 * 16 / 208)
+    assert w[0] == pytest.approx(5 * 36 / 240)
+    assert w[-1] == pytest.approx(5 * 20 / 240)
+
+
+def test_rotation_minutes_fill_a_240_minute_game():
+    bench = sim.ROSTER_SIZE - sim.STARTERS
+    assert sim.STARTERS * sim.STARTER_MINUTES + bench * sim.BENCH_MINUTES == 240
 
 
 def test_team_net_rating_is_offset_plus_scaled_weighted_impact():
@@ -178,10 +183,17 @@ def test_league_schedule_home_away_is_near_even():
 
 
 def test_league_rejects_odd_team_counts():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="even number of teams"):
         sim.simulate_league([0.0] * 5, np.random.default_rng(0), n_sims=10)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="even number of teams"):
         sim.simulate_league_once([0.0] * 5, np.random.default_rng(0))
+
+
+def test_league_rejects_two_teams_with_a_clear_message():
+    with pytest.raises(ValueError, match="at least 4 teams"):
+        sim.simulate_league([0.0, 0.0], np.random.default_rng(0), n_sims=10)
+    with pytest.raises(ValueError, match="at least 4 teams"):
+        sim.simulate_league_once([0.0, 0.0], np.random.default_rng(0))
 
 
 def test_simulate_league_outputs_and_title_odds_sum_to_one():
