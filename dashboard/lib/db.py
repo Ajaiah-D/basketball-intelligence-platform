@@ -581,7 +581,8 @@ def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
             ) as recency
             from predictions
         )
-        select l.game_id, l.game_date, l.win_probability, l.predicted_margin,
+        select l.game_id, l.game_date, s.tipoff_utc, l.win_probability,
+               l.predicted_margin,
                s.home_team_abbreviation, s.away_team_abbreviation
         from latest l
         join main_staging.stg_schedule s on s.game_id = l.game_id
@@ -605,7 +606,8 @@ _SETTLED_PREDICTIONS_SQL = """
         ) as attempt
         from predictions
     )
-    select p.predicted_margin, p.win_probability, f.margin, f.home_won
+    select p.game_id, p.game_date, p.predicted_margin, p.win_probability,
+           f.margin, f.home_won, f.home_points, f.away_points
     from first_prediction p
     join main_marts.fct_team_game f on f.game_id = p.game_id
     where p.attempt = 1
@@ -662,6 +664,64 @@ def prediction_track_record() -> dict:
         "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
         "n": int(len(settled)),
     }
+
+
+def recent_settled_predictions(n: int = 20) -> pd.DataFrame:
+    """The latest graded predictions, newest first: who played, the final
+    score, what the model said and whether it called the winner. Uses the same
+    earliest-prediction-per-game join as the track record. Empty when nothing
+    has settled (or the warehouse predates the tables it needs)."""
+    cols = ["game_date", "home", "away", "home_pts", "away_pts",
+            "win_probability", "predicted_margin", "correct"]
+    if not predictions_available():
+        return pd.DataFrame(columns=cols)
+    try:
+        df = q(
+            f"""
+            select s.game_date, s.home_team_abbreviation as home,
+                   s.away_team_abbreviation as away,
+                   t.home_points as home_pts, t.away_points as away_pts,
+                   t.win_probability, t.predicted_margin,
+                   (t.win_probability >= 0.5) = t.home_won as correct
+            from ({_SETTLED_PREDICTIONS_SQL}) t
+            join main_staging.stg_schedule s on s.game_id = t.game_id
+            order by s.game_date desc, t.game_id
+            limit ?
+            """,
+            (n,),
+        )
+    except duckdb.CatalogException:
+        return pd.DataFrame(columns=cols)
+    df["correct"] = df["correct"].astype(bool)
+    return df
+
+
+def calibration_bins(bins: int = 10) -> pd.DataFrame:
+    """Does "70%" mean 70%? Settled games bucketed by predicted home-win
+    probability into equal-width bins on [0, 1]; per bin the mean predicted
+    probability, the share the home team actually won, and the game count.
+    Empty bins are dropped, and nothing is returned below 50 settled games
+    because a bin of three games is noise, not calibration."""
+    cols = ["bin_mid", "predicted_mean", "actual_rate", "n"]
+    if not predictions_available():
+        return pd.DataFrame(columns=cols)
+    try:
+        settled = q(_SETTLED_PREDICTIONS_SQL)
+    except duckdb.CatalogException:
+        return pd.DataFrame(columns=cols)
+    if len(settled) < 50:
+        return pd.DataFrame(columns=cols)
+
+    prob = settled["win_probability"].astype(float).to_numpy()
+    won = settled["home_won"].astype(bool).astype(float).to_numpy()
+    # p == 1.0 belongs in the top bin, not a phantom eleventh.
+    idx = np.minimum((prob * bins).astype(int), bins - 1)
+    frame = pd.DataFrame({"bin": idx, "p": prob, "won": won})
+    out = frame.groupby("bin").agg(predicted_mean=("p", "mean"),
+                                   actual_rate=("won", "mean"),
+                                   n=("p", "size")).reset_index()
+    out["bin_mid"] = (out["bin"] + 0.5) / bins
+    return out[cols]
 
 
 def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
