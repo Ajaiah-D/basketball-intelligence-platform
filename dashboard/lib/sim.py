@@ -22,8 +22,8 @@ import math
 
 import numpy as np
 
-STARTER_MINUTES = 32
-BENCH_MINUTES = 16
+STARTER_MINUTES = 36
+BENCH_MINUTES = 20  # 5 x 36 + 3 x 20 = 240, a real game's player-minutes
 ROSTER_SIZE = 8
 STARTERS = 5
 GAME_SD = 12.7  # points; standard deviation of an NBA game margin
@@ -43,12 +43,11 @@ _HIGH_SEED_HOSTS = np.array([True, True, False, False, True, False, True])
 def rotation_weights() -> np.ndarray:
     """Minutes share of each rotation slot, scaled to sum to five.
 
-    Starters play 32 and bench players 16, so shares are minutes over the
-    rotation's 208 minutes, times 5 (five players on the floor at once).
-    That is the same convention the impact model's team calibration was fit
-    with (ml/player_impact.py: minutes share x 5 x impact), which is what
-    makes team_scale and team_offset valid here. Dividing by 48 instead
-    would sum to only 4.33, because 5 x 32 + 3 x 16 is 208, not 240.
+    Starters play 36 and bench players 20, which fills a game's 240
+    player-minutes. Shares are minutes over that total, times 5 (five
+    players on the floor at once), the same convention the impact model's
+    team calibration was fit with (ml/player_impact.py: minutes share x 5 x
+    impact), which is what makes team_scale and team_offset valid here.
     """
     minutes = [STARTER_MINUTES] * STARTERS + [BENCH_MINUTES] * (ROSTER_SIZE - STARTERS)
     minutes = np.asarray(minutes, dtype=float)
@@ -154,7 +153,8 @@ def simulate_season_once(
 def _check_league_size(n: int) -> None:
     if n < 2 or n % 2:
         raise ValueError(
-            f"a league needs an even number of teams (at least 2), got {n}"
+            f"a league needs an even number of teams so every team can play "
+            f"82 games (at least 2), got {n}"
         )
 
 
@@ -280,7 +280,9 @@ def simulate_league(
     nets = np.asarray(team_nets, dtype=float)
     _check_league_size(len(nets))
     if len(nets) < PLAYOFF_TEAMS:
-        raise ValueError(f"a league needs at least {PLAYOFF_TEAMS} teams for playoffs")
+        raise ValueError(
+            f"a league needs at least {PLAYOFF_TEAMS} teams for playoffs, got {len(nets)}"
+        )
     n = len(nets)
     wins = _regular_season(nets, rng, n_sims)
     order = _seed_order(wins, rng)
@@ -307,7 +309,9 @@ def simulate_league_once(team_nets: list[float], rng: np.random.Generator) -> di
     nets = np.asarray(team_nets, dtype=float)
     _check_league_size(len(nets))
     if len(nets) < PLAYOFF_TEAMS:
-        raise ValueError(f"a league needs at least {PLAYOFF_TEAMS} teams for playoffs")
+        raise ValueError(
+            f"a league needs at least {PLAYOFF_TEAMS} teams for playoffs, got {len(nets)}"
+        )
     wins = _regular_season(nets, rng, 1)
     order = _seed_order(wins, rng)
     semis, final = _playoffs(nets, order, rng)
