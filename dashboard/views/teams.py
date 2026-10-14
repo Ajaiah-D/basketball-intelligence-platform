@@ -41,31 +41,25 @@ def standings_table(df) -> str:
     return head + "".join(rows) + "</table>"
 
 
-def four_factors_table(ff: pd.DataFrame) -> str:
-    """Offense and defense side by side, each with the league average and rank."""
-    def fmt(v) -> str:
-        return "-" if v is None or v != v else f"{v:.1f}"
+# Every table on the Team tab is the same grid component, at the same row
+# height as the Players and Advanced grids.
+ROW_HEIGHT = 38
+CHART_HEIGHT = 360
 
-    head = ('<table class="bip-table"><tr><th class="lft">Factor</th>'
-            "<th>Offense</th><th>League</th><th>Rank</th>"
-            "<th>Defense</th><th>League</th><th>Rank</th></tr>")
-    rows = [
-        f'<tr><td class="lft tm">{r.factor}{T.tip(glossary.TERMS[r.factor])}</td>'
-        f"<td>{fmt(r.offense)}</td><td>{fmt(r.league_offense)}</td><td>{r.offense_rank}</td>"
-        f"<td>{fmt(r.defense)}</td><td>{fmt(r.league_defense)}</td><td>{r.defense_rank}</td></tr>"
-        for r in ff.itertuples()
-    ]
-    return head + "".join(rows) + "</table>"
+
+def section(title: str, help: str = "") -> None:
+    """The one heading style on this tab."""
+    st.markdown(f"#### {title}{T.tip(help) if help else ''}", unsafe_allow_html=True)
 
 
 def _rank_sub(rank) -> str:
     return f"{payroll.ordinal(rank[0])} of {rank[1]}" if rank else ""
 
 
-def _payroll_line(season: str, team: str) -> str | None:
-    """One sentence on the team's payroll that season, or None when the
-    warehouse has no salary data for it (before 1984-85, or a new season the
-    salary scrape hasn't reached yet)."""
+def _payroll_card(season: str, team: str) -> tuple[str, str] | None:
+    """(value, sub-line) for the Payroll card, or None when the warehouse has
+    no reliable salary figure for this team-season (before 1984-85, a source
+    gap, or a new season the salary scrape hasn't reached yet)."""
     if not db.team_finances_available():
         return None
     league = db.team_payroll_history()
@@ -73,14 +67,19 @@ def _payroll_line(season: str, team: str) -> str | None:
     row = league[league["team_abbreviation"] == team]
     if row.empty:
         return None
-    r = row.iloc[0]
-    label, _ = payroll.bracket(r)
+    label, _ = payroll.bracket(row.iloc[0])
     if label == "Data incomplete":
         return None
     rank = payroll.league_rank(league, team)
-    rank_text = f", {payroll.ordinal(rank[0])} of {rank[1]}" if rank else ""
-    return (f"Payroll {payroll.money(r['team_payroll'])}{rank_text} - "
-            f"{label.lower()}. [Full breakdown on Finances](finances)")
+    sub = f"{_rank_sub(rank)} &middot; {label.lower()}" if rank else label.lower()
+    return payroll.money(row.iloc[0]["team_payroll"]), sub
+
+
+def _cards(items: list[tuple]) -> None:
+    """One row of six equal cards: (label, value, sub, note, help)."""
+    cols = st.columns(6)
+    for col, (label, value, sub, note, help) in zip(cols, items):
+        col.markdown(T.kpi(label, value, sub, note=note, help=help), unsafe_allow_html=True)
 
 
 def render() -> None:
@@ -110,85 +109,90 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
 
     conf_table = standings[standings.conf == row.conf].reset_index(drop=True)
     seed = int(conf_table.index[conf_table.team == row.team][0]) + 1
-    seed_text = f"{payroll.ordinal(seed)} in the {row.conf}"
+    st.markdown(f"### {T.team_dot(row.team, 14)}{row.team_name}", unsafe_allow_html=True)
 
-    tc = T.team_color(row.team)
-    st.markdown(
-        f'### {T.team_dot(row.team, 14)}{row.team_name} &nbsp;'
-        f'{T.chip(f"{row.w}-{row.l} &middot; {seed_text}", tc)}',
-        unsafe_allow_html=True,
-    )
-
-    # --- Ratings with league ranks --------------------------------------------
-    # The efficiency block is additive; a warehouse without the marts falls
-    # back to per-game scoring, which every published warehouse has.
+    # --- Ratings: record, efficiency with league ranks, payroll ------------------
+    # The efficiency cards need the marts; a warehouse without them falls back
+    # to per-game scoring, which every published warehouse has.
     adv = db.team_advanced(season) if db.marts_available() else pd.DataFrame()
-    a = adv[adv.team_id == row.team_id].iloc[0] if not adv.empty and \
-        (adv.team_id == row.team_id).any() else None
-    c = st.columns(5)
-    c[0].markdown(T.kpi("Record", f"{row.w}-{row.l}", seed_text,
-                        help=glossary.TERMS["Seed"]), unsafe_allow_html=True)
-    if a is not None and a.offensive_rating == a.offensive_rating:
-        for col, label, field, high, fmt in [
-            (c[1], "Net rating", "net_rating", True, "{:+.1f}"),
-            (c[2], "Offensive rating", "offensive_rating", True, "{:.1f}"),
-            (c[3], "Defensive rating", "defensive_rating", False, "{:.1f}"),
-            (c[4], "Pace", "pace", True, "{:.1f}"),
+    match = adv[adv.team_id == row.team_id] if not adv.empty else adv
+    a = match.iloc[0] if len(match) and match.iloc[0].offensive_rating == \
+        match.iloc[0].offensive_rating else None
+
+    cards = [("Record", f"{row.w}-{row.l}", f"{payroll.ordinal(seed)} in the {row.conf}", "", "")]
+    if a is not None:
+        for label, field, high, fmt in [
+            ("Net rating", "net_rating", True, "{:+.1f}"),
+            ("Offensive rating", "offensive_rating", True, "{:.1f}"),
+            ("Defensive rating", "defensive_rating", False, "{:.1f}"),
+            ("Pace", "pace", True, "{:.1f}"),
         ]:
             rank = tm.league_rank(adv, row.team, field, high)
-            col.markdown(T.kpi(label, fmt.format(a[field]), _rank_sub(rank),
-                               help=glossary.TERMS[label]), unsafe_allow_html=True)
+            cards.append((label, fmt.format(a[field]), _rank_sub(rank), "",
+                          glossary.TERMS[label]))
     else:
-        c[1].markdown(T.kpi("Points / game", f"{row.ppg:.1f}"), unsafe_allow_html=True)
-        c[2].markdown(T.kpi("Opp points / game", f"{row.opp_ppg:.1f}"), unsafe_allow_html=True)
-        c[3].markdown(T.kpi("Net / game", f"{row.net:+.1f}",
-                            help=glossary.TERMS["Net / game"]), unsafe_allow_html=True)
-    st.caption("Ranks are out of every team that season; for defensive rating, "
-               "1st means the fewest points allowed. Pace ranks fastest first.")
+        cards += [("Points / game", f"{row.ppg:.1f}", "", "", ""),
+                  ("Opp points / game", f"{row.opp_ppg:.1f}", "", "", ""),
+                  ("Net / game", f"{row.net:+.1f}", "", "", glossary.TERMS["Net / game"])]
+    pay = _payroll_card(season, row.team)
+    if pay:
+        cards.append(("Payroll", pay[0], pay[1], "", ""))
+    _cards(cards)
 
-    line = _payroll_line(season, row.team)
-    if line:
-        # Escaped: st.markdown reads a pair of dollar signs as a formula.
-        st.markdown(line.replace("$", "\\$"))
-
-    # --- Four Factors -----------------------------------------------------------
-    if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
-        st.markdown(f'#### Four Factors{T.tip(glossary.TERMS["Four Factors"])}',
-                    unsafe_allow_html=True)
-        st.markdown(f'<div class="bip-card">{four_factors_table(tm.four_factors(adv, row.team))}</div>',
-                    unsafe_allow_html=True)
-        st.caption("Percentages. Rank 1st is the best in the league on that end - "
-                   "for defense, that means holding opponents lowest (or forcing "
-                   "the most turnovers).")
-
-    # --- Splits and form ----------------------------------------------------------
+    # --- Splits and form -------------------------------------------------------------
     if len(games):
-        st.markdown("#### Splits and form")
         sp = tm.splits(games, standings)
-        s = st.columns(6)
-        for col, label, value, term in [
-            (s[0], "Home", sp["home"], None),
-            (s[1], "Away", sp["away"], None),
-            (s[2], "Last 10", sp["last10"], None),
-            (s[3], "Streak", sp["streak"], None),
-            (s[4], "Close games", sp["close"], "Close-game record"),
-            (s[5], "Vs winning teams", sp["vs_winning"], "Vs winning teams"),
-        ]:
-            col.markdown(T.kpi(label, value, help=glossary.TERMS[term] if term else ""),
-                         unsafe_allow_html=True)
+        section("Splits and form")
+        _cards([
+            ("Home", sp["home"], "", "", ""),
+            ("Away", sp["away"], "", "", ""),
+            ("Last 10", sp["last10"], "", "", ""),
+            ("Streak", sp["streak"], "", "", ""),
+            ("Close games", sp["close"], "", "&le;5 pts", ""),
+            ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
+        ])
 
-        st.markdown("**Game margins** - every game, win margin above the line, loss below")
-        st.plotly_chart(viz.team_margins(games), config=viz.PLOTLY_CONFIG, width="stretch")
+    # --- Four Factors --------------------------------------------------------------------
+    if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
+        section("Four Factors", glossary.TERMS["Four Factors"])
+        ff = tm.four_factors(adv, row.team)
+        pct = {"format": "%.1f"}
+        st.dataframe(
+            ff, hide_index=True, width="stretch", row_height=ROW_HEIGHT,
+            column_order=["factor", "offense", "league_offense", "offense_rank",
+                          "defense", "league_defense", "defense_rank"],
+            column_config={
+                "factor": st.column_config.TextColumn("Factor"),
+                "offense": st.column_config.NumberColumn(
+                    "Offense", help="This team's own value", **pct),
+                "league_offense": st.column_config.NumberColumn("League avg", **pct),
+                "offense_rank": st.column_config.TextColumn(
+                    "Off. rank", help="1st is the best offense in the league"),
+                "defense": st.column_config.NumberColumn(
+                    "Defense", help="What opponents managed against this team", **pct),
+                "league_defense": st.column_config.NumberColumn("League avg", **pct),
+                "defense_rank": st.column_config.TextColumn(
+                    "Def. rank", help="1st is the best defense in the league"),
+            },
+        )
 
-    if a is not None and a.offensive_rating == a.offensive_rating:
-        st.markdown("**Offense vs defense** - every team, up and to the right is better")
-        st.plotly_chart(viz.rating_quadrant(adv, highlight=row.team),
-                        config=viz.PLOTLY_CONFIG, width="stretch")
-        st.caption(f"Lines mark the league average. Ratings for {season} are "
-                   f"{a.ratings_source}.")
+    # --- Charts ------------------------------------------------------------------------------
+    left, right = st.columns(2)
+    if len(games):
+        with left:
+            section("Game margins")
+            fig = viz.team_margins(games)
+            fig.update_layout(height=CHART_HEIGHT)
+            st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
+    if a is not None:
+        with right:
+            section("Offense vs defense")
+            fig = viz.rating_quadrant(adv, highlight=row.team)
+            fig.update_layout(height=CHART_HEIGHT)
+            st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
 
-    # --- Roster -------------------------------------------------------------------
-    st.markdown("#### Top contributors")
+    # --- Roster ------------------------------------------------------------------------------
+    section("Roster")
     roster = db.team_roster(season, row.team, min_games=5)
     paths = db.player_team_paths(season)
     roster = roster.merge(paths[["player_id", "team_path"]], on="player_id", how="left")
@@ -196,7 +200,9 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     roster = roster.sort_values("ppg", ascending=False).head(10)
     st.dataframe(
         roster[["player", "note", "gp", "mpg", "ppg", "rpg", "apg", "fg_pct", "plus_minus"]],
-        hide_index=True,
+        hide_index=True, width="stretch", row_height=ROW_HEIGHT,
+        # Tall enough for every row plus the header, so nothing scrolls.
+        height=(len(roster) + 1) * ROW_HEIGHT + 3,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
             "note": st.column_config.TextColumn(
@@ -210,5 +216,13 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
             "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
         },
     )
-    st.caption("Only games played for this team count, so a player traded mid-season "
-               "shows each stint on its own team. Minimum 5 games with the team.")
+
+    # One footnote for the whole tab instead of a caption under every block.
+    notes = ["Ranks are out of every team that season, 1st = best (fewest points "
+             "allowed for defensive rating, fastest for pace)."]
+    if a is not None:
+        notes.append(f"Ratings are {a.ratings_source}.")
+    notes.append("The roster counts only games played for this team, so a player traded "
+                 "mid-season shows each stint on its own team (minimum 5 games). "
+                 "Payroll detail is on the Finances page.")
+    st.caption(" ".join(notes))
