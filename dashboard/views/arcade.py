@@ -328,23 +328,27 @@ def _team_net(rows: pd.DataFrame, meta) -> float:
                                      usage_league_total=usage_total))
 
 
-def _opponents(season: str | None) -> tuple[list[float], list[str]]:
-    """Build mode's league: one season's real teams, or (all-time) 29 real
-    team-seasons from 1985-86 on, always the same 29 (seed 7)."""
+def _opponents(season: str | None) -> tuple[list[float], list[str], str]:
+    """Build mode's league: (net ratings, labels, source).
+
+    source is "season" (that season's real teams), "all-time" (29 real
+    team-seasons from 1985-86 on, always the same 29: seed 7; also the
+    fallback when a season has no team ratings) or "average" (a placeholder
+    average team, for a warehouse with no team ratings at all)."""
     if season is not None:
         teams = db.team_advanced(season)
         teams = teams[teams["net_rating"].notna()].sort_values("team_abbreviation")
         if len(teams) >= 2:
             return (teams["net_rating"].astype(float).tolist(),
-                    teams["team_abbreviation"].tolist())
+                    teams["team_abbreviation"].tolist(), "season")
     every = db.all_team_net_ratings()
     if not len(every):
-        return [0.0], ["an average team"]
+        return [0.0], ["an average team"], "average"
     idx = np.random.default_rng(7).choice(len(every), size=min(29, len(every)),
                                           replace=False)
     drawn = every.iloc[idx]
     return (drawn["net_rating"].astype(float).tolist(),
-            (drawn["season"] + " " + drawn["team"]).tolist())
+            (drawn["season"] + " " + drawn["team"]).tolist(), "all-time")
 
 
 def _cached(key, compute):
@@ -359,9 +363,10 @@ def _cached(key, compute):
 
 
 def _results_row(net: float, median: int, p10: int, p90: int,
-                 odds_label: str, odds: float) -> None:
+                 odds_label: str, odds: float,
+                 rating_sub: str = "points per 100 vs. an average team") -> None:
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(T.kpi("Team rating", f"{net:+.1f}", sub="points per 100 vs. an average team",
+    c1.markdown(T.kpi("Team rating", f"{net:+.1f}", sub=rating_sub,
                       help=glossary.TERMS["Team rating"]), unsafe_allow_html=True)
     c2.markdown(T.kpi("Projected record", _record(median), sub="median of 1,000 seasons",
                       help=glossary.TERMS["Projected record"]), unsafe_allow_html=True)
@@ -475,6 +480,7 @@ def _tb_add(key: tuple[int, str]) -> None:
 
 def _tb_remove(key: tuple[int, str]) -> None:
     st.session_state["tb_build_picks"] = [p for p in _build_picks() if p != key]
+    _tb_bump()
 
 
 def _tb_sim_build(key, net: float, opp_nets: list[float], names: list[str]) -> None:
@@ -521,8 +527,10 @@ def _season_card(season: dict) -> str:
 
 def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) -> None:
     keys = _row_keys(rows)
-    net = _team_net(rows, meta)
-    opp_nets, opp_names = _opponents(season)
+    # The linear calibration would rate a roster of eight star seasons far
+    # past any real team; the soft ceiling keeps it near the best ever.
+    net = sim.soft_cap(_team_net(rows, meta))
+    opp_nets, opp_names, source = _opponents(season)
     cache_key = ("build", choice, tuple(sorted(keys)))
 
     def project() -> dict:
@@ -534,11 +542,18 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
     st.markdown("#### Projection")
     _results_row(net, proj["median"], proj["p10"], proj["p90"],
                  "Best-record odds", proj["best_record_odds"])
-    if season is not None and opp_names[0] != "an average team":
-        against = f"{season}'s {len(opp_nets)} real teams"
+    if source == "season":
+        against = (f"82 games against {season}'s {len(opp_nets)} real teams, "
+                   f"each at its real net rating.")
+    elif source == "all-time":
+        lead = (f"{season} has no team ratings, so it's " if season is not None
+                else "")
+        against = (f"{lead}82 games against {len(opp_nets)} real team-seasons drawn "
+                   f"from 1985-86 on, each at its real net rating.")
     else:
-        against = f"{len(opp_nets)} real team-seasons drawn from 1985-86 on"
-    st.caption(f"82 games against {against}, each team's real net rating.")
+        against = ("82 games against an average team - this copy of the data has "
+                   "no team ratings yet.")
+    st.caption(against)
     st.button("Simulate a season", key="tb_build_sim", type="primary",
               on_click=_tb_sim_build, args=(cache_key, net, opp_nets, opp_names))
     played = st.session_state.get("tb_build_season")
@@ -604,6 +619,8 @@ def _team_names(state: dict) -> list[str]:
 
 
 def _tb_start_draft(season: str | None, choice: str) -> None:
+    if st.session_state.get("tb_draft") is not None:
+        return  # a draft is already running; "Start over" clears it first
     pool = db.player_impact_pool(season)
     state = draft.new_draft(DRAFT_TEAMS, sim.ROSTER_SIZE, random.randrange(DRAFT_TEAMS))
     state["pool"] = choice
@@ -692,7 +709,11 @@ def _draft_results(state: dict, pool: pd.DataFrame, names: list[str], choice: st
     n = len(names)
     user = state["user_team"]
     rosters = [pool.loc[state["rosters"][t]] for t in range(n)]
-    nets = [_team_net(r, meta) for r in rosters]
+    # Every drafted team is stacked, so absolute ratings would run far past
+    # any real team. Rate each one against its own league instead: the
+    # league averages 0, which is all the round robin needs.
+    raw = np.array([_team_net(r, meta) for r in rosters])
+    nets = [float(x) for x in raw - raw.mean()]
     keys = [f"{t}|{k}" for t, r in enumerate(rosters) for k in _row_keys(r)]
     cache_key = ("draft", choice, tuple(keys))
 
@@ -710,7 +731,8 @@ def _draft_results(state: dict, pool: pd.DataFrame, names: list[str], choice: st
     proj = _cached(cache_key, project)
     st.markdown("#### Projection")
     _results_row(nets[user], proj["median"][user], proj["p10"][user],
-                 proj["p90"][user], "Title odds", proj["title"][user])
+                 proj["p90"][user], "Title odds", proj["title"][user],
+                 rating_sub="points per 100 vs this draft league")
 
     table = pd.DataFrame({
         "Team": names,
@@ -855,6 +877,13 @@ positive impact is lost. This rule is a rough heuristic, not fitted to data.
 **Game randomness.** Each game's margin is the rating gap, plus {sim.HOME_EDGE}
 points for the home team, plus random noise of ±{sim.GAME_SD} points (one standard
 deviation, as measured on real NBA games). Good teams lose plenty of single games.
+
+**A ceiling, and draft leagues.** Real teams top out around +13 (the 1995-96
+Bulls), so in Build mode a stacked roster's rating bends smoothly toward a
++{sim.ABS_NET_CAP:.0f} ceiling instead of running off the chart. In Draft mode every
+team is stacked, so each is rated against its own six-team league (the league
+averages 0). Projections can shift slightly when the weekly data refresh updates
+the current season.
 
 **Same team, same projection.** The projection plays 1,000 seasons from a seed tied
 to your roster, so the same eight players always get the same numbers. "Simulate a

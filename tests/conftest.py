@@ -234,7 +234,11 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
         must leave out (it starts at 1985-86, like the impact pool);
       - 50 more 2024-25 player-seasons (ids 11..60, impact below every base
         row, cost 1), so a 6-team, 8-round draft (48 picks) has enough
-        players to finish.
+        players to finish;
+      - a gentler team calibration (scale 0.5, offset -6.0) than the base
+        fixture's, so a valid 40-credit roster (ids 3..10) rates about +0.8
+        and projects mid-range (about 40 wins) instead of saturating at 82-0,
+        which would make the page's determinism check meaningless.
     """
     con = duckdb.connect(str(warehouse_with_player_impact))
     con.execute("create schema main_marts")
@@ -259,6 +263,7 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
     con.executemany(
         "insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", extra
     )
+    con.execute("update main.player_impact_meta set team_scale = 0.5, team_offset = -6.0")
     con.close()
     _reset_finances_cache()
     yield warehouse_with_player_impact

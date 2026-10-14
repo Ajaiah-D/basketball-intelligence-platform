@@ -9,6 +9,9 @@ The tab is rendered on its own (arcade.render_build_team) because the other
 two Arcade games read tables the tiny fixture warehouse does not have.
 """
 
+import re
+
+import duckdb
 import numpy as np
 from streamlit.testing.v1 import AppTest
 
@@ -182,3 +185,147 @@ def test_all_team_net_ratings(warehouse_for_team_builder):
     assert df["net_rating"].notna().all()
     assert set(df["season"]) == {"2023-24", "2024-25"}  # 1984-85 left out
     assert len(df) == 10  # LAL has no net rating in either season
+
+
+# --- Team rating realism, callbacks, opponent sources ------------------------
+
+def _kpi_value(at: AppTest, label: str) -> str:
+    hits = [m.value for m in at.markdown if f"<span>{label}" in m.value]
+    assert hits, f"no {label} KPI on the page"
+    return re.search(r'class="bip-kpi-value">([^<]+)<', hits[0]).group(1)
+
+
+def test_determinism_roster_projects_mid_range(warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    wins = int(_kpi_value(at, "Projected record").split("-")[0])
+    assert 25 <= wins <= 60, wins
+
+
+def test_build_superteam_rating_stays_under_the_ceiling(
+        warehouse_for_team_builder, monkeypatch):
+    # Make the top 8 affordable and the calibration steep: the raw linear
+    # rating is far past +15 (about +60); the one shown must not be.
+    con = duckdb.connect(str(warehouse_for_team_builder))
+    con.execute("update main.player_impact set cost = 1")
+    con.execute("update main.player_impact_meta set team_scale = 5.0, team_offset = 0.0")
+    con.close()
+    db.q.clear()
+    picks = [(pid, SEASON) for pid in range(1, 9)]
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=picks)
+    rating = float(_kpi_value(at, "Team rating"))
+    assert 12.0 < rating <= 15.0
+
+
+def _finish_draft(state: dict) -> None:
+    pool = db.player_impact_pool(SEASON)
+    rng = np.random.default_rng(0)
+    while state["pick_no"] < len(state["order"]):
+        best = pool.loc[~pool.index.isin(state["taken"])].index[0]
+        draft.apply_pick(state, best)
+        draft.run_cpu_until_user(state, pool, rng)
+
+
+def test_draft_ratings_are_relative_to_the_league(warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    at.button(key="tb_draft_start").click().run()
+    state = at.session_state["tb_draft"]
+    _finish_draft(state)
+    at.session_state["tb_draft"] = state
+    at.run()
+    assert not at.exception, at.exception
+    ratings = at.dataframe[0].value["Rating"]
+    assert abs(float(ratings.sum())) < 1e-6
+    assert "vs this draft league" in _markdown(at)
+
+
+# Runs one of the page's callbacks inside a real script run, then renders
+# the tab: the callbacks read and write st.session_state, so they need one.
+HARNESS = """
+import streamlit as st
+from dashboard.views import arcade
+call = st.session_state.pop("test_call", None)
+if call is not None:
+    getattr(arcade, call[0])(*call[1])
+arcade.render_build_team()
+"""
+
+
+def _harness(monkeypatch, **state) -> AppTest:
+    monkeypatch.setattr(media, "headshot_data_uri", lambda pid: None)
+    at = AppTest.from_string(HARNESS, default_timeout=30)
+    for key, value in state.items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _call(at: AppTest, name: str, *args) -> None:
+    at.session_state["test_call"] = (name, args)
+    at.run()
+    assert not at.exception, at.exception
+
+
+def _nonce(at: AppTest) -> int:
+    return at.session_state["tb_nonce"] if "tb_nonce" in at.session_state else 0
+
+
+def test_add_callback_adds_once_and_clears_the_selection(
+        warehouse_for_team_builder, monkeypatch):
+    at = _harness(monkeypatch, tb_pool=SEASON)
+    nonce = _nonce(at)
+    _call(at, "_tb_add", (4, SEASON))
+    _call(at, "_tb_add", (4, SEASON))  # a second add of the same row is ignored
+    assert [tuple(p) for p in at.session_state["tb_build_picks"]] == [(4, SEASON)]
+    assert _nonce(at) > nonce
+    assert "Player 4" not in set(at.dataframe[0].value["Player"])
+
+
+def test_remove_callback_clears_the_selection(warehouse_for_team_builder, monkeypatch):
+    at = _harness(monkeypatch, tb_pool=SEASON, tb_build_picks=[(4, SEASON)])
+    nonce = _nonce(at)
+    _call(at, "_tb_remove", (4, SEASON))
+    assert at.session_state["tb_build_picks"] == []
+    assert _nonce(at) > nonce
+
+
+def test_draft_pick_callback_applies_the_pick_then_runs_the_cpu(
+        warehouse_for_team_builder, monkeypatch):
+    at = _harness(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    _call(at, "_tb_start_draft", SEASON, SEASON)
+    state = at.session_state["tb_draft"]
+    user, first = state["user_team"], state["pick_no"]
+    assert first == user  # round 1: the CPU picked for every slot before his
+    label = next(i for i in db.player_impact_pool(SEASON).index
+                 if i not in state["taken"])
+    _call(at, "_tb_draft_pick", SEASON, label)
+    state = at.session_state["tb_draft"]
+    assert state["rosters"][user] == [label]
+    # The CPU ran on to the user's next turn: in a snake draft that is after
+    # the teams behind him pick twice (end of round 1, start of round 2).
+    assert state["order"][state["pick_no"]] == user
+    assert state["pick_no"] == first + 1 + 2 * (5 - user)
+    assert len(state["taken"]) == state["pick_no"]
+
+
+def test_start_draft_does_not_restart_a_running_draft(
+        warehouse_for_team_builder, monkeypatch):
+    at = _harness(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    _call(at, "_tb_start_draft", SEASON, SEASON)
+    before = at.session_state["tb_draft"]
+    snapshot = (before["user_team"], before["pick_no"], set(before["taken"]))
+    _call(at, "_tb_start_draft", SEASON, SEASON)
+    after = at.session_state["tb_draft"]
+    assert (after["user_team"], after["pick_no"], set(after["taken"])) == snapshot
+
+
+def test_season_without_team_ratings_falls_back_and_says_so(
+        warehouse_for_team_builder, monkeypatch):
+    con = duckdb.connect(str(warehouse_for_team_builder))
+    con.execute("delete from main_marts.mart_team_season where season = '2024-25'")
+    con.close()
+    db.q.clear()
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    captions = " ".join(c.value for c in at.caption)
+    assert "2024-25 has no team ratings" in captions
+    assert "5 real team-seasons drawn from 1985-86 on" in captions
