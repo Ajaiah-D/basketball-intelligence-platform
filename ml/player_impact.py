@@ -56,6 +56,15 @@ MIN_GP = 40
 MIN_MPG = 15.0
 USAGE_LEAGUE_TOTAL = 5.0      # five average players on the floor
 
+# Build-mode prices. A player-season costs 1 plus the number of these impact
+# quantiles (over the whole eligible pool, every season together) it clears,
+# so the tiers hold 30%, 20%, 15%, 12%, 9%, 6%, 4%, 2.5%, 1% and 0.5% of all
+# player-seasons from cost 1 up to cost 10. They narrow toward the top on
+# purpose: the old flat percentile pricing put the top 5.5% (+1.8 up to +6)
+# all at 10, so the best 10s were a bargain and "three 10s plus fillers" was
+# the obvious build. A 10 is now roughly the top one season in 200.
+COST_QUANTILES = [0.30, 0.50, 0.65, 0.77, 0.86, 0.92, 0.96, 0.985, 0.995]
+
 # One row per player per team per season. plus-minus is summed only when
 # every game has it: sum() skips nulls, so a partly-missing season would
 # otherwise come back as a confident but wrong total.
@@ -111,6 +120,16 @@ def relative_rates(df: pd.DataFrame) -> pd.DataFrame:
         league = totals[s] / totals["mins"] * 36.0
         out[f"{s}_r"] = out[s].astype(float) * per36 - league
     return out
+
+
+def costs_from_impact(impact: pd.Series) -> pd.Series:
+    """Build-mode cost (1..10) of each player-season: 1 + how many of the
+    COST_QUANTILES thresholds of `impact` it reaches. Pass the whole pool;
+    the thresholds are its quantiles. Keeps the index."""
+    values = impact.to_numpy(float)
+    thresholds = np.quantile(values, COST_QUANTILES)
+    cost = 1 + np.searchsorted(thresholds, values, side="right")
+    return pd.Series(cost.astype(int), index=impact.index)
 
 
 def fit_impact(train_df: pd.DataFrame) -> tuple[np.ndarray, float]:
@@ -216,8 +235,7 @@ def build(con) -> tuple[pd.DataFrame, dict]:
     seasons["apg"] = seasons["ast"] / seasons["gp"]
 
     pool = seasons[(seasons["gp"] >= MIN_GP) & (seasons["mpg"] >= MIN_MPG)].copy()
-    pct = pool["impact"].rank(pct=True)
-    pool["cost"] = np.clip(1 + np.round(9 * pct), 1, 10).astype(int)
+    pool["cost"] = costs_from_impact(pool["impact"])
 
     impact_df = (pool[IMPACT_COLUMNS]
                  .sort_values(["season", "impact"], ascending=[True, False])

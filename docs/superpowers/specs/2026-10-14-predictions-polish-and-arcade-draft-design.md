@@ -68,7 +68,11 @@ Prototyped on the real warehouse (2026-10-14):
   warehouse by a new `weekly_refresh.py` step after dbt, the same pattern
   `ml.predict` uses. Coefficients and calibration are saved in the table's
   sidecar metadata (a small `player_impact_meta` table).
-- **Cost (Build mode).** 1-10 by impact percentile within the eligible pool.
+- **Cost (Build mode).** 1-10 by impact within the eligible pool (all seasons
+  together): 1 plus the number of the impact quantiles 0.30, 0.50, 0.65, 0.77,
+  0.86, 0.92, 0.96, 0.985 and 0.995 a season clears (`COST_QUANTILES`), so the
+  tiers narrow toward the top and a 10 is about the top 0.5%. (Revised
+  2026-10-15: flat percentile pricing put the top 5.5% all at 10.)
 
 ### Game simulation (`dashboard/lib/sim.py`, numpy only)
 

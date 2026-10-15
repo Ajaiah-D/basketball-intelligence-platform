@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml.player_impact import (FIRST_PM_SEASON, HOLDOUT_SEASONS, STATS, build,
-                               fit_impact, relative_rates, write)
+from ml.player_impact import (COST_QUANTILES, FIRST_PM_SEASON, HOLDOUT_SEASONS,
+                               STATS, build, costs_from_impact, fit_impact,
+                               relative_rates, write)
 
 
 def _zero_stats(n):
@@ -47,6 +48,30 @@ def test_fit_impact_recovers_known_coefficients():
     assert coef[STATS.index("pts")] == pytest.approx(1.5, abs=0.2)
     assert coef[STATS.index("tov")] == pytest.approx(-2.0, abs=0.2)
     assert intercept == pytest.approx(0.0, abs=0.2)
+
+
+def test_cost_tiers_narrow_toward_the_top():
+    assert COST_QUANTILES == [0.30, 0.50, 0.65, 0.77, 0.86, 0.92, 0.96, 0.985, 0.995]
+    impact = pd.Series(np.random.default_rng(1).normal(0, 1.5, 20_000))
+    cost = costs_from_impact(impact)
+    assert cost.dtype.kind == "i"
+    assert sorted(cost.unique()) == list(range(1, 11))
+    # never cheaper for a better season
+    assert cost.loc[impact.sort_values().index].is_monotonic_increasing
+    # each tier's share is the gap between its quantiles
+    edges = [0.0, *COST_QUANTILES, 1.0]
+    expected = np.diff(edges)
+    shares = cost.value_counts(normalize=True).sort_index().to_numpy()
+    assert shares == pytest.approx(expected, abs=0.002)
+    # a 10 is rare: about one player-season in 200
+    assert (cost == 10).mean() == pytest.approx(0.005, abs=0.001)
+
+
+def test_costs_from_impact_keeps_the_index():
+    impact = pd.Series([3.0, -1.0, 0.5], index=[10, 20, 30])
+    cost = costs_from_impact(impact)
+    assert list(cost.index) == [10, 20, 30]
+    assert cost[10] == 10 and cost[20] == 1
 
 
 def _tiny_impact():
