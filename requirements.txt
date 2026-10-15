@@ -6,6 +6,9 @@ streamlit
 plotly
 python-dotenv
 requests
+# predictions.py builds ZoneInfo("America/New_York"); Streamlit Cloud must not
+# depend on the system having an IANA tz database.
+tzdata
 
 # NOTE (Python 3.14): after installing, run
 #   pip install --upgrade mashumaro
