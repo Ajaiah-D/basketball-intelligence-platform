@@ -114,7 +114,7 @@ def evaluate(predictions: pd.DataFrame) -> dict:
     probability = predictions["win_probability"].astype(float).to_numpy()
     clipped = np.clip(probability, 1e-6, 1 - 1e-6)
     return {
-        "accuracy": float(((probability > 0.5) == actual).mean()),
+        "accuracy": float(((probability >= 0.5) == actual).mean()),
         "log_loss": float(log_loss(actual, clipped, labels=[False, True])),
         "brier": float(brier_score_loss(actual, clipped)),
         "margin_mae": float(np.abs(

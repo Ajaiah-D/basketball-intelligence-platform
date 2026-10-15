@@ -4,9 +4,11 @@ published and settled, published but nothing settled yet, and none published
 yet (a warehouse built before ml/predict.py ever ran)."""
 
 import re
+from datetime import date
 
 import duckdb
 import numpy as np
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -300,3 +302,121 @@ def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path, monkeypatch):
         assert len(out) <= 10 and (out["n"] > 0).all()
     finally:
         _reset_cache()
+
+
+def _add_settled_games(path, probs, home_won) -> None:
+    """Append graded games g_extra{i}: a prediction, a final schedule row and
+    a result, one per (probability, home_won) pair."""
+    con = duckdb.connect(str(path))
+    for i, (p, won) in enumerate(zip(probs, home_won)):
+        gid = f"g_extra{i}"
+        day = f"2026-08-{1 + i % 28:02d}"
+        con.execute(
+            "insert into predictions values (?, 'ridge-v1', '2026-07-01 12:00:00', "
+            "?, '2025-26', ?, 1610612738, 1610612747, ?, ?)",
+            [f"px{i}", gid, day, float((p - 0.5) * 20), float(p)])
+        con.execute(
+            "insert into main_staging.stg_schedule values "
+            "(?, ?, ?, 'BOS', 'NYK', 3)", [gid, day, f"{day} 23:00:00"])
+        con.execute(
+            "insert into main_marts.fct_team_game values (?, ?, ?, ?, ?)",
+            [gid, 6.0 if won else -6.0, bool(won), 106 if won else 100,
+             100 if won else 106])
+    con.close()
+
+
+@pytest.fixture
+def sixty_settled_db(tmp_path, monkeypatch):
+    """The standard warehouse plus 60 graded games: enough for calibration."""
+    path = tmp_path / "sixty_settled.duckdb"
+    _build_warehouse(path, settled=True)
+    rng = np.random.default_rng(3)
+    probs = rng.uniform(0.05, 0.95, 60)
+    _add_settled_games(path, probs, rng.uniform(size=60) < probs)
+    _point_db_at(path, monkeypatch)
+    yield path
+    _reset_cache()
+
+
+@pytest.fixture
+def coin_flip_db(tmp_path, monkeypatch):
+    """One graded game the model called at exactly 50%, won by the home team."""
+    path = tmp_path / "coin_flip.duckdb"
+    _build_warehouse(path, settled=False)
+    _add_settled_games(path, [0.5], [True])
+    _point_db_at(path, monkeypatch)
+    yield path
+    _reset_cache()
+
+
+def _main_elements(at) -> list[tuple[str, str | None]]:
+    """(type, markdown text or None) for every element in page order."""
+    return [(el.type, el.value if el.type == "markdown" else None) for el in at.main]
+
+
+def test_calibration_chart_renders_in_the_track_record_section(sixty_settled_db):
+    at = AppTest.from_string(SCRIPT)
+    at.run()
+    assert not at.exception
+    els = _main_elements(at)
+    charts = [i for i, (t, _) in enumerate(els) if t == "plotly_chart"]
+    assert len(charts) == 1
+
+    def heading(prefix):
+        return next(i for i, (t, v) in enumerate(els)
+                    if t == "markdown" and v.startswith(prefix))
+
+    # Track record > Calibration heading > the chart > Recent results heading
+    assert (heading("#### Track record") < heading("#### Calibration")
+            < charts[0] < heading("#### Recent results"))
+
+
+def test_recent_results_grid_shows_every_row_without_scrolling(sixty_settled_db,
+                                                               monkeypatch):
+    import streamlit
+
+    calls = []
+    real = streamlit.dataframe
+
+    def spy(data, *args, **kwargs):
+        calls.append((len(data), kwargs))
+        return real(data, *args, **kwargs)
+
+    monkeypatch.setattr(streamlit, "dataframe", spy)
+    at = AppTest.from_string(SCRIPT)
+    at.run()
+    assert not at.exception
+    assert len(calls) == 1
+    n, kwargs = calls[0]
+    assert n == 20
+    assert kwargs["height"] == 38 * (n + 1) + 3
+
+
+def test_a_coin_flip_counts_as_a_home_pick_everywhere(coin_flip_db):
+    # A 50% game is a home pick on the card and in the recent-results grid,
+    # so the headline accuracy must grade it the same way.
+    record = db.prediction_track_record()
+    assert record["n"] == 1
+    assert record["accuracy"] == 1.0
+    recent = db.recent_settled_predictions()
+    assert bool(recent.iloc[0]["correct"]) is True
+    at = AppTest.from_string(SCRIPT)
+    at.run()
+    row = at.dataframe[0].value.iloc[0]
+    assert row["Pick"] == "BOS 50%"
+    assert row["Correct"] == "✓"
+
+
+def test_a_tipoff_after_midnight_utc_groups_under_the_eastern_date():
+    from dashboard.views import predictions
+
+    frame = pd.DataFrame({
+        "game_id": ["late"], "game_date": ["2026-10-22"],
+        # 02:00 UTC on the 22nd is 10:00 PM Eastern on the 21st
+        "tipoff_utc": [pd.Timestamp("2026-10-22 02:00:00")],
+        "win_probability": [0.55], "predicted_margin": [1.5],
+        "home_team_abbreviation": ["BOS"], "away_team_abbreviation": ["NYK"],
+    })
+    out = predictions._upcoming(frame)
+    assert out.iloc[0]["day_et"] == date(2026, 10, 21)
+    assert out.iloc[0]["tip_label"] == "10:00 PM ET"

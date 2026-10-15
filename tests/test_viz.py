@@ -121,3 +121,30 @@ def test_era_labels_alternate_heights_so_short_eras_do_not_overlap():
     fig = viz.team_finances_trend(team_df, _cap_df(seasons), eras=eras)
     ys = [a.y for a in fig.layout.annotations]
     assert ys[0] != ys[1] and ys[1] != ys[2] and ys[2] != ys[3]
+
+
+def test_calibration_chart_draws_the_bins_and_the_y_equals_x_reference():
+    bins = pd.DataFrame({
+        "bin_mid": [0.25, 0.55, 0.85],
+        "predicted_mean": [0.27, 0.56, 0.83],
+        "actual_rate": [0.30, 0.50, 0.90],
+        "n": [12, 40, 9],
+    })
+    fig = viz.calibration_chart(bins)
+
+    assert len(fig.data) == 2
+    reference, dots = fig.data
+    assert list(reference.x) == [0, 1] and list(reference.y) == [0, 1]
+    assert reference.line.dash == "dash"
+    assert list(dots.x) == [0.27, 0.56, 0.83]
+    assert list(dots.y) == [0.30, 0.50, 0.90]
+    # dot area carries the game count
+    assert list(dots.marker.size) == [12, 40, 9]
+    assert fig.layout.xaxis.range == (0, 1) and fig.layout.yaxis.range == (0, 1)
+
+
+def test_calibration_chart_with_no_bins_is_a_placeholder():
+    empty = pd.DataFrame(columns=["bin_mid", "predicted_mean", "actual_rate", "n"])
+    fig = viz.calibration_chart(empty)
+    assert len(fig.data) == 0
+    assert "Not enough settled games" in fig.layout.annotations[0].text

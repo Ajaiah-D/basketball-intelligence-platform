@@ -121,6 +121,8 @@ def _upcoming_section(upcoming: pd.DataFrame) -> None:
 def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for r in recent.itertuples():
+        # A coin flip is a home pick - the card's favorite and the accuracy
+        # KPI (db.prediction_track_record) use the same >= 0.5 rule.
         home_pick = float(r.win_probability) >= 0.5
         pick = r.home if home_pick else r.away
         pick_pct = _split(r.win_probability)[0 if home_pick else 1]
@@ -162,19 +164,20 @@ def _track_record(upcoming: pd.DataFrame) -> None:
 
     bins = db.calibration_bins()
     if not bins.empty:
-        st.markdown(
-            f"**Calibration**{T.tip(glossary.TERMS['Calibration'])} - when the model "
-            "gave the home team a chance, how often it won",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"#### Calibration{T.tip(glossary.TERMS['Calibration'])}",
+                    unsafe_allow_html=True)
+        st.caption("When the model gave the home team a chance, how often it won.")
         st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG,
                         width="stretch")
 
     recent = db.recent_settled_predictions()
     if not recent.empty:
-        st.markdown("**Recent results**")
+        st.markdown("#### Recent results")
+        grid = _recent_results(recent)
         st.dataframe(
-            _recent_results(recent), hide_index=True, width="stretch", row_height=38,
+            grid, hide_index=True, width="stretch", row_height=38,
+            # Tall enough for every row: a short list should not scroll.
+            height=38 * (len(grid) + 1) + 3,
             column_config={"Correct": st.column_config.TextColumn("Correct", width="small")},
         )
 
