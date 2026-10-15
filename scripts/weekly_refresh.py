@@ -1,10 +1,11 @@
-"""Weekly data refresh: ingest -> DuckDB -> payroll -> dbt -> release publish -> commit.
+"""Weekly data refresh: ingest -> DuckDB -> payroll -> dbt -> player impact ->
+predictions -> release publish -> commit.
 
-ingest and load_duckdb are fatal - everything after them is built on what
-they produce. The payroll scrape is not: it hits a third-party site, and a
-week-old payroll parquet is a much smaller problem than the skipped
-predictions and unpublished warehouse that blocking on it used to cause.
-See main().
+ingest, load_duckdb and dbt are fatal - everything after them is built on
+what they produce. The payroll scrape and the Arcade's player-impact refit
+are not: a week-old payroll parquet or a week-old impact table is a much
+smaller problem than the skipped predictions and unpublished warehouse that
+blocking on them would cause. See main().
 
 Meant to be run by a local Windows Task Scheduler job. stats.nba.com blocks
 traffic from cloud/datacenter IP ranges (AWS, Azure, GCP, and GitHub Actions
@@ -103,6 +104,25 @@ def payroll_steps() -> list[tuple]:
     ]
 
 
+def commit_status(run_ok: bool, payroll_ok: bool | None,
+                  player_impact_ok: bool | None) -> str:
+    """The status word for the refresh commit message.
+
+    A non-fatal step that failed (False, not None = never attempted) is
+    named in it, so a run that is "ok" overall still says what it carried
+    over from last week.
+    """
+    if not run_ok:
+        return "FAILED"
+    failed = [name for name, step_ok in (("payroll", payroll_ok),
+                                         ("player_impact", player_impact_ok))
+              if step_ok is False]
+    if not failed:
+        return "ok"
+    noun = "step" if len(failed) == 1 else "steps"
+    return f"ok ({' and '.join(failed)} {noun} failed)"
+
+
 def main() -> None:
     dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
     run = {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "steps": []}
@@ -139,17 +159,35 @@ def main() -> None:
             ("dbt_seed", [DBT, "seed", "--profiles-dir", "."], dbt_dir),
             ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
             ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
+        ])
+
+    # The player-impact refit is NON-FATAL too, for the same reason as
+    # payroll. It only feeds the Arcade team builder; the predictions and
+    # everything else on the site never read it. ml.player_impact.write()
+    # replaces both of its tables in one transaction, so a failed refit
+    # leaves last week's tables in place, which the Arcade is perfectly
+    # happy to keep using. Blocking predictions and the release publish on
+    # a game's player ratings would be the worse outage.
+    player_impact_ok: bool | None = None  # None = never attempted
+    if ok:
+        player_impact_ok = run_steps(run, [
             ("player_impact", [PYTHON, "-m", "ml.player_impact"], None),
+        ])
+
+    if ok:
+        ok = run_steps(run, [
             ("predict", [PYTHON, "-m", "ml.predict"], None),
             ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
             ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
         ])
 
     # Not folded into run["ok"]: that flag gates the release publish below
-    # and the job's exit code, and a failed payroll fetch must stop neither.
-    # It is recorded separately (and in run["steps"]) so health_check.py can
-    # still surface it and it is not silently swallowed.
+    # and the job's exit code, and a failed payroll fetch or impact refit
+    # must stop neither. They are recorded separately (and in run["steps"])
+    # so health_check.py can still surface them and they are not silently
+    # swallowed.
     run["payroll_ok"] = payroll_ok
+    run["player_impact_ok"] = player_impact_ok
     run["ok"] = ok
     if run["ok"]:
         version_path = PROJECT_ROOT / "warehouse" / "version.txt"
@@ -168,9 +206,7 @@ def main() -> None:
 
     git("add", "data/last_updated.json", "logs/refresh_runs.jsonl")
     if git("diff", "--cached", "--quiet").returncode != 0:
-        status = "ok" if run["ok"] else "FAILED"
-        if run["ok"] and payroll_ok is False:
-            status = "ok (payroll step failed)"
+        status = commit_status(run["ok"], payroll_ok, player_impact_ok)
         git("commit", "-m", f"Weekly refresh: {status} {run['run_at']}")
         git("push")
 
