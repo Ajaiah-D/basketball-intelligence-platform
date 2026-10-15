@@ -33,9 +33,11 @@ N_SIMS = 1000
 # How much of the usage a roster has beyond a league-average lineup it
 # loses: there is only one ball. Heuristic, documented in the Arcade page.
 USAGE_PENALTY = 0.5
-# Ceiling for a roster's net rating (see soft_cap); the best real teams
-# reached about +13.
-ABS_NET_CAP = 15.0
+# A roster's net rating is left alone up to the knee and bends smoothly
+# towards the ceiling past it (see soft_cap). The best real teams reached
+# about +13, so +10 is already elite and nothing realistic gets squashed.
+ABS_NET_KNEE = 10.0
+ABS_NET_CAP = 16.0
 
 PLAYOFF_TEAMS = 4
 SERIES_GAMES = 7
@@ -84,18 +86,26 @@ def team_net_rating(
     return offset + scale * weighted_impact - penalty
 
 
-def soft_cap(net, cap: float = ABS_NET_CAP):
-    """Squash a net rating smoothly towards +-cap: cap * tanh(net / cap).
+def soft_cap(net, knee: float = ABS_NET_KNEE, cap: float = ABS_NET_CAP):
+    """Leave a net rating alone up to +-knee, then bend it towards +-cap.
+
+    Past the knee: sign(x) * (knee + room * tanh((|x| - knee) / room)), with
+    room = cap - knee. That joins the straight line with slope 1, so the
+    curve has no kink, and it never quite reaches the cap.
 
     Real team net ratings top out around +13 (the 1995-96 Bulls, +13.4).
     The impact calibration is linear, so a fantasy roster of eight star
-    seasons extrapolates far past anything real (+38 and up); the soft
-    ceiling keeps such superteams near the best ever, while a realistic
-    rating is barely changed (+5 comes out about +4.8). Works on floats
-    (returns a float) and numpy arrays (returns an array).
+    seasons extrapolates far past anything real (+38 and up); the ceiling
+    keeps such superteams near the best ever, while any rating a real team
+    could have, up to +10, is shown exactly as computed (+13.65 comes out
+    about +13.3). Works on floats (returns a float) and numpy arrays
+    (returns an array).
     """
-    cap = ABS_NET_CAP if cap is None else cap
-    out = cap * np.tanh(np.asarray(net, dtype=float) / cap)
+    x = np.asarray(net, dtype=float)
+    size = np.abs(x)
+    room = cap - knee
+    bent = knee + room * np.tanh((size - knee) / room)
+    out = np.sign(x) * np.where(size <= knee, size, bent)
     return float(out) if out.ndim == 0 else out
 
 
@@ -113,21 +123,39 @@ def win_prob(net_a: float, net_b: float, home_edge: float = 0.0) -> float:
     return float(_norm_cdf(z))
 
 
+def _vs_league_schedule(n_opps: int, rng: np.random.Generator):
+    """Build mode's 82 games: (opponent index per game, is_home per game).
+
+    The opponents are shuffled once (a permutation drawn from rng, so a
+    seeded projection is still reproducible) and then cycled through, so
+    the leftover games of an uneven split (82 against 30 teams leaves 22
+    third meetings) go to a random set of teams rather than the first ones
+    alphabetically. The venue alternates within a cycle and flips every
+    cycle: with an even league, plain alternation would line each opponent
+    up with the same parity every time round, always home or always away.
+    Over 82 games the team hosts 41 (for any league of two or more).
+    """
+    order = rng.permutation(n_opps)
+    k = np.arange(SEASON_GAMES)
+    slot, cycle = k % n_opps, k // n_opps
+    return order[slot], (slot + cycle) % 2 == 0
+
+
 def simulate_vs_league(
     team_net: float, opponent_nets, rng: np.random.Generator, n_sims: int = N_SIMS
 ) -> dict:
     """Simulate n_sims 82-game seasons for one team against a league.
 
-    Opponents are taken in order, cycling through the list, with home and
-    away alternating (home first). Each opponent also plays a simplified
-    season of its own, Binomial(82, p) against the average opponent, so the
-    team's best-record odds can be read off the same sims. A tie with the
-    best other record counts as holding it.
+    The schedule comes from _vs_league_schedule (drawn from rng first, so
+    simulate_season_once with an identically seeded rng plays the same
+    one). Each opponent also plays a simplified season of its own,
+    Binomial(82, p) against the average opponent, so the team's best-record
+    odds can be read off the same sims. A tie with the best other record
+    counts as holding it.
     """
     opps = np.asarray(opponent_nets, dtype=float)
-    slots = np.resize(opps, SEASON_GAMES)
-    home = np.arange(SEASON_GAMES) % 2 == 0
-    mean_margin = team_net - slots + np.where(home, HOME_EDGE, -HOME_EDGE)
+    idx, home = _vs_league_schedule(len(opps), rng)
+    mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE, -HOME_EDGE)
     margins = rng.normal(mean_margin, GAME_SD, size=(n_sims, SEASON_GAMES))
     wins = (margins > 0).sum(axis=1)
 
@@ -149,12 +177,11 @@ def simulate_season_once(
 ) -> dict:
     """One season, game by game: [(opp_index, is_home, margin, won)].
 
-    Same schedule as simulate_vs_league. opp_index points into the
-    opponent_nets list; margin is from the team's side.
+    Same schedule as simulate_vs_league (_vs_league_schedule). opp_index
+    points into the opponent_nets list; margin is from the team's side.
     """
     opps = np.asarray(opponent_nets, dtype=float)
-    idx = np.arange(SEASON_GAMES) % len(opps)
-    home = np.arange(SEASON_GAMES) % 2 == 0
+    idx, home = _vs_league_schedule(len(opps), rng)
     mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE, -HOME_EDGE)
     margins = rng.normal(mean_margin, GAME_SD)
     games = [

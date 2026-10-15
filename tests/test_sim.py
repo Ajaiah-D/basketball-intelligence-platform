@@ -130,7 +130,43 @@ def test_simulate_season_once_records_every_game():
     assert season["wins"] == sum(1 for g in games if g[3])
     assert sum(1 for g in games if g[1]) == sim.SEASON_GAMES // 2
     opp, is_home, margin, won = games[0]
-    assert opp == 0 and is_home is True and won == (margin > 0)
+    assert 0 <= opp < 29 and is_home is True and won == (margin > 0)
+
+
+@pytest.mark.parametrize("n_opps", [29, 30])
+def test_vs_league_schedule_balances_venues_per_opponent(n_opps):
+    for seed in range(5):
+        games = sim.simulate_season_once(0.0, [0.0] * n_opps,
+                                         np.random.default_rng(seed))["games"]
+        venues = {}
+        for opp, is_home, _, _ in games:
+            venues.setdefault(opp, []).append(is_home)
+        assert set(venues) == set(range(n_opps))
+        assert all(len(v) in (2, 3) for v in venues.values())
+        # nobody is always the home side (or always the road side)
+        for opp, v in venues.items():
+            assert set(v) == {True, False}, (n_opps, seed, opp, v)
+        assert sum(sum(v) for v in venues.values()) == sim.SEASON_GAMES // 2
+
+
+def test_vs_league_extra_games_are_not_handed_out_alphabetically():
+    extra_sets = set()
+    for seed in range(6):
+        games = sim.simulate_season_once(0.0, [0.0] * 30,
+                                         np.random.default_rng(seed))["games"]
+        counts = np.bincount([g[0] for g in games], minlength=30)
+        extra_sets.add(tuple(np.flatnonzero(counts == 3)))
+    assert tuple(range(22)) not in extra_sets
+    assert len(extra_sets) > 1
+
+
+def test_season_once_plays_the_projection_schedule():
+    # Same seed, one sim: the projection and the single season must draw
+    # the same schedule and the same margins.
+    opps = list(np.linspace(-8, 8, 30))
+    once = sim.simulate_season_once(2.0, opps, np.random.default_rng(4))
+    proj = sim.simulate_vs_league(2.0, opps, np.random.default_rng(4), n_sims=1)
+    assert once["wins"] == int(proj["wins"][0])
 
 
 def test_different_seeds_give_different_seasons():
@@ -236,10 +272,29 @@ def test_soft_cap_is_monotone_and_bounded():
     capped = sim.soft_cap(xs)
     assert np.all(np.diff(capped) > 0)
     assert np.all(np.abs(capped) < sim.ABS_NET_CAP)
+    assert sim.ABS_NET_KNEE == 10.0 and sim.ABS_NET_CAP == 16.0
 
 
-def test_soft_cap_is_near_linear_for_real_teams_and_saturates_for_superteams():
-    assert abs(sim.soft_cap(5.0) - 5.0) < 0.3
-    assert 14.0 < sim.soft_cap(40.0) < 15.0
+def test_soft_cap_leaves_realistic_ratings_alone():
+    xs = np.linspace(-sim.ABS_NET_KNEE, sim.ABS_NET_KNEE, 81)
+    assert np.allclose(sim.soft_cap(xs), xs)
+    assert sim.soft_cap(5.0) == 5.0
+    assert sim.soft_cap(-10.0) == -10.0
+
+
+def test_soft_cap_is_continuous_and_smooth_at_the_knee():
+    eps = 1e-6
+    k = sim.ABS_NET_KNEE
+    assert sim.soft_cap(k + eps) == pytest.approx(k, abs=1e-5)
+    # slope 1 on both sides of the knee
+    above = (sim.soft_cap(k + 2 * eps) - sim.soft_cap(k + eps)) / eps
+    assert above == pytest.approx(1.0, abs=1e-3)
+
+
+def test_soft_cap_bends_the_best_ever_and_saturates_superteams():
+    # the 1995-96 Bulls' +13.4-ish territory barely bends
+    assert sim.soft_cap(13.65) == pytest.approx(13.3, abs=0.2)
+    assert 15.5 < sim.soft_cap(40.0) < 16.0
     assert sim.soft_cap(-40.0) == pytest.approx(-sim.soft_cap(40.0))
     assert isinstance(sim.soft_cap(3.0), float)
+    assert isinstance(sim.soft_cap(30.0), float)
