@@ -68,11 +68,13 @@ Prototyped on the real warehouse (2026-10-14):
   warehouse by a new `weekly_refresh.py` step after dbt, the same pattern
   `ml.predict` uses. Coefficients and calibration are saved in the table's
   sidecar metadata (a small `player_impact_meta` table).
-- **Cost (Build mode).** 1-10 by impact within the eligible pool (all seasons
-  together): 1 plus the number of the impact quantiles 0.30, 0.50, 0.65, 0.77,
-  0.86, 0.92, 0.96, 0.985 and 0.995 a season clears (`COST_QUANTILES`), so the
-  tiers narrow toward the top and a 10 is about the top 0.5%. (Revised
-  2026-10-15: flat percentile pricing put the top 5.5% all at 10.)
+- **Cost (Build mode).** 1-12 by impact within the eligible pool (all seasons
+  together): 1 plus the number of the impact quantiles in
+  `ml.player_impact.COST_QUANTILES` a season clears. Cost 1 is the bottom 15%
+  (replacement level), 2-10 are evenly spaced in impact (about +0.5 a credit),
+  11 is the top 0.5-0.1% and 12 the top 0.1%. (Revised 2026-10-15, tuned with
+  the 36-credit budget: flat percentile pricing put the top 5.5% all at 10 and
+  made "three 10s plus fillers" the best build.)
 
 ### Game simulation (`dashboard/lib/sim.py`, numpy only)
 
@@ -101,7 +103,7 @@ Prototyped on the real warehouse (2026-10-14):
 
 - **Pool selector.** A single season (any from 1985-86) or "All-time".
 - **Build mode.** A searchable player picker. Each pick shows the player-season
-  card with cost. Budget 40 credits for 8 players. The user orders starters
+  card with cost. Budget 36 credits for 8 players (was 40; retuned 2026-10-15). The user orders starters
   and bench, and the team rating card updates live.
 - **Draft mode.** A snake draft, user plus 5 CPU teams, user pick slot
   random. The CPU takes the best available impact, adjusted for usage overlap

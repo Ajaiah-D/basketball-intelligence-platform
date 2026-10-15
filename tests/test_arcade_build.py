@@ -109,7 +109,7 @@ def test_over_budget_roster_shows_the_validation_message(
     picks = [(pid, SEASON) for pid in range(1, 9)]
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=picks)
     warnings = " ".join(w.value for w in at.warning)
-    assert "Over budget: 52 of 40 credits." in warnings
+    assert "Over budget: 52 of 36 credits." in warnings
     assert "Projected record" not in _markdown(at)
 
 
@@ -236,7 +236,10 @@ def test_draft_ratings_are_relative_to_the_league(warehouse_for_team_builder, mo
     at.run()
     assert not at.exception, at.exception
     ratings = at.dataframe[0].value["Rating"]
-    assert abs(float(ratings.sum())) < 1e-6
+    # Ratings within 0.05 of zero are shown as exactly 0 (never "-0.0"), so
+    # the shown ratings sum to zero only to within that.
+    assert abs(float(ratings.sum())) < 0.05 * len(ratings)
+    assert all(str(r) != "-0.0" for r in ratings)
     assert "vs this draft league" in _markdown(at)
 
 
@@ -331,3 +334,13 @@ def test_season_without_team_ratings_falls_back_and_says_so(
     captions = " ".join(c.value for c in at.caption)
     assert "2024-25 has no team ratings" in captions
     assert "5 real team-seasons drawn from 1985-86 on" in captions
+
+
+def test_near_zero_ratings_never_show_as_minus_zero():
+    from dashboard.views import arcade
+
+    assert arcade._rating(-0.03) == 0.0
+    assert f"{arcade._rating(-0.03):+.1f}" == "+0.0"
+    assert f"{arcade._rating(-0.0):+.1f}" == "+0.0"
+    assert f"{arcade._rating(-0.06):+.1f}" == "-0.1"
+    assert arcade._rating(2.345) == 2.345
