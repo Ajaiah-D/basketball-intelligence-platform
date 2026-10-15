@@ -33,11 +33,13 @@ and a per-player percentile profile
 with a plain-English summary and the team's biggest contracts
 ![Finances](site_pictures/finances.png)
 
-**Predictions** - upcoming games with a home-team win probability
+**Predictions** - upcoming games as cards with each team's win probability
+and the expected margin, plus the model's track record
 ![Predictions](site_pictures/predictions.png)
 
-**Arcade** - Higher or Lower, one of two games built on the full season
-history
+**Arcade** - Higher or Lower, Mystery Player, and Build a team: build or
+draft an 8-man rotation from one season or all-time, then simulate how it
+would do
 ![Arcade](site_pictures/arcade.png)
 
 ## Architecture
@@ -60,7 +62,8 @@ dbt (dbt-duckdb)
                         team finances, contracts
         |
         v
-ml/                                Elo + ridge model; appends predictions
+ml/                                Elo + ridge model; appends predictions;
+                                   scores every player-season for the Arcade
         |
         v
 GitHub Release (data-v1)           the published warehouse file
@@ -133,7 +136,8 @@ scripts/weekly_refresh.py          # the whole pipeline end to end, then publish
 scripts/backfill_team_payroll.py   # one-time salary history backfill
 scripts/health_check.py            # is the data fresh and the API still reachable
 dbt/basketball_intelligence/       # dbt project (seed / staging / intermediate / marts)
-ml/                                # Elo ratings, ridge model, backtest, predictions
+ml/                                # Elo ratings, ridge model, backtest, predictions,
+                                   # player impact model (player_impact.py)
 dashboard/app.py                   # Streamlit app entry point
 dashboard/lib/                     # queries, charts, theme, franchise lineage,
                                    # payroll wording, stat glossary
@@ -178,14 +182,23 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   original Charlotte Hornets' with New Orleans. Seasons where the source's
   salary data is incomplete show as gaps rather than misleadingly low totals,
   and the page says when the salary data was last updated
-- **Predictions**: upcoming games with a home-team win probability, plus
-  the model's public track record once games settle. Currently Elo ratings
-  only - rolling-form features (recent record, rest days) aren't computed for
-  future games yet, so treat it as a first pass rather than the model's
-  intended accuracy
+- **Predictions**: upcoming games grouped by date, each a card with the
+  tip-off time (Eastern), a two-team win-probability bar and a verdict like
+  "BOS by 6 · 65%". Once games settle: accuracy, Brier score, margin error, a
+  calibration chart (how often a 70% favorite actually won) and recent
+  results with ✓/✗. Currently Elo ratings only - rolling-form features
+  (recent record, rest days) aren't computed for future games yet, so treat
+  it as a first pass rather than the model's intended accuracy
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
-  player-season averaged more, streak scoring) and *Mystery Player*
-  (identify a notable season from progressively revealed clues)
+  player-season averaged more, streak scoring), *Mystery Player* (identify a
+  notable season from progressively revealed clues) and *Build a team*:
+  pick an 8-man rotation from one season or all-time under a credit budget,
+  or snake-draft against five CPU teams, then see a projected record (1,000
+  simulated seasons, stable for the same roster) and play out single seasons
+  game by game, with playoffs in Draft mode. Players are rated by
+  `ml/player_impact.py`, a ridge model fit on individual on-court plus-minus
+  using box-score rates relative to each season's league average, so players
+  from different eras compare fairly
 - **Dev Lab** (owner-only): SQL workbench with schema browser, read-only
   queries, CSV/JSON/Parquet export, and a quick chart builder.
   Unlocked by `DEV_PASSWORD` in `.env` (copy `.env.example`); hide it
@@ -238,7 +251,9 @@ dbt run --profiles-dir .
 dbt test --profiles-dir .
 cd ..\..
 
-# 5. Predict the upcoming games and score any that have finished
+# 5. Score every player-season for the Arcade team builder, then predict
+#    the upcoming games and score any that have finished
+python -m ml.player_impact
 python -m ml.predict
 python -m ml.evaluate
 
@@ -281,6 +296,9 @@ group by 1 order by ppg desc limit 10;
 - [x] Game predictions: Elo ratings feeding a ridge model, evaluated with a
       walk-forward backtest (`ml/`; Predictions page). The public track record
       starts with the 2026-27 season, so it has no settled games yet
+- [x] Arcade team builder: a player impact model (ridge on on-court
+      plus-minus, era-relative box-score rates) and a numpy season and playoff
+      simulator
 - [x] Weekly scheduled refresh (`scripts/weekly_refresh.py`, local Windows
       Scheduled Task); it re-fetches the current season in full each run
 - [ ] Incremental ingestion (only new games)

@@ -83,8 +83,8 @@ keep working against an older warehouse in the meantime.
     (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
 - **Data refresh cadence**: `scripts/weekly_refresh.py` runs the pipeline
   end to end (ingest game data, load DuckDB, scrape the current season's
-  salaries, dbt seed/run/test, predict and score games, republish to the
-  `data-v1` Release) and is meant to be triggered by a local Windows Task Scheduler job, not
+  salaries, dbt seed/run/test, re-score player impact for the Arcade, predict
+  and score games, republish to the `data-v1` Release) and is meant to be triggered by a local Windows Task Scheduler job, not
   GitHub Actions. stats.nba.com silently blocks requests from cloud/
   datacenter IP ranges (AWS, Azure, GCP, and GitHub-hosted Actions runners
   all fall in that bucket, confirmed by a failed test run: every request
@@ -93,9 +93,10 @@ keep working against an older warehouse in the meantime.
   live app checks a version marker next to the Release asset hourly and
   re-downloads on its own when it changes, so new *data* needs no manual
   reboot (new *code* sometimes does - see "Shipping a code change" above).
-  The salary scrape is the one step allowed to fail without stopping the
-  run: the rest of the refresh still publishes, and the failure is recorded
-  in the run log.
+  Two steps are allowed to fail without stopping the run: the salary scrape
+  and the player impact scoring. The rest of the refresh still publishes
+  (the warehouse keeps last week's salary or impact tables), and each
+  failure is recorded in the run log (`payroll_ok`, `player_impact_ok`).
 
   It's registered as a Windows Scheduled Task named
   `BasketballIntelligence-WeeklyRefresh` (action: this repo's
