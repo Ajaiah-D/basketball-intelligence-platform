@@ -658,8 +658,10 @@ def prediction_track_record() -> dict:
     predicted_margin = settled["predicted_margin"].astype(float).to_numpy()
     margin = settled["margin"].astype(float).to_numpy()
 
+    # A coin flip (exactly 0.5) counts as a home pick, the same rule the
+    # page's cards and recent-results grid use.
     return {
-        "accuracy": float(((win_probability > 0.5) == home_won).mean()),
+        "accuracy": float(((win_probability >= 0.5) == home_won).mean()),
         "brier": float(np.mean((win_probability - home_won.astype(float)) ** 2)),
         "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
         "n": int(len(settled)),
