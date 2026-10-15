@@ -15,7 +15,7 @@ import duckdb
 import numpy as np
 from streamlit.testing.v1 import AppTest
 
-from dashboard.lib import db, draft, media
+from dashboard.lib import db, draft, media, sim
 
 SCRIPT = """
 from dashboard.views import arcade
@@ -177,6 +177,8 @@ def test_draft_runs_to_the_users_turn_then_shows_league_results(
     assert not at.exception, at.exception
     text = _markdown(at)
     assert "Round 1:" in text and "Final:" in text and "Champion" in text
+    captions = " ".join(c.value for c in at.caption)
+    assert "close by design" in captions and "long-run odds" in captions
 
 
 def test_all_team_net_ratings(warehouse_for_team_builder):
@@ -204,7 +206,7 @@ def test_determinism_roster_projects_mid_range(warehouse_for_team_builder, monke
 def test_build_superteam_rating_stays_under_the_ceiling(
         warehouse_for_team_builder, monkeypatch):
     # Make the top 8 affordable and the calibration steep: the raw linear
-    # rating is far past +15 (about +60); the one shown must not be.
+    # rating is far past +16 (about +60); the one shown must not be.
     con = duckdb.connect(str(warehouse_for_team_builder))
     con.execute("update main.player_impact set cost = 1")
     con.execute("update main.player_impact_meta set team_scale = 5.0, team_offset = 0.0")
@@ -213,7 +215,7 @@ def test_build_superteam_rating_stays_under_the_ceiling(
     picks = [(pid, SEASON) for pid in range(1, 9)]
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=picks)
     rating = float(_kpi_value(at, "Team rating"))
-    assert 12.0 < rating <= 15.0
+    assert 14.0 < rating <= sim.ABS_NET_CAP
 
 
 def _finish_draft(state: dict) -> None:

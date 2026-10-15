@@ -528,7 +528,8 @@ def _season_card(season: dict) -> str:
 def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) -> None:
     keys = _row_keys(rows)
     # The linear calibration would rate a roster of eight star seasons far
-    # past any real team; the soft ceiling keeps it near the best ever.
+    # past any real team; past +10 the soft ceiling keeps it near the best
+    # ever (anything up to +10 is left as is).
     net = sim.soft_cap(_team_net(rows, meta))
     opp_nets, opp_names, source = _opponents(season)
     cache_key = ("build", choice, tuple(sorted(keys)))
@@ -794,6 +795,8 @@ def _league_season(res: dict, names: list[str]) -> None:
         st.markdown("#### One simulated season")
         st.dataframe(_highlight_user(standings), hide_index=True, width="stretch",
                      row_height=38)
+        st.caption("All-star leagues are close by design, so a single season is "
+                   "often decided by luck - the projection shows the long-run odds.")
     with right:
         st.markdown("#### Playoffs")
         st.markdown(T.card_html("Bracket", "".join(rows)) +
@@ -859,7 +862,7 @@ def _explainer(meta_row: dict) -> None:
 **Impact.** Every player-season since 1985-86 gets one number: points, rebounds,
 assists, steals, blocks, turnovers, shots and fouls per 36 minutes, each weighed by
 a model fit to how much players' teams outscored opponents while they were on the
-court. 0 is a typical rotation player; the best seasons ever reach about +5.
+court. 0 is a typical rotation player; the best seasons ever reach about +5 to +6.
 
 **Era adjustment.** Every rate is compared with that season's league average
 before it's weighed, so a 1988 rebounder and a 2024 shooter are rated on the same
@@ -879,7 +882,8 @@ points for the home team, plus random noise of ±{sim.GAME_SD} points (one stand
 deviation, as measured on real NBA games). Good teams lose plenty of single games.
 
 **A ceiling, and draft leagues.** Real teams top out around +13 (the 1995-96
-Bulls), so in Build mode a stacked roster's rating bends smoothly toward a
+Bulls). In Build mode a rating up to +{sim.ABS_NET_KNEE:.0f} is shown exactly as
+computed; past that, a stacked roster's rating bends smoothly toward a
 +{sim.ABS_NET_CAP:.0f} ceiling instead of running off the chart. In Draft mode every
 team is stacked, so each is rated against its own six-team league (the league
 averages 0). Projections can shift slightly when the weekly data refresh updates
