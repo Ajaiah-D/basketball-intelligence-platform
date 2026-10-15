@@ -140,10 +140,11 @@ def check_last_run() -> None:
         ok(f"last run {last['run_at']} ({age_days}d ago) succeeded, "
            f"{len(last['steps'])} steps")
     # A run can be "ok" overall and still have a failed step in it: the
-    # payroll scrape is non-fatal by design (see weekly_refresh.main), so
-    # its failure no longer shows up in last["ok"]. Report it anyway -
-    # non-fatal is not the same as invisible - without failing the check,
-    # which would defeat the point of making it non-fatal.
+    # payroll scrape and the player_impact refit are non-fatal by design
+    # (see weekly_refresh.main), so their failures no longer show up in
+    # last["ok"]. Report them anyway - non-fatal is not the same as
+    # invisible - without failing the check, which would defeat the point
+    # of making them non-fatal. Both keep last week's tables on failure.
     if last.get("ok"):
         for step in last["steps"]:
             if not step["ok"]:
