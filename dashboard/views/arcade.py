@@ -299,6 +299,13 @@ def _pct(p: float) -> str:
     return f"{p:.0%}"
 
 
+def _rating(net: float) -> float:
+    """A rating ready for a one-decimal "%+.1f": anything that would round to
+    zero becomes exactly 0.0, so it shows as "+0.0", never "-0.0"."""
+    net = float(net)
+    return 0.0 if abs(net) < 0.05 else net
+
+
 def _record(wins: int) -> str:
     return f"{int(wins)}-{sim.SEASON_GAMES - int(wins)}"
 
@@ -366,7 +373,7 @@ def _results_row(net: float, median: int, p10: int, p90: int,
                  odds_label: str, odds: float,
                  rating_sub: str = "points per 100 vs. an average team") -> None:
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(T.kpi("Team rating", f"{net:+.1f}", sub=rating_sub,
+    c1.markdown(T.kpi("Team rating", f"{_rating(net):+.1f}", sub=rating_sub,
                       help=glossary.TERMS["Team rating"]), unsafe_allow_html=True)
     c2.markdown(T.kpi("Projected record", _record(median), sub="median of 1,000 seasons",
                       help=glossary.TERMS["Projected record"]), unsafe_allow_html=True)
@@ -415,7 +422,7 @@ def _pool_table(pool: pd.DataFrame, exclude):
             "AST": cc.NumberColumn(format="%.1f", help="Assists per game."),
             "Impact": cc.NumberColumn(format="%+.2f", **glossary.marked("Impact")),
             "Cost": cc.NumberColumn(format="%d", help="Credits he costs in Build "
-                                    "mode, 1-10 by impact."),
+                                    "mode, 1-12 by impact."),
         },
     )
     more = f" of {len(avail):,}" if len(avail) > len(shown) else ""
@@ -573,7 +580,7 @@ def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
     others = problems[1:] if count_msg else problems
 
     st.caption(f"Pick {sim.ROSTER_SIZE} player-seasons with {draft.BUDGET} credits to "
-               f"spend; better players cost more (1-10). The five best by impact start.")
+               f"spend; better players cost more (1-12). The five best by impact start.")
     used = int(rows["cost"].sum()) if len(rows) else 0
     left = draft.BUDGET - used
     k1, k2, _ = st.columns([1, 1, 3])
@@ -737,7 +744,7 @@ def _draft_results(state: dict, pool: pd.DataFrame, names: list[str], choice: st
 
     table = pd.DataFrame({
         "Team": names,
-        "Rating": nets,
+        "Rating": [_rating(x) for x in nets],
         "Projected record": [_record(w) for w in proj["median"]],
         "Wins": proj["median"],
         "Playoff odds": [round(p * 100) for p in proj["playoff"]],

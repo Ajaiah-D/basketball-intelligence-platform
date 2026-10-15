@@ -1,13 +1,13 @@
 """Rules and CPU drafting for the Arcade team builder.
 
-Build mode: pick eight player-seasons under a 40-credit budget
+Build mode: pick eight player-seasons under a 36-credit budget
 (validate_build). Draft mode: a snake draft against CPU teams
 (snake_order, cpu_pick, run_cpu_until_user). Pure pandas and numpy, no
 Streamlit; every random choice comes from the numpy Generator the caller
 passes in, so a seeded draft is reproducible.
 
 The pool is the player_impact table (db.player_impact_pool): one row per
-player-season with impact, usage and a 1..10 credit cost. Rows are
+player-season with impact, usage and a 1..12 credit cost. Rows are
 identified by their index label in whatever pool DataFrame the caller holds;
 draft state stores those labels, never positions.
 """
@@ -19,7 +19,8 @@ import pandas as pd
 
 from .sim import ROSTER_SIZE, USAGE_PENALTY, rotation_weights
 
-BUDGET = 40
+# Tuned with ml.player_impact.COST_QUANTILES; see the targets there.
+BUDGET = 36
 
 
 def validate_build(picks: pd.DataFrame) -> list[str]:

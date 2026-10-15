@@ -40,12 +40,14 @@ def _pool(n=100, seed=0):
 # --- validate_build ------------------------------------------------------------
 
 def test_constants_come_from_sim():
-    assert draft.BUDGET == 40
+    assert draft.BUDGET == 36
     assert draft.ROSTER_SIZE == sim.ROSTER_SIZE == 8
 
 
 def test_validate_build_valid_roster_has_no_problems():
-    assert draft.validate_build(_picks(8, cost=5)) == []  # exactly 40
+    picks = _picks(8, cost=5)
+    picks.loc[:3, "cost"] = 4  # 4 x 4 + 4 x 5 = 36, exactly the budget
+    assert draft.validate_build(picks) == []
 
 
 def test_validate_build_wrong_count():
@@ -54,8 +56,8 @@ def test_validate_build_wrong_count():
 
 def test_validate_build_over_budget():
     picks = _picks(8, cost=5)
-    picks.loc[0, "cost"] = 6  # 41
-    assert draft.validate_build(picks) == ["Over budget: 41 of 40 credits."]
+    picks.loc[:2, "cost"] = 4  # 3 x 4 + 5 x 5 = 37
+    assert draft.validate_build(picks) == ["Over budget: 37 of 36 credits."]
 
 
 def test_validate_build_duplicate_player_season():

@@ -56,14 +56,21 @@ MIN_GP = 40
 MIN_MPG = 15.0
 USAGE_LEAGUE_TOTAL = 5.0      # five average players on the floor
 
-# Build-mode prices. A player-season costs 1 plus the number of these impact
-# quantiles (over the whole eligible pool, every season together) it clears,
-# so the tiers hold 30%, 20%, 15%, 12%, 9%, 6%, 4%, 2.5%, 1% and 0.5% of all
-# player-seasons from cost 1 up to cost 10. They narrow toward the top on
-# purpose: the old flat percentile pricing put the top 5.5% (+1.8 up to +6)
-# all at 10, so the best 10s were a bargain and "three 10s plus fillers" was
-# the obvious build. A 10 is now roughly the top one season in 200.
-COST_QUANTILES = [0.30, 0.50, 0.65, 0.77, 0.86, 0.92, 0.96, 0.985, 0.995]
+# Build-mode prices (1..12). A player-season costs 1 plus the number of these
+# impact quantiles (over the whole eligible pool, every season together) it
+# clears. Tuned on the 2026-10-15 warehouse against draft.BUDGET (36):
+#   - cost 1 is replacement level, the bottom 15% (impact below about -0.9),
+#     so eight of them make a bad team (about -11), not a .500 one;
+#   - costs 2..10 are evenly spaced in impact, about +0.5 a credit, so no
+#     price band is a bargain next to its neighbours;
+#   - 11 is the top 0.5% down to 0.1% and 12 the top 0.1% (+4.3 and up): an
+#     all-time great season costs about a third of the budget, so three of
+#     them plus fillers no longer fits.
+# With those, the best 36-credit build in the all-time, 2024-25 and 2015-16
+# pools rates about +12 to +14 (not pinned at the +16 ceiling), eight
+# cost-4 players about +4 to +5, and eight cost-1 players below -10.
+COST_QUANTILES = [0.15, 0.32, 0.53, 0.72, 0.85, 0.925, 0.965, 0.985, 0.991,
+                  0.995, 0.999]
 
 # One row per player per team per season. plus-minus is summed only when
 # every game has it: sum() skips nulls, so a partly-missing season would
@@ -123,7 +130,7 @@ def relative_rates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def costs_from_impact(impact: pd.Series) -> pd.Series:
-    """Build-mode cost (1..10) of each player-season: 1 + how many of the
+    """Build-mode cost (1..12) of each player-season: 1 + how many of the
     COST_QUANTILES thresholds of `impact` it reaches. Pass the whole pool;
     the thresholds are its quantiles. Keeps the index."""
     values = impact.to_numpy(float)
