@@ -127,7 +127,7 @@ TERMS = {
     "Team rating": ("Your eight-man team's net rating, in points per 100 "
                     "possessions. In Build mode it's against an average NBA team: 0 "
                     "is a .500 team, +10 is one of the best ever, and stacked rosters "
-                    "past that level off below +16. In Draft mode it's against the average "
+                    "past that level off at about +16. In Draft mode it's against the average "
                     "team in your six-team draft league."),
     "Projected record": ("The median record over 1,000 simulated 82-game seasons: half "
                          "the simulations went better, half worse. The same team always "

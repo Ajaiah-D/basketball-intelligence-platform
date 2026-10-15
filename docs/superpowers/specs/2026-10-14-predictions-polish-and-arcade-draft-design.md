@@ -78,9 +78,9 @@ Prototyped on the real warehouse (2026-10-14):
 
 ### Game simulation (`dashboard/lib/sim.py`, numpy only)
 
-- **Minutes.** The 5 starters get 32 each and the 3 bench players 16 each
-  (sums to 240). Rotation order is chosen by the user, or by impact for CPU
-  teams.
+- **Minutes.** The 5 starters get 36 each and the 3 bench players 20 each
+  (sums to 240; the first draft of this spec said 32/16, which sums to 208).
+  The rotation is ordered by impact for every team, so the best five start.
 - **Team net rating.** The calibrated formula plus the usage penalty.
 - **One game.** Margin ~ Normal(net_home − net_away + 2.5 home edge, 12.7).
   12.7 is the residual SD this project measured (`ml/train.py`).
