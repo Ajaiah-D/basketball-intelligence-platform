@@ -87,16 +87,18 @@ def test_search_filters_the_pool(warehouse_for_team_builder, monkeypatch):
 def test_a_full_roster_shows_results_and_the_projection_is_stable(
         warehouse_for_team_builder, monkeypatch):
     first = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON,
-                 tb_build_picks=list(VALID_PICKS))
+                 tb_build_slots=list(VALID_PICKS))
     text = _markdown(first)
     assert "Projected record" in text
     assert "Team rating" in text
     assert "Best-record odds" in text
     record = _record_kpi(first)
 
-    # Same roster in a different pick order, in a fresh session: identical.
+    # Same starters and bench, each shuffled within its row, in a fresh
+    # session: identical (order inside a row doesn't change minutes).
+    shuffled = VALID_PICKS[4::-1] + VALID_PICKS[:4:-1]
     second = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON,
-                  tb_build_picks=list(reversed(VALID_PICKS)))
+                  tb_build_slots=shuffled)
     assert _record_kpi(second) == record
     # And a plain rerun of the first session keeps it too.
     first.run()
@@ -107,7 +109,7 @@ def test_over_budget_roster_shows_the_validation_message(
         warehouse_for_team_builder, monkeypatch):
     # Ids 1..8 cost 10+9+...+3 = 52 credits.
     picks = [(pid, SEASON) for pid in range(1, 9)]
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=picks)
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=picks)
     warnings = " ".join(w.value for w in at.warning)
     assert "Over budget: 52 of 36 credits." in warnings
     assert "Projected record" not in _markdown(at)
@@ -116,13 +118,13 @@ def test_over_budget_roster_shows_the_validation_message(
 def test_all_time_build_with_the_same_player_twice(warehouse_for_team_builder, monkeypatch):
     # 10 + 10 credits for the two Player 1 seasons, 1 each for six more.
     picks = [(1, "2023-24"), (1, "2024-25")] + [(pid, "2024-25") for pid in range(11, 17)]
-    at = _app(monkeypatch, tb_pool="All-time", tb_build_picks=picks)
+    at = _app(monkeypatch, tb_pool="All-time", tb_build_slots=picks)
     assert "Projected record" in _markdown(at)
 
 
 def test_simulate_a_season_shows_a_record_and_the_game_strip(
         warehouse_for_team_builder, monkeypatch):
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     at.button(key="tb_build_sim").click().run()
     assert not at.exception, at.exception
     text = _markdown(at)
@@ -130,19 +132,43 @@ def test_simulate_a_season_shows_a_record_and_the_game_strip(
     assert "Longest winning streak" in text
 
 
-def test_remove_button_frees_a_slot(warehouse_for_team_builder, monkeypatch):
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
-    at.button(key="tb_rm_3_2024-25").click().run()
+def _filled(at: AppTest) -> list:
+    return [None if s is None else tuple(s) for s in at.session_state["tb_build_slots"]]
+
+
+def test_remove_button_empties_that_spot_and_targets_it(
+        warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
+    at.button(key="tb_rm_2").click().run()
     assert not at.exception, at.exception
-    assert (3, SEASON) not in [tuple(p) for p in at.session_state["tb_build_picks"]]
+    slots = _filled(at)
+    assert slots[2] is None
+    assert slots[:2] + slots[3:] == VALID_PICKS[:2] + VALID_PICKS[3:]  # others stay put
+    assert at.session_state["tb_slot"] == 2
     assert "Projected record" not in _markdown(at)
+    assert "Next pick goes here" in _markdown(at)
+
+
+def test_the_bench_counts_benching_a_star_lowers_the_rating(
+        warehouse_for_team_builder, monkeypatch):
+    # VALID_PICKS is ordered best impact first, so the best five start.
+    best = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
+    benched = list(VALID_PICKS)
+    benched[0], benched[7] = benched[7], benched[0]  # best player to the bench
+    worse = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=benched)
+    assert float(_kpi_value(worse, "Team rating")) < float(_kpi_value(best, "Team rating"))
+    assert "Start the best five" not in [b.label for b in best.button]
+
+    worse.button(key="tb_best_five").click().run()
+    assert not worse.exception, worse.exception
+    assert _kpi_value(worse, "Team rating") == _kpi_value(best, "Team rating")
 
 
 def test_changing_the_pool_resets_the_build(warehouse_for_team_builder, monkeypatch):
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     at.selectbox(key="tb_pool").select("2023-24").run()
     assert not at.exception, at.exception
-    assert at.session_state["tb_build_picks"] == []
+    assert at.session_state["tb_build_slots"] == [None] * 8
     assert "Projected record" not in _markdown(at)
 
 
@@ -198,7 +224,7 @@ def _kpi_value(at: AppTest, label: str) -> str:
 
 
 def test_determinism_roster_projects_mid_range(warehouse_for_team_builder, monkeypatch):
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     wins = int(_kpi_value(at, "Projected record").split("-")[0])
     assert 25 <= wins <= 60, wins
 
@@ -213,7 +239,7 @@ def test_build_superteam_rating_stays_under_the_ceiling(
     con.close()
     db.q.clear()
     picks = [(pid, SEASON) for pid in range(1, 9)]
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=picks)
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=picks)
     rating = float(_kpi_value(at, "Team rating"))
     assert 14.0 < rating <= sim.ABS_NET_CAP
 
@@ -281,17 +307,29 @@ def test_add_callback_adds_once_and_clears_the_selection(
     nonce = _nonce(at)
     _call(at, "_tb_add", (4, SEASON))
     _call(at, "_tb_add", (4, SEASON))  # a second add of the same row is ignored
-    assert [tuple(p) for p in at.session_state["tb_build_picks"]] == [(4, SEASON)]
+    assert _filled(at) == [(4, SEASON)] + [None] * 7  # leftmost spot first
     assert _nonce(at) > nonce
     assert "Player 4" not in set(at.dataframe[0].value["Player"])
 
 
 def test_remove_callback_clears_the_selection(warehouse_for_team_builder, monkeypatch):
-    at = _harness(monkeypatch, tb_pool=SEASON, tb_build_picks=[(4, SEASON)])
+    at = _harness(monkeypatch, tb_pool=SEASON, tb_build_slots=[(4, SEASON)])
     nonce = _nonce(at)
-    _call(at, "_tb_remove", (4, SEASON))
-    assert at.session_state["tb_build_picks"] == []
+    _call(at, "_tb_remove", 0)
+    assert _filled(at) == [None] * 8
     assert _nonce(at) > nonce
+
+
+def test_a_chosen_spot_gets_the_next_pick(warehouse_for_team_builder, monkeypatch):
+    at = _harness(monkeypatch, tb_pool=SEASON)
+    at.button(key="tb_slot_6").click().run()  # Bench 2
+    assert not at.exception, at.exception
+    assert at.button(key="tb_slot_6").disabled
+    _call(at, "_tb_add", (4, SEASON))
+    _call(at, "_tb_add", (5, SEASON))  # the choice is used up: leftmost again
+    slots = _filled(at)
+    assert slots[6] == (4, SEASON)
+    assert slots[0] == (5, SEASON)
 
 
 def test_draft_pick_callback_applies_the_pick_then_runs_the_cpu(
@@ -330,7 +368,7 @@ def test_season_without_team_ratings_falls_back_and_says_so(
     con.execute("delete from main_marts.mart_team_season where season = '2024-25'")
     con.close()
     db.q.clear()
-    at = _app(monkeypatch, tb_pool=SEASON, tb_build_picks=list(VALID_PICKS))
+    at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     captions = " ".join(c.value for c in at.caption)
     assert "2024-25 has no team ratings" in captions
     assert "5 real team-seasons drawn from 1985-86 on" in captions

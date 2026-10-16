@@ -273,9 +273,11 @@ def tip(text: str) -> str:
             f'data-tip="{safe}">i</span>')
 
 
-def card_html(title: str, body_html: str, help: str = "") -> str:
-    return (f'<div class="bip-card"><h4>{title}{tip(help) if help else ""}</h4>'
-            f'{body_html}</div>')
+def card_html(title: str, body_html: str, help: str = "", style: str = "") -> str:
+    # `style` is extra inline CSS for the card box (e.g. a highlighted border).
+    style_attr = f' style="{style}"' if style else ""
+    return (f'<div class="bip-card"{style_attr}><h4>{title}{tip(help) if help else ""}'
+            f'</h4>{body_html}</div>')
 
 
 def card(st, title: str, body_html: str, help: str = "") -> None:

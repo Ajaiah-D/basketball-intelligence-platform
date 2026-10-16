@@ -11,8 +11,11 @@ Build a team keeps all of its state in st.session_state under "tb_" keys:
   tb_search        the pool table's search text
   tb_nonce         int, part of the pool table's widget key; bumped after a
                    pick so the table's row selection starts empty again
-  tb_build_picks   Build roster: list of (player_id, season) pairs, pick
-                   order (display order is by impact, so order is cosmetic)
+  tb_build_slots   Build roster: 8 spots, starters 1-5 then bench 1-3, each
+                   a (player_id, season) pair or None. Placement counts: the
+                   starter spots play starter minutes
+  tb_slot          the spot the user chose for the next pick (index), or
+                   absent; an empty chosen spot wins over the leftmost empty
   tb_build_season  {"key": roster key, "result": sim.simulate_season_once,
                    "names": opponent labels} - the last "Simulate a season"
   tb_draft         Draft state from draft.new_draft (rosters hold index labels
@@ -262,7 +265,7 @@ ALL_TIME = "All-time"
 MODES = ["Build", "Draft"]
 DRAFT_TEAMS = 6
 POOL_ROWS = 200  # the pool grid shows the best 200 matches by impact
-_GAME_KEYS = ("tb_build_picks", "tb_build_season", "tb_draft",
+_GAME_KEYS = ("tb_build_slots", "tb_slot", "tb_build_season", "tb_draft",
               "tb_draft_season", "tb_proj")
 
 
@@ -275,7 +278,7 @@ def _tb_reset() -> None:
     """Clear the game (mode and pool stay as chosen). No confirm step."""
     for key in _GAME_KEYS:
         st.session_state.pop(key, None)
-    st.session_state["tb_build_picks"] = []
+    st.session_state["tb_build_slots"] = [None] * sim.ROSTER_SIZE
     st.session_state["tb_search"] = ""
     _tb_bump()
 
@@ -327,9 +330,11 @@ def _meta() -> tuple[float, float, float]:
             float(m.get("usage_league_total", 5.0)))
 
 
-def _team_net(rows: pd.DataFrame, meta) -> float:
-    """Net rating of an 8-man roster, best five by impact starting."""
-    rot = draft.auto_rotation(rows)
+def _team_net(rows: pd.DataFrame, meta, ordered: bool = False) -> float:
+    """Net rating of an 8-man roster. With ordered=True the rows are already
+    in rotation order (the first five start); otherwise the best five by
+    impact start."""
+    rot = rows if ordered else draft.auto_rotation(rows)
     scale, offset, usage_total = meta
     return float(sim.team_net_rating(rot["impact"], rot["usage"], scale, offset,
                                      usage_league_total=usage_total))
@@ -433,11 +438,21 @@ def _pool_table(pool: pd.DataFrame, exclude):
     return None, bar
 
 
-def _slot_html(label: str, r) -> str:
+def _slot_label(i: int) -> str:
+    """'Starter 1'..'Starter 5', then 'Bench 1'..'Bench 3'."""
+    if i < sim.STARTERS:
+        return f"Starter {i + 1}"
+    return f"Bench {i - sim.STARTERS + 1}"
+
+
+def _slot_html(label: str, r, target: bool = False) -> str:
     if r is None:
+        text, color = (("Next pick goes here", T.ACCENT) if target
+                       else ("Empty", T.MUTED))
         body = (f'<div style="min-height:76px;display:flex;align-items:center;'
-                f'color:{T.MUTED};font-size:.85rem">Empty</div>')
-        return T.card_html(label, body)
+                f'color:{color};font-size:.85rem">{text}</div>')
+        style = f"border:1px dashed {T.ACCENT}" if target else ""
+        return T.card_html(label, body, style=style)
     team = _last_team(r.team)
     tc = T.team_color(team)
     body = (
@@ -457,37 +472,79 @@ def _slot_html(label: str, r) -> str:
     return T.card_html(label, body)
 
 
-def _roster_grid(rows: pd.DataFrame, removable: bool) -> None:
-    """Five Starter slots, then three Bench, filled best impact first."""
-    recs = list(draft.auto_rotation(rows).itertuples()) if len(rows) else []
-    for start, count, label in ((0, sim.STARTERS, "Starter"),
-                                (sim.STARTERS, sim.ROSTER_SIZE - sim.STARTERS, "Bench")):
+def _roster_grid(pool: pd.DataFrame, labels: list, target: int | None) -> None:
+    """The eight Build spots, five starters over three bench, each with one
+    button: Remove when filled, or pick that spot for the next player."""
+    for start, count in ((0, sim.STARTERS), (sim.STARTERS, sim.ROSTER_SIZE - sim.STARTERS)):
         cols = st.columns(sim.STARTERS)
-        for i in range(count):
-            r = recs[start + i] if start + i < len(recs) else None
-            with cols[i]:
-                st.markdown(_slot_html(label, r), unsafe_allow_html=True)
-                if removable and r is not None:
-                    st.button("× Remove", key=f"tb_rm_{int(r.player_id)}_{r.season}",
-                              type="tertiary", on_click=_tb_remove,
-                              args=((int(r.player_id), str(r.season)),))
+        for i in range(start, start + count):
+            label = labels[i]
+            r = pool.loc[label] if label is not None else None
+            with cols[i - start]:
+                st.markdown(_slot_html(_slot_label(i), r, target=i == target),
+                            unsafe_allow_html=True)
+                if r is not None:
+                    st.button("Remove", key=f"tb_rm_{i}", width="stretch",
+                              on_click=_tb_remove, args=(i,))
+                elif i == target:
+                    st.button("Picking here", key=f"tb_slot_{i}", width="stretch",
+                              disabled=True)
+                else:
+                    st.button("Pick for this spot", key=f"tb_slot_{i}",
+                              width="stretch", on_click=_tb_target, args=(i,))
 
 
-def _build_picks() -> list[tuple[int, str]]:
-    return [(int(p[0]), str(p[1])) for p in st.session_state.get("tb_build_picks", [])]
+def _slots() -> list[tuple[int, str] | None]:
+    """The eight Build spots in order; None is an empty spot."""
+    raw = list(st.session_state.get("tb_build_slots") or [])
+    raw = (raw + [None] * sim.ROSTER_SIZE)[:sim.ROSTER_SIZE]
+    return [None if s is None else (int(s[0]), str(s[1])) for s in raw]
+
+
+def _target(slots: list) -> int | None:
+    """The spot the next pick fills: the one the user chose if it is still
+    empty, otherwise the leftmost empty one; None when the team is full."""
+    chosen = st.session_state.get("tb_slot")
+    if chosen is not None and 0 <= chosen < len(slots) and slots[chosen] is None:
+        return chosen
+    return next((i for i, s in enumerate(slots) if s is None), None)
+
+
+def _slot_labels(pool: pd.DataFrame, slots: list) -> list:
+    """Pool index label per spot (None for an empty spot, or for a pick the
+    pool no longer has)."""
+    ids = [s[0] for s in slots if s is not None]
+    cand = pool[pool["player_id"].isin(ids)]
+    found = {(int(p), str(s)): label
+             for label, p, s in zip(cand.index, cand["player_id"], cand["season"])}
+    return [None if s is None else found.get(s) for s in slots]
 
 
 def _tb_add(key: tuple[int, str]) -> None:
-    picks = _build_picks()
-    if key not in picks and len(picks) < sim.ROSTER_SIZE:
-        picks.append(key)
-    st.session_state["tb_build_picks"] = picks
+    slots = _slots()
+    i = _target(slots)
+    if i is not None and key not in slots:
+        slots[i] = key
+    st.session_state["tb_build_slots"] = slots
+    st.session_state.pop("tb_slot", None)
     _tb_bump()
 
 
-def _tb_remove(key: tuple[int, str]) -> None:
-    st.session_state["tb_build_picks"] = [p for p in _build_picks() if p != key]
+def _tb_remove(index: int) -> None:
+    slots = _slots()
+    slots[index] = None
+    st.session_state["tb_build_slots"] = slots
+    st.session_state["tb_slot"] = index  # the replacement goes back into this spot
     _tb_bump()
+
+
+def _tb_target(index: int) -> None:
+    # No bump: a row already selected in the pool table stays selected.
+    st.session_state["tb_slot"] = index
+
+
+def _tb_best_five(order: list[tuple[int, str]]) -> None:
+    st.session_state["tb_build_slots"] = list(order)
 
 
 def _tb_sim_build(key, net: float, opp_nets: list[float], names: list[str]) -> None:
@@ -533,13 +590,17 @@ def _season_card(season: dict) -> str:
 
 
 def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) -> None:
+    """Projection for a full Build roster; `rows` are in spot order, so the
+    first five are the starters the user placed."""
     keys = _row_keys(rows)
+    starters, bench = keys[:sim.STARTERS], keys[sim.STARTERS:]
     # The linear calibration would rate a roster of eight star seasons far
     # past any real team; past +10 the soft ceiling keeps it near the best
     # ever (anything up to +10 is left as is).
-    net = sim.soft_cap(_team_net(rows, meta))
+    net = sim.soft_cap(_team_net(rows, meta, ordered=True))
     opp_nets, opp_names, source = _opponents(season)
-    cache_key = ("build", choice, tuple(sorted(keys)))
+    # Order within the starters (or the bench) doesn't change the minutes.
+    cache_key = ("build", choice, tuple(sorted(starters)), tuple(sorted(bench)))
 
     def project() -> dict:
         res = sim.simulate_vs_league(net, opp_nets,
@@ -550,6 +611,7 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
     st.markdown("#### Projection")
     _results_row(net, proj["median"], proj["p10"], proj["p90"],
                  "Best-record odds", proj["best_record_odds"])
+    _best_five_hint(rows, net, meta)
     if source == "season":
         against = (f"82 games against {season}'s {len(opp_nets)} real teams, "
                    f"each at its real net rating.")
@@ -569,18 +631,36 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
         st.markdown(_season_card(played), unsafe_allow_html=True)
 
 
+def _best_five_hint(rows: pd.DataFrame, net: float, meta) -> None:
+    """One-click fix when starting the five best impacts would rate higher."""
+    best = draft.auto_rotation(rows)
+    best_net = sim.soft_cap(_team_net(best, meta, ordered=True))
+    gain = best_net - net
+    if gain < 0.05:
+        return
+    c1, c2 = st.columns([1, 4], vertical_alignment="center")
+    c1.button("Start the best five", key="tb_best_five", width="stretch",
+              on_click=_tb_best_five,
+              args=([(int(p), str(s)) for p, s in zip(best["player_id"], best["season"])],))
+    c2.caption(f"Some of your best players are on the bench. Starting the five "
+               f"highest impacts would raise the team rating by {gain:.1f}.")
+
+
 def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> None:
-    picks = set(_build_picks())
-    cand = pool[pool["player_id"].isin([p for p, _ in picks])]
-    rows = cand[[(int(p), s) in picks
-                 for p, s in zip(cand["player_id"], cand["season"])]]
+    slots = _slots()
+    labels = _slot_labels(pool, slots)
+    target = _target([None if lb is None else s for lb, s in zip(labels, slots)])
+    rows = pool.loc[[lb for lb in labels if lb is not None]]
     problems = draft.validate_build(rows)
     full = len(rows) >= sim.ROSTER_SIZE
     count_msg = problems[0] if len(rows) != sim.ROSTER_SIZE and problems else ""
     others = problems[1:] if count_msg else problems
 
     st.caption(f"Pick {sim.ROSTER_SIZE} player-seasons with {draft.BUDGET} credits to "
-               f"spend; better players cost more (1-12). The five best by impact start.")
+               f"spend; better players cost more (1-12). The top row starts "
+               f"({sim.STARTER_MINUTES} minutes each) and the bottom row comes off the "
+               f"bench ({sim.BENCH_MINUTES}). Each pick fills the highlighted spot; "
+               f"choose another with its button, or remove a player to replace him.")
     used = int(rows["cost"].sum()) if len(rows) else 0
     left = draft.BUDGET - used
     k1, k2, _ = st.columns([1, 1, 3])
@@ -589,7 +669,7 @@ def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
                 unsafe_allow_html=True)
     k2.markdown(T.kpi("Players", f"{len(rows)} / {sim.ROSTER_SIZE}",
                       sub="5 starters, 3 bench"), unsafe_allow_html=True)
-    _roster_grid(rows, removable=True)
+    _roster_grid(pool, labels, target)
     for msg in others:
         st.warning(msg)
 
@@ -600,13 +680,15 @@ def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
         label, bar = _pool_table(pool, exclude=rows.index)
         with bar:
             c1, c2 = st.columns([1, 4], vertical_alignment="center")
+            spot = _slot_label(target) if target is not None else ""
             if label is not None:
                 r = pool.loc[label]
                 note = (f"Selected: **{r.player}**, {r.season} "
-                        f"({int(r.cost)} credits). {count_msg}")
+                        f"({int(r.cost)} credits), into {spot}. {count_msg}")
                 key = (int(r.player_id), str(r.season))
             else:
-                note, key = f"Select a row in the table, then add him. {count_msg}", None
+                note, key = (f"Select a row in the table, then add him to {spot}. "
+                             f"{count_msg}"), None
             c1.button("Add to team", key="tb_add", type="primary", width="stretch",
                       disabled=key is None, on_click=_tb_add, args=(key,))
             c2.caption(note)
@@ -875,8 +957,9 @@ court. 0 is a typical rotation player; the best seasons ever reach about +5 to +
 before it's weighed, so a 1988 rebounder and a 2024 shooter are rated on the same
 scale. That's what makes an all-time team possible.
 
-**Minutes.** The five best impacts start and play {sim.STARTER_MINUTES} minutes;
-the three bench players play {sim.BENCH_MINUTES} (5 × {sim.STARTER_MINUTES} + 3 ×
+**Minutes.** Starters play {sim.STARTER_MINUTES} minutes and the three bench
+players {sim.BENCH_MINUTES}. In Build mode your top row starts; in Draft mode the
+five best impacts on each team do (5 × {sim.STARTER_MINUTES} + 3 ×
 {sim.BENCH_MINUTES} = 240, one game's worth of player-minutes). Impact weighted by
 those minutes becomes the team rating.{fit}
 
