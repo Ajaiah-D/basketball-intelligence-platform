@@ -285,7 +285,7 @@ group by 1 order by ppg desc limit 10;
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (10 models), intermediate (1) and marts (7), plus a salary
-      cap history seed; 75 passing dbt tests and 149 pytest cases. CI runs
+      cap history seed; 75 passing dbt tests and 253 pytest cases. CI runs
       both against small committed fixtures, where a few dbt tests have no
       matching rows; the full set only bites against the local warehouse
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
