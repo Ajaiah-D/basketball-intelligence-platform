@@ -77,6 +77,9 @@ def cpu_pick(
     weights used, so the allowance is usage_league_total * (sum of those
     weights) / 5. excess = max(0, projected - allowance).
 
+    A CPU team never takes a second season of a player it already has (the
+    user may; only the CPU is held to this), unless nobody else is left.
+
     Never returns an index that is not in `available`.
     """
     if len(available) == 0:
@@ -84,6 +87,10 @@ def cpu_pick(
     slot = len(roster)
     if slot >= ROSTER_SIZE:
         raise ValueError("this roster is already full")
+    if slot and "player_id" in available and "player_id" in roster:
+        fresh = available[~available["player_id"].isin(roster["player_id"])]
+        if len(fresh):
+            available = fresh
 
     w = rotation_weights()
     held = (w[:slot] * roster["usage"].to_numpy(dtype=float)).sum() if slot else 0.0

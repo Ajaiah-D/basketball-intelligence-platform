@@ -143,6 +143,21 @@ def test_cpu_pick_does_not_penalise_when_under_the_usage_budget():
     assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 7
 
 
+def test_cpu_pick_skips_another_season_of_a_player_it_already_has():
+    # Player 5's other season is the best left, but the CPU already has him.
+    roster = pd.DataFrame({"player_id": [5], "impact": [3.0], "usage": [1.0]})
+    available = pd.DataFrame({"player_id": [5, 6], "impact": [4.0, 1.0],
+                              "usage": [1.0, 1.0]}, index=[20, 21])
+    assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 21
+
+
+def test_cpu_pick_takes_a_repeat_player_only_when_nobody_else_is_left():
+    roster = pd.DataFrame({"player_id": [5], "impact": [3.0], "usage": [1.0]})
+    available = pd.DataFrame({"player_id": [5], "impact": [4.0], "usage": [1.0]},
+                             index=[20])
+    assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 20
+
+
 def test_cpu_pick_rejects_an_empty_pool_and_a_full_roster():
     pool = _pool(10)
     rng = np.random.default_rng(0)
@@ -175,6 +190,18 @@ def test_full_draft_fills_every_roster_with_no_repeats():
     assert all(len(r) == 8 for r in state["rosters"].values())
     assert len(all_picks) == len(set(all_picks)) == 48
     assert state["taken"] == set(all_picks)
+
+
+def test_cpu_rosters_never_hold_two_seasons_of_one_player():
+    # An all-time pool: every player has two seasons with similar impact.
+    one = _pool(60)
+    two = one.assign(season="2023-24", impact=one["impact"] - 0.05)
+    pool = pd.concat([one, two], ignore_index=True)
+    state = _run_full_draft(seed=5, user_team=2, pool=pool)
+    for team, labels in state["rosters"].items():
+        if team != state["user_team"]:
+            ids = pool.loc[labels, "player_id"]
+            assert ids.is_unique, f"CPU team {team} drafted a player twice"
 
 
 def test_full_draft_is_deterministic_for_a_fixed_seed():
