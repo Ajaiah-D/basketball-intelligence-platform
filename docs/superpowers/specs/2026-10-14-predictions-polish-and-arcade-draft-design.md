@@ -136,3 +136,27 @@ Prototyped on the real warehouse (2026-10-14):
 
 Positions, injuries, eras as presets (later, per user feedback), trades
 within the game, and saving or sharing teams.
+
+## Revision 2026-10-16: Build spots and a new Draft mode
+
+- **Build mode.** The roster is eight fixed spots: starters 1-5, then bench
+  1-3. Each spot can be emptied, and the user picks which spot the next player
+  fills (otherwise the leftmost empty one). Placement counts: the top row
+  plays starter minutes. A "Start the best five" button appears when that
+  would raise the rating.
+- **Draft mode replaced.** The snake draft against five CPU teams is gone.
+  Now there are eight rounds, one per spot, and each round offers three
+  players.
+  - A hidden budget is drawn from 34-40 credits.
+  - Each round's offers sit around that spot's fair share of what's left (a
+    starter spot gets about 1.8 times a bench spot): one pricier, one fair,
+    one cheaper (3 credits apart). 15% of the time the top offer is 3 credits
+    richer.
+  - Every path through the draft stays within budget. Prices stay hidden
+    until the end, when the budget is revealed. The projection is Build's
+    (against real teams).
+  - On the real warehouse over 300 drafts: always taking the best impact
+    gives a median of +9 (up to about +12); random picks a median of +7
+    (+4 to +9); always taking the cheapest about +3.
+  - The six-team league simulation (round robin, playoffs) was removed with
+    it.

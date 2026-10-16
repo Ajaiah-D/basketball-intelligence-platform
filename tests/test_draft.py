@@ -1,6 +1,7 @@
-"""The Arcade team builder's rules and CPU drafting: budget validation,
-snake order, the CPU's pick logic, a whole seeded draft, and the db pool
-loaders. Pure pandas/numpy plus the tmp-warehouse fixtures in conftest.py."""
+"""The Arcade team builder's rules: Build-mode budget validation, Draft
+mode's offers (pick one of three per spot under a hidden budget), and the
+db pool loaders. Pure pandas/numpy plus the tmp-warehouse fixtures in
+conftest.py."""
 
 import sys
 from pathlib import Path
@@ -84,158 +85,112 @@ def test_validate_build_empty():
     assert draft.validate_build(_picks(0)) == ["Pick 8 players (you have 0)."]
 
 
-# --- snake_order ---------------------------------------------------------------
+# --- Draft mode: pick one of three ------------------------------------------
 
-def test_snake_order():
-    assert draft.snake_order(3, 2, user_slot=0) == [0, 1, 2, 2, 1, 0]
-    assert draft.snake_order(2, 3, user_slot=1) == [0, 1, 1, 0, 0, 1]
+def _priced_pool(per_cost=6, seasons=("2024-25",)):
+    """per_cost players at every cost 1..12, impact rising with cost; with
+    two seasons, every player appears in both."""
+    rows = []
+    for season in seasons:
+        pid = 0
+        for cost in range(1, 13):
+            for k in range(per_cost):
+                rows.append({"season": season, "player_id": pid, "player": f"P{pid}",
+                             "cost": cost, "impact": cost * 0.5 + k * 0.01,
+                             "usage": 1.0})
+                pid += 1
+    return pd.DataFrame(rows)
 
 
-def test_snake_order_rejects_a_bad_user_slot():
+def _play(pool, rng, choose):
+    """Run a whole draft; `choose` picks one of the offered labels."""
+    state = draft.new_pick_draft(rng)
+    spent = 0
+    for spot in range(sim.ROSTER_SIZE):
+        offer = draft.offer_options(pool, state["picks"], state["budget"] - spent,
+                                    spot, rng)
+        label = choose(pool.loc[offer])
+        r = pool.loc[label]
+        state["picks"].append((int(r.player_id), str(r.season)))
+        spent += int(r.cost)
+    return state, spent
+
+
+def test_new_pick_draft_budget_is_drawn_from_the_range():
+    budgets = {draft.new_pick_draft(np.random.default_rng(s))["budget"] for s in range(300)}
+    assert budgets == set(range(draft.DRAFT_BUDGET_MIN, draft.DRAFT_BUDGET_MAX + 1))
+
+
+def test_spot_target_shares_the_budget_by_minutes():
+    # Fresh 36-credit budget: a starter spot is 36/240 of it, a bench spot 20/240.
+    assert draft.spot_target(36, 0) == pytest.approx(36 * 36 / 240)
+    assert draft.spot_target(36, 7) == pytest.approx(36)  # the last spot gets the rest
+    # With only the three bench spots left, each gets a third.
+    assert draft.spot_target(30, 5) == pytest.approx(10)
+
+
+def test_offer_is_three_different_players_around_the_target():
+    pool = _priced_pool()
+    for seed in range(50):
+        offer = draft.offer_options(pool, [], 37, 0, np.random.default_rng(seed))
+        rows = pool.loc[offer]
+        assert len(rows) == draft.OPTIONS
+        assert rows["player_id"].is_unique
+        costs = sorted(rows["cost"], reverse=True)
+        # target 37 * 36/240 = 5.55: middle option 6, cheaper 3 (lucky or not).
+        assert costs[1:] == [6, 3]
+        assert costs[0] in (9, 12)
+
+
+def test_offer_never_repeats_a_picked_player_season_but_may_offer_another_season():
+    pool = _priced_pool(per_cost=1, seasons=("2023-24", "2024-25"))
+    # Every 2024-25 player at cost 6 is taken: the middle option must be the
+    # 2023-24 season of that same player.
+    six = pool[(pool["cost"] == 6) & (pool["season"] == "2024-25")]
+    picks = [(int(six.iloc[0].player_id), "2024-25")]
+    seen_other_season = False
+    for seed in range(40):
+        offer = draft.offer_options(pool, picks, 37, 0, np.random.default_rng(seed))
+        keys = {(int(r.player_id), r.season) for r in pool.loc[offer].itertuples()}
+        assert picks[0] not in keys
+        seen_other_season |= (picks[0][0], "2023-24") in keys
+    assert seen_other_season
+
+
+def test_offers_never_cost_more_than_the_budget_can_carry():
+    pool = _priced_pool()
+    # 9 credits left with 4 spots to fill: nothing above 9 - 3 = 6.
+    for seed in range(50):
+        offer = draft.offer_options(pool, [], 9, 4, np.random.default_rng(seed))
+        assert pool.loc[offer, "cost"].max() <= 6
+
+
+def test_any_way_through_a_draft_stays_within_the_hidden_budget():
+    pool = _priced_pool()
+    pricey = lambda rows: rows["cost"].idxmax()  # noqa: E731
+    cheap = lambda rows: rows["cost"].idxmin()  # noqa: E731
+    for seed in range(30):
+        for choose in (pricey, cheap):
+            state, spent = _play(pool, np.random.default_rng(seed), choose)
+            assert len(state["picks"]) == sim.ROSTER_SIZE
+            assert spent <= state["budget"]
+    # Always taking the best option spends nearly all of it.
+    state, spent = _play(pool, np.random.default_rng(3), pricey)
+    assert spent >= state["budget"] - 3
+
+
+def test_taking_the_cheap_option_leaves_better_options_later():
+    pool = _priced_pool()
+    rng = np.random.default_rng(1)
+    rich = draft.offer_options(pool, [], 36, 5, rng)
+    poor = draft.offer_options(pool, [], 12, 5, rng)
+    assert pool.loc[rich, "cost"].min() > pool.loc[poor, "cost"].min()
+
+
+def test_offer_options_rejects_a_full_roster():
     with pytest.raises(ValueError):
-        draft.snake_order(3, 2, user_slot=3)
-
-
-# --- cpu_pick ------------------------------------------------------------------
-
-def test_cpu_pick_never_returns_a_taken_or_missing_index():
-    pool = _pool(40)
-    taken = set(range(0, 40, 3))
-    available = pool.drop(index=list(taken))
-    roster = pool.loc[[1, 2]]
-    for seed in range(200):
-        pick = draft.cpu_pick(available, roster, np.random.default_rng(seed))
-        assert pick in available.index
-        assert pick not in taken
-
-
-def test_cpu_pick_without_noise_takes_the_best_impact_when_usage_is_fine():
-    pool = _pool(30)
-    pool["usage"] = 1.0  # exactly league average: no usage penalty anywhere
-    best = pool["impact"].idxmax()
-    assert draft.cpu_pick(pool, pool.iloc[0:0], np.random.default_rng(1), noise_sd=0) == best
-
-
-def test_cpu_pick_stub_rng_returning_zero_noise():
-    class ZeroRng:
-        def normal(self, loc, scale, size=None):
-            return np.zeros(size)
-
-    pool = _pool(30)
-    pool["usage"] = 1.0
-    assert draft.cpu_pick(pool, pool.iloc[0:0], ZeroRng()) == pool["impact"].idxmax()
-
-
-def test_cpu_pick_penalises_a_ball_hog_on_a_usage_heavy_roster():
-    # Two near-equal candidates; one would push the roster far past the
-    # league usage budget, so the CPU takes the other.
-    roster = pd.DataFrame({"impact": [3.0] * 5, "usage": [1.8] * 5})
-    available = pd.DataFrame(
-        {"impact": [2.0, 1.8], "usage": [2.4, 0.9]}, index=[10, 11]
-    )
-    pick = draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0)
-    assert pick == 11
-
-
-def test_cpu_pick_does_not_penalise_when_under_the_usage_budget():
-    roster = pd.DataFrame({"impact": [1.0], "usage": [0.5]})
-    available = pd.DataFrame({"impact": [2.0, 1.9], "usage": [1.2, 0.8]}, index=[7, 9])
-    assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 7
-
-
-def test_cpu_pick_skips_another_season_of_a_player_it_already_has():
-    # Player 5's other season is the best left, but the CPU already has him.
-    roster = pd.DataFrame({"player_id": [5], "impact": [3.0], "usage": [1.0]})
-    available = pd.DataFrame({"player_id": [5, 6], "impact": [4.0, 1.0],
-                              "usage": [1.0, 1.0]}, index=[20, 21])
-    assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 21
-
-
-def test_cpu_pick_takes_a_repeat_player_only_when_nobody_else_is_left():
-    roster = pd.DataFrame({"player_id": [5], "impact": [3.0], "usage": [1.0]})
-    available = pd.DataFrame({"player_id": [5], "impact": [4.0], "usage": [1.0]},
-                             index=[20])
-    assert draft.cpu_pick(available, roster, np.random.default_rng(0), noise_sd=0) == 20
-
-
-def test_cpu_pick_rejects_an_empty_pool_and_a_full_roster():
-    pool = _pool(10)
-    rng = np.random.default_rng(0)
-    with pytest.raises(ValueError):
-        draft.cpu_pick(pool.iloc[0:0], pool.iloc[0:0], rng)
-    with pytest.raises(ValueError):
-        draft.cpu_pick(pool.iloc[8:], pool.iloc[:8], rng)
-
-
-# --- full draft ----------------------------------------------------------------
-
-def _run_full_draft(seed, user_team=0, n_teams=6, rounds=8, pool=None):
-    pool = _pool(100) if pool is None else pool
-    rng = np.random.default_rng(seed)
-    state = draft.new_draft(n_teams, rounds, user_team)
-    draft.run_cpu_until_user(state, pool, rng)
-    # The "user" takes the best-impact player left each time.
-    while state["pick_no"] < len(state["order"]):
-        assert state["order"][state["pick_no"]] == user_team
-        left = pool.loc[~pool.index.isin(state["taken"])]
-        draft.apply_pick(state, left["impact"].idxmax())
-        draft.run_cpu_until_user(state, pool, rng)
-    return state
-
-
-def test_full_draft_fills_every_roster_with_no_repeats():
-    state = _run_full_draft(seed=3)
-    assert state["pick_no"] == 48
-    all_picks = [i for r in state["rosters"].values() for i in r]
-    assert all(len(r) == 8 for r in state["rosters"].values())
-    assert len(all_picks) == len(set(all_picks)) == 48
-    assert state["taken"] == set(all_picks)
-
-
-def test_cpu_rosters_never_hold_two_seasons_of_one_player():
-    # An all-time pool: every player has two seasons with similar impact.
-    one = _pool(60)
-    two = one.assign(season="2023-24", impact=one["impact"] - 0.05)
-    pool = pd.concat([one, two], ignore_index=True)
-    state = _run_full_draft(seed=5, user_team=2, pool=pool)
-    for team, labels in state["rosters"].items():
-        if team != state["user_team"]:
-            ids = pool.loc[labels, "player_id"]
-            assert ids.is_unique, f"CPU team {team} drafted a player twice"
-
-
-def test_full_draft_is_deterministic_for_a_fixed_seed():
-    a = _run_full_draft(seed=11)
-    b = _run_full_draft(seed=11)
-    c = _run_full_draft(seed=12)
-    assert a["rosters"] == b["rosters"]
-    assert a["rosters"] != c["rosters"]
-
-
-def test_run_cpu_until_user_stops_on_the_users_turn():
-    pool = _pool(100)
-    state = draft.new_draft(6, 8, user_team=2)
-    draft.run_cpu_until_user(state, pool, np.random.default_rng(0))
-    assert state["pick_no"] == 2  # teams 0 and 1 picked
-    assert state["order"][state["pick_no"]] == 2
-    assert len(state["taken"]) == 2
-    # Nothing more happens while it is still the user's turn.
-    draft.run_cpu_until_user(state, pool, np.random.default_rng(0))
-    assert state["pick_no"] == 2
-
-
-def test_run_cpu_until_user_honours_an_explicit_user_team():
-    pool = _pool(100)
-    state = draft.new_draft(6, 8, user_team=0)
-    draft.run_cpu_until_user(state, pool, np.random.default_rng(0), user_team=3)
-    assert state["pick_no"] == 3
-
-
-def test_apply_pick_rejects_a_taken_player():
-    state = draft.new_draft(3, 2, user_team=0)
-    draft.apply_pick(state, 5)
-    with pytest.raises(ValueError):
-        draft.apply_pick(state, 5)
+        draft.offer_options(_priced_pool(), [], 10, sim.ROSTER_SIZE,
+                            np.random.default_rng(0))
 
 
 # --- auto_rotation -------------------------------------------------------------

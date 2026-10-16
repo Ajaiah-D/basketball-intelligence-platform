@@ -125,10 +125,9 @@ TERMS = {
                "typical rotation player, +2 is star level and the best seasons ever "
                "reach about +5 to +6."),
     "Team rating": ("Your eight-man team's net rating, in points per 100 "
-                    "possessions. In Build mode it's against an average NBA team: 0 "
-                    "is a .500 team, +10 is one of the best ever, and stacked rosters "
-                    "past that level off at about +16. In Draft mode it's against the average "
-                    "team in your six-team draft league."),
+                    "possessions against an average NBA team: 0 is a .500 team, +10 "
+                    "is one of the best ever, and stacked rosters past that level off "
+                    "at about +16."),
     "Projected record": ("The median record over 1,000 simulated 82-game seasons: half "
                          "the simulations went better, half worse. The same team always "
                          "gets the same projection."),
@@ -136,8 +135,6 @@ TERMS = {
                   "worse than the low end and one in ten better than the high end."),
     "Best-record odds": ("The share of 1,000 simulated seasons in which your team "
                          "finished with the league's best record (a tie counts)."),
-    "Title odds": ("The share of 1,000 simulated seasons your team won the title: the "
-                   "top four teams make the playoffs and play best-of-seven series."),
 }
 
 
