@@ -12,7 +12,6 @@ two Arcade games read tables the tiny fixture warehouse does not have.
 import re
 
 import duckdb
-import numpy as np
 from streamlit.testing.v1 import AppTest
 
 from dashboard.lib import db, draft, media, sim
@@ -172,39 +171,68 @@ def test_changing_the_pool_resets_the_build(warehouse_for_team_builder, monkeypa
     assert "Projected record" not in _markdown(at)
 
 
-def test_draft_runs_to_the_users_turn_then_shows_league_results(
+def _pick_round(at: AppTest, k: int = 0) -> None:
+    at.button(key=f"tb_pick_{k}").click().run()
+    assert not at.exception, at.exception
+
+
+def test_draft_offers_three_players_for_the_first_spot(
         warehouse_for_team_builder, monkeypatch):
     at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
-    at.button(key="tb_draft_start").click().run()
-    assert not at.exception, at.exception
-    state = at.session_state["tb_draft"]
-    # The CPU ran up to the user's first pick.
-    assert state["order"][state["pick_no"]] == state["user_team"]
-    assert "On the clock" in _markdown(at)
-    assert len(at.dataframe) == 1  # the pick table
-
-    # Finish the draft programmatically: user takes the best available.
-    pool = db.player_impact_pool(SEASON)
-    rng = np.random.default_rng(0)
-    while state["pick_no"] < len(state["order"]):
-        best = pool.loc[~pool.index.isin(state["taken"])].index[0]
-        draft.apply_pick(state, best)
-        draft.run_cpu_until_user(state, pool, rng)
-    at.session_state["tb_draft"] = state
-    at.run()
-    assert not at.exception, at.exception
+    state = at.session_state["tb_pick"]
+    assert draft.DRAFT_BUDGET_MIN <= state["budget"] <= draft.DRAFT_BUDGET_MAX
+    assert len(state["offer"]) == 3
+    assert len({pid for pid, _ in state["offer"]}) == 3
+    labels = [b.label for b in at.button]
+    assert labels.count("Pick him") == 3
     text = _markdown(at)
-    assert "Title odds" in text and "Projected record" in text
-    standings = at.dataframe[0].value
-    assert len(standings) == 6
-    assert "Your team" in set(standings["Team"])
+    assert "Round 1 of 8" in text and "Starter 1" in text
+    assert "Remove" not in labels  # the draft's roster is read-only
+    assert len(at.dataframe) == 0  # no pool table in Draft mode
 
-    at.button(key="tb_draft_sim").click().run()
-    assert not at.exception, at.exception
+
+def test_a_pick_fills_the_next_spot_and_offers_three_new_players(
+        warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    first = at.session_state["tb_pick"]["offer"][1]
+    _pick_round(at, 1)
+    state = at.session_state["tb_pick"]
+    assert [tuple(p) for p in state["picks"]] == [tuple(first)]
+    assert tuple(first) not in [tuple(o) for o in state["offer"]]
+    assert state["spent"] > 0
+    assert "Round 2 of 8" in _markdown(at)
+
+
+def test_a_full_draft_reveals_the_budget_and_projects_like_build(
+        warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    for _ in range(8):
+        _pick_round(at, 0)
+    state = at.session_state["tb_pick"]
+    assert len(state["picks"]) == 8 and state["offer"] == []
+    assert state["spent"] <= state["budget"]
     text = _markdown(at)
-    assert "Round 1:" in text and "Final:" in text and "Champion" in text
+    assert "Projected record" in text and "Best-record odds" in text
     captions = " ".join(c.value for c in at.caption)
-    assert "close by design" in captions and "long-run odds" in captions
+    assert f"Your hidden budget was **{state['budget']} credits**" in captions
+
+    at.button(key="tb_build_sim").click().run()
+    assert not at.exception, at.exception
+    assert _markdown(at).count("dot-w") + _markdown(at).count("dot-l") == 82
+
+    at.button(key="tb_pick_again").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["tb_pick"]["picks"] == []
+    assert "Round 1 of 8" in _markdown(at)
+
+
+def test_changing_the_pool_restarts_the_draft(warehouse_for_team_builder, monkeypatch):
+    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    _pick_round(at)
+    at.selectbox(key="tb_pool").select("2023-24").run()
+    assert not at.exception, at.exception
+    state = at.session_state["tb_pick"]
+    assert state["picks"] == [] and state["pool"] == "2023-24"
 
 
 def test_all_team_net_ratings(warehouse_for_team_builder):
@@ -242,31 +270,6 @@ def test_build_superteam_rating_stays_under_the_ceiling(
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=picks)
     rating = float(_kpi_value(at, "Team rating"))
     assert 14.0 < rating <= sim.ABS_NET_CAP
-
-
-def _finish_draft(state: dict) -> None:
-    pool = db.player_impact_pool(SEASON)
-    rng = np.random.default_rng(0)
-    while state["pick_no"] < len(state["order"]):
-        best = pool.loc[~pool.index.isin(state["taken"])].index[0]
-        draft.apply_pick(state, best)
-        draft.run_cpu_until_user(state, pool, rng)
-
-
-def test_draft_ratings_are_relative_to_the_league(warehouse_for_team_builder, monkeypatch):
-    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
-    at.button(key="tb_draft_start").click().run()
-    state = at.session_state["tb_draft"]
-    _finish_draft(state)
-    at.session_state["tb_draft"] = state
-    at.run()
-    assert not at.exception, at.exception
-    ratings = at.dataframe[0].value["Rating"]
-    # Ratings within 0.05 of zero are shown as exactly 0 (never "-0.0"), so
-    # the shown ratings sum to zero only to within that.
-    assert abs(float(ratings.sum())) < 0.05 * len(ratings)
-    assert all(str(r) != "-0.0" for r in ratings)
-    assert "vs this draft league" in _markdown(at)
 
 
 # Runs one of the page's callbacks inside a real script run, then renders
@@ -332,34 +335,12 @@ def test_a_chosen_spot_gets_the_next_pick(warehouse_for_team_builder, monkeypatc
     assert slots[0] == (5, SEASON)
 
 
-def test_draft_pick_callback_applies_the_pick_then_runs_the_cpu(
-        warehouse_for_team_builder, monkeypatch):
+def test_a_stale_pick_is_ignored(warehouse_for_team_builder, monkeypatch):
     at = _harness(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
-    _call(at, "_tb_start_draft", SEASON, SEASON)
-    state = at.session_state["tb_draft"]
-    user, first = state["user_team"], state["pick_no"]
-    assert first == user  # round 1: the CPU picked for every slot before his
-    label = next(i for i in db.player_impact_pool(SEASON).index
-                 if i not in state["taken"])
-    _call(at, "_tb_draft_pick", SEASON, label)
-    state = at.session_state["tb_draft"]
-    assert state["rosters"][user] == [label]
-    # The CPU ran on to the user's next turn: in a snake draft that is after
-    # the teams behind him pick twice (end of round 1, start of round 2).
-    assert state["order"][state["pick_no"]] == user
-    assert state["pick_no"] == first + 1 + 2 * (5 - user)
-    assert len(state["taken"]) == state["pick_no"]
-
-
-def test_start_draft_does_not_restart_a_running_draft(
-        warehouse_for_team_builder, monkeypatch):
-    at = _harness(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
-    _call(at, "_tb_start_draft", SEASON, SEASON)
-    before = at.session_state["tb_draft"]
-    snapshot = (before["user_team"], before["pick_no"], set(before["taken"]))
-    _call(at, "_tb_start_draft", SEASON, SEASON)
-    after = at.session_state["tb_draft"]
-    assert (after["user_team"], after["pick_no"], set(after["taken"])) == snapshot
+    offered = {tuple(o) for o in at.session_state["tb_pick"]["offer"]}
+    stale = next((pid, SEASON) for pid in range(1, 61) if (pid, SEASON) not in offered)
+    _call(at, "_tb_pick", SEASON, stale)
+    assert at.session_state["tb_pick"]["picks"] == []
 
 
 def test_season_without_team_ratings_falls_back_and_says_so(

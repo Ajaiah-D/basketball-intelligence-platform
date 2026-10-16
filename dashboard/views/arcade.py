@@ -2,8 +2,9 @@
 
 Higher or Lower: two player-seasons from any era, guess who averaged more.
 Mystery Player: identify a notable player-season from progressive clues.
-Build a team: pick eight player-seasons under a budget (Build) or snake-draft
-against five CPU teams (Draft), then simulate seasons (lib/sim.py).
+Build a team: pick eight player-seasons under a budget (Build) or pick one
+of three offered players for each spot (Draft), then simulate seasons
+(lib/sim.py).
 
 Build a team keeps all of its state in st.session_state under "tb_" keys:
   tb_mode          "Build" | "Draft" (the segmented control)
@@ -18,14 +19,14 @@ Build a team keeps all of its state in st.session_state under "tb_" keys:
                    absent; an empty chosen spot wins over the leftmost empty
   tb_build_season  {"key": roster key, "result": sim.simulate_season_once,
                    "names": opponent labels} - the last "Simulate a season"
-  tb_draft         Draft state from draft.new_draft (rosters hold index labels
-                   of db.player_impact_pool(season) - its RangeIndex) plus
-                   "pool": the pool choice the draft was started with
-  tb_draft_season  {"key": league key, "result": sim.simulate_league_once}
-  tb_proj          {roster/league key: projection dict} - projections are
-                   seeded from the roster, so they are cached per roster
+  tb_pick          Draft state from draft.new_pick_draft: "budget" (hidden),
+                   "picks" (player_id, season) pairs filling the spots in
+                   order, "offer" the three pairs on offer now, plus "spent"
+                   credits and "pool", the pool choice it was started with
+  tb_proj          {roster key: projection dict} - projections are seeded
+                   from the roster, so they are cached per roster
 Changing the mode or the pool, or "Start over", clears every one of the game
-keys (tb_build_*, tb_draft*, tb_proj) and the search.
+keys (tb_build_*, tb_slot, tb_pick, tb_proj) and the search.
 """
 
 import html
@@ -263,10 +264,8 @@ def render_mystery() -> None:
 
 ALL_TIME = "All-time"
 MODES = ["Build", "Draft"]
-DRAFT_TEAMS = 6
 POOL_ROWS = 200  # the pool grid shows the best 200 matches by impact
-_GAME_KEYS = ("tb_build_slots", "tb_slot", "tb_build_season", "tb_draft",
-              "tb_draft_season", "tb_proj")
+_GAME_KEYS = ("tb_build_slots", "tb_slot", "tb_build_season", "tb_pick", "tb_proj")
 
 
 def _tb_bump() -> None:
@@ -311,11 +310,6 @@ def _rating(net: float) -> float:
 
 def _record(wins: int) -> str:
     return f"{int(wins)}-{sim.SEASON_GAMES - int(wins)}"
-
-
-def _ordinal(n: int) -> str:
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10 if n > 20 else n, "th")
-    return f"{n}{suffix}"
 
 
 def _row_keys(rows: pd.DataFrame) -> list[str]:
@@ -445,7 +439,7 @@ def _slot_label(i: int) -> str:
     return f"Bench {i - sim.STARTERS + 1}"
 
 
-def _slot_html(label: str, r, target: bool = False) -> str:
+def _slot_html(label: str, r, target: bool = False, show_cost: bool = True) -> str:
     if r is None:
         text, color = (("Next pick goes here", T.ACCENT) if target
                        else ("Empty", T.MUTED))
@@ -455,6 +449,9 @@ def _slot_html(label: str, r, target: bool = False) -> str:
         return T.card_html(label, body, style=style)
     team = _last_team(r.team)
     tc = T.team_color(team)
+    # Draft mode keeps prices hidden, like its budget.
+    cost = (f'<span>Cost <b style="color:{T.INK}">{int(r.cost)}</b></span>'
+            if show_cost else '')
     body = (
         f'<div style="min-height:76px">'
         f'<div style="display:flex;gap:.7rem;align-items:center">'
@@ -467,22 +464,26 @@ def _slot_html(label: str, r, target: bool = False) -> str:
         f'<div style="display:flex;justify-content:space-between;margin-top:.5rem;'
         f'font-size:.8rem;color:{T.INK_2}">'
         f'<span>Impact <b style="color:{T.INK}">{r.impact:+.2f}</b></span>'
-        f'<span>Cost <b style="color:{T.INK}">{int(r.cost)}</b></span></div></div>'
+        f'{cost}</div></div>'
     )
     return T.card_html(label, body)
 
 
-def _roster_grid(pool: pd.DataFrame, labels: list, target: int | None) -> None:
-    """The eight Build spots, five starters over three bench, each with one
-    button: Remove when filled, or pick that spot for the next player."""
+def _roster_grid(pool: pd.DataFrame, labels: list, target: int | None,
+                 editable: bool = True) -> None:
+    """The eight spots, five starters over three bench. Editable (Build
+    mode): each spot has one button, Remove when filled, or pick that spot
+    for the next player."""
     for start, count in ((0, sim.STARTERS), (sim.STARTERS, sim.ROSTER_SIZE - sim.STARTERS)):
         cols = st.columns(sim.STARTERS)
         for i in range(start, start + count):
             label = labels[i]
             r = pool.loc[label] if label is not None else None
             with cols[i - start]:
-                st.markdown(_slot_html(_slot_label(i), r, target=i == target),
-                            unsafe_allow_html=True)
+                st.markdown(_slot_html(_slot_label(i), r, target=i == target,
+                                       show_cost=editable), unsafe_allow_html=True)
+                if not editable:
+                    continue
                 if r is not None:
                     st.button("Remove", key=f"tb_rm_{i}", width="stretch",
                               on_click=_tb_remove, args=(i,))
@@ -543,8 +544,11 @@ def _tb_target(index: int) -> None:
     st.session_state["tb_slot"] = index
 
 
-def _tb_best_five(order: list[tuple[int, str]]) -> None:
-    st.session_state["tb_build_slots"] = list(order)
+def _tb_best_five(order: list[tuple[int, str]], mode: str) -> None:
+    if mode == "draft":
+        st.session_state["tb_pick"]["picks"] = list(order)
+    else:
+        st.session_state["tb_build_slots"] = list(order)
 
 
 def _tb_sim_build(key, net: float, opp_nets: list[float], names: list[str]) -> None:
@@ -589,9 +593,10 @@ def _season_card(season: dict) -> str:
     return T.card_html("One simulated season", body)
 
 
-def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) -> None:
-    """Projection for a full Build roster; `rows` are in spot order, so the
-    first five are the starters the user placed."""
+def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta,
+                   mode: str = "build") -> None:
+    """Projection for a full roster against real teams (both modes); `rows`
+    are in spot order, so the first five are the starters."""
     keys = _row_keys(rows)
     starters, bench = keys[:sim.STARTERS], keys[sim.STARTERS:]
     # The linear calibration would rate a roster of eight star seasons far
@@ -600,7 +605,7 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
     net = sim.soft_cap(_team_net(rows, meta, ordered=True))
     opp_nets, opp_names, source = _opponents(season)
     # Order within the starters (or the bench) doesn't change the minutes.
-    cache_key = ("build", choice, tuple(sorted(starters)), tuple(sorted(bench)))
+    cache_key = (mode, choice, tuple(sorted(starters)), tuple(sorted(bench)))
 
     def project() -> dict:
         res = sim.simulate_vs_league(net, opp_nets,
@@ -611,7 +616,7 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
     st.markdown("#### Projection")
     _results_row(net, proj["median"], proj["p10"], proj["p90"],
                  "Best-record odds", proj["best_record_odds"])
-    _best_five_hint(rows, net, meta)
+    _best_five_hint(rows, net, meta, mode)
     if source == "season":
         against = (f"82 games against {season}'s {len(opp_nets)} real teams, "
                    f"each at its real net rating.")
@@ -631,7 +636,7 @@ def _build_results(rows: pd.DataFrame, season: str | None, choice: str, meta) ->
         st.markdown(_season_card(played), unsafe_allow_html=True)
 
 
-def _best_five_hint(rows: pd.DataFrame, net: float, meta) -> None:
+def _best_five_hint(rows: pd.DataFrame, net: float, meta, mode: str) -> None:
     """One-click fix when starting the five best impacts would rate higher."""
     best = draft.auto_rotation(rows)
     best_net = sim.soft_cap(_team_net(best, meta, ordered=True))
@@ -641,7 +646,8 @@ def _best_five_hint(rows: pd.DataFrame, net: float, meta) -> None:
     c1, c2 = st.columns([1, 4], vertical_alignment="center")
     c1.button("Start the best five", key="tb_best_five", width="stretch",
               on_click=_tb_best_five,
-              args=([(int(p), str(s)) for p, s in zip(best["player_id"], best["season"])],))
+              args=([(int(p), str(s)) for p, s in zip(best["player_id"], best["season"])],
+                    mode))
     c2.caption(f"Some of your best players are on the bench. Starting the five "
                f"highest impacts would raise the team rating by {gain:.1f}.")
 
@@ -696,249 +702,100 @@ def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
 
 # Draft mode
 
-def _team_names(state: dict) -> list[str]:
-    """'Your team' for the user, 'CPU 1'..'CPU 5' for the rest in pick order."""
-    names, cpu = [], 0
-    for t in range(len(state["rosters"])):
-        if t == state["user_team"]:
-            names.append("Your team")
-        else:
-            cpu += 1
-            names.append(f"CPU {cpu}")
-    return names
-
-
-def _tb_start_draft(season: str | None, choice: str) -> None:
-    if st.session_state.get("tb_draft") is not None:
-        return  # a draft is already running; "Start over" clears it first
-    pool = db.player_impact_pool(season)
-    state = draft.new_draft(DRAFT_TEAMS, sim.ROSTER_SIZE, random.randrange(DRAFT_TEAMS))
-    state["pool"] = choice
-    draft.run_cpu_until_user(state, pool, np.random.default_rng(),
-                             usage_league_total=_meta()[2])
-    st.session_state["tb_draft"] = state
-    st.session_state.pop("tb_draft_season", None)
-    _tb_bump()
-
-
-def _tb_draft_pick(season: str | None, label) -> None:
-    state = st.session_state.get("tb_draft")
-    if (state is None or label in state["taken"]
-            or state["pick_no"] >= len(state["order"])):
-        return
-    pool = db.player_impact_pool(season)
-    draft.apply_pick(state, label)
-    draft.run_cpu_until_user(state, pool, np.random.default_rng(),
-                             usage_league_total=_meta()[2])
-    _tb_bump()
-
-
-def _board_html(state: dict, pool: pd.DataFrame, names: list[str]) -> str:
-    """The draft board: one column per team, one row per round."""
-    n = len(names)
-    rounds = len(state["order"]) // n
-    pick_at = {(k // n, t): k for k, t in enumerate(state["order"])}
-    user = state["user_team"]
-    cell = (f"border-radius:{T.RADIUS};padding:.35rem .5rem;min-height:3.05rem;"
-            f"min-width:0;")
-    parts = ['<div></div>']
-    for t, name in enumerate(names):
-        color = T.ACCENT if t == user else T.INK_2
-        parts.append(
-            f'<div style="padding:0 .2rem .3rem;border-bottom:2px solid '
-            f'{T.ACCENT if t == user else T.BORDER}">'
-            f'<div style="font-weight:800;font-size:.85rem;color:{color}">{name}</div>'
-            f'<div style="font-size:.68rem;color:{T.MUTED}">picks {_ordinal(t + 1)}</div>'
-            f'</div>')
-    for r in range(rounds):
-        parts.append(f'<div style="align-self:center;font-size:.7rem;font-weight:700;'
-                     f'color:{T.MUTED}">R{r + 1}</div>')
-        for t in range(n):
-            k = pick_at[(r, t)]
-            mine = "background:rgba(57,135,229,.08);" if t == user else ""
-            if r < len(state["rosters"][t]):
-                p = pool.loc[state["rosters"][t][r]]
-                tc = T.team_color(_last_team(p.team))
-                parts.append(
-                    f'<div style="{cell}{mine}border:1px solid {T.BORDER};'
-                    f'border-left:3px solid {tc}">'
-                    f'<div style="font-weight:700;font-size:.8rem;color:{T.INK};'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
-                    f'{html.escape(p.player)}</div>'
-                    f'<div style="font-size:.7rem;color:{T.MUTED}">{p.season} &middot; '
-                    f'{p.impact:+.2f}</div></div>')
-            elif k == state["pick_no"]:
-                parts.append(
-                    f'<div style="{cell}border:1px dashed {T.ACCENT};display:flex;'
-                    f'align-items:center;font-size:.75rem;font-weight:700;'
-                    f'color:{T.ACCENT}">On the clock</div>')
-            else:
-                parts.append(
-                    f'<div style="{cell}{mine}border:1px dashed {T.BORDER};display:flex;'
-                    f'align-items:center;font-size:.7rem;color:{T.MUTED}">#{k + 1}</div>')
-    grid = "".join(parts)
-    return (f'<div style="overflow-x:auto"><div style="display:grid;'
-            f'grid-template-columns:2rem repeat({n}, minmax(0, 1fr));gap:6px;'
-            f'min-width:760px">{grid}</div></div>')
-
-
-def _highlight_user(df: pd.DataFrame):
-    return df.style.apply(
-        lambda row: [("background-color: rgba(57,135,229,.16)"
-                      if row["Team"] == "Your team" else "")] * len(row), axis=1)
-
-
-def _tb_sim_draft(key, nets: list[float]) -> None:
-    st.session_state["tb_draft_season"] = {
-        "key": key, "result": sim.simulate_league_once(nets, np.random.default_rng()),
-    }
-
-
-def _draft_results(state: dict, pool: pd.DataFrame, names: list[str], choice: str,
-                   meta) -> None:
-    n = len(names)
-    user = state["user_team"]
-    rosters = [pool.loc[state["rosters"][t]] for t in range(n)]
-    # Every drafted team is stacked, so absolute ratings would run far past
-    # any real team. Rate each one against its own league instead: the
-    # league averages 0, which is all the round robin needs.
-    raw = np.array([_team_net(r, meta) for r in rosters])
-    nets = [float(x) for x in raw - raw.mean()]
-    keys = [f"{t}|{k}" for t, r in enumerate(rosters) for k in _row_keys(r)]
-    cache_key = ("draft", choice, tuple(keys))
-
-    def project() -> dict:
-        res = sim.simulate_league(nets, np.random.default_rng(sim.roster_seed(keys)))
-        wins = res["wins"]
-        return {
-            "median": [int(round(float(x))) for x in res["median_wins"]],
-            "p10": [int(round(float(x))) for x in np.percentile(wins, 10, axis=0)],
-            "p90": [int(round(float(x))) for x in np.percentile(wins, 90, axis=0)],
-            "title": [float(x) for x in res["title_odds"]],
-            "playoff": [float(x) for x in res["playoff_odds"]],
-        }
-
-    proj = _cached(cache_key, project)
-    st.markdown("#### Projection")
-    _results_row(nets[user], proj["median"][user], proj["p10"][user],
-                 proj["p90"][user], "Title odds", proj["title"][user],
-                 rating_sub="points per 100 vs this draft league")
-
-    table = pd.DataFrame({
-        "Team": names,
-        "Rating": [_rating(x) for x in nets],
-        "Projected record": [_record(w) for w in proj["median"]],
-        "Wins": proj["median"],
-        "Playoff odds": [round(p * 100) for p in proj["playoff"]],
-        "Title odds": [round(p * 100) for p in proj["title"]],
-    }).sort_values(["Wins", "Rating"], ascending=False)
-    cc = st.column_config
-    st.dataframe(
-        _highlight_user(table), hide_index=True, width="stretch", row_height=38,
-        column_config={
-            "Rating": cc.NumberColumn(format="%+.1f", **glossary.described("Team rating")),
-            "Projected record": cc.TextColumn(**glossary.described("Projected record")),
-            "Wins": cc.NumberColumn(format="%d", help="Median wins."),
-            "Playoff odds": cc.NumberColumn(format="%d%%", help="Share of 1,000 "
-                                            "seasons finishing in the top four."),
-            "Title odds": cc.NumberColumn(format="%d%%", **glossary.described("Title odds")),
-        },
+def _option_html(r) -> str:
+    team = _last_team(r.team)
+    tc = T.team_color(team)
+    body = (
+        f'<div style="display:flex;gap:.8rem;align-items:center">'
+        f'{media.avatar_html(int(r.player_id), r.player, size=64, ring=tc)}'
+        f'<div style="min-width:0">'
+        f'<div class="bip-name" style="font-size:1.05rem;white-space:nowrap;'
+        f'overflow:hidden;text-overflow:ellipsis">{html.escape(r.player)}</div>'
+        f'<div class="bip-kpi-sub">{r.season} &middot; '
+        f'<span style="color:{tc};font-weight:700">{html.escape(team)}</span></div>'
+        f'</div></div>'
+        f'<div style="display:flex;justify-content:space-between;margin-top:.7rem;'
+        f'font-size:.85rem;color:{T.INK_2}">'
+        f'<span>{r.ppg:.1f} pts &middot; {r.rpg:.1f} reb &middot; {r.apg:.1f} ast</span>'
+        f'<span>Impact <b style="color:{T.INK}">{r.impact:+.2f}</b></span></div>'
     )
-    st.caption("A six-team league: an 82-game round robin, then the top four play "
-               "best-of-seven series. Your team is highlighted.")
-
-    st.button("Simulate a season", key="tb_draft_sim", type="primary",
-              on_click=_tb_sim_draft, args=(cache_key, nets))
-    played = st.session_state.get("tb_draft_season")
-    if played and played["key"] == cache_key:
-        _league_season(played["result"], names)
+    return T.card_html("Option", body, style=f"border-top:3px solid {tc}")
 
 
-def _league_season(res: dict, names: list[str]) -> None:
-    seeds = res["seeds"]
-    seed_of = {t: i + 1 for i, t in enumerate(seeds)}
-    rest = sorted((t for t in range(len(names)) if t not in seed_of),
-                  key=lambda t: -res["wins"][t])
-    order = list(seeds) + rest
-    standings = pd.DataFrame({
-        "Seed": [str(seed_of[t]) if t in seed_of else "-" for t in order],
-        "Team": [names[t] for t in order],
-        "W": [res["wins"][t] for t in order],
-        "L": [res["games"][t] - res["wins"][t] for t in order],
-    })
-    rows = []
-    for s in res["bracket"]:
-        label = "Round 1" if s["round"] == "semifinal" else "Final"
-        hi, lo = s["high"], s["low"]
+def _new_offer(state: dict, pool: pd.DataFrame) -> None:
+    """Three players for the next spot, shown in random order."""
+    spot = len(state["picks"])
+    if spot >= sim.ROSTER_SIZE:
+        state["offer"] = []
+        return
+    rng = np.random.default_rng()
+    labels = draft.offer_options(pool, state["picks"], state["budget"] - state["spent"],
+                                 spot, rng)
+    labels = [labels[i] for i in rng.permutation(len(labels))]
+    state["offer"] = [(int(pool.at[lb, "player_id"]), str(pool.at[lb, "season"]))
+                      for lb in labels]
 
-        def nm(t):
-            text = f"{names[t]} ({seed_of[t]})"
-            return f"<b>{text}</b>" if t == s["winner"] else text
 
-        rows.append(f'<div class="bip-row"><span class="bip-name" style="font-weight:500">'
-                    f'{label}: {nm(hi)} {s["high_wins"]}-{s["low_wins"]} {nm(lo)}'
-                    f'</span></div>')
-    champ = names[res["champion"]]
-    left, right = st.columns([2, 3])
-    with left:
-        st.markdown("#### One simulated season")
-        st.dataframe(_highlight_user(standings), hide_index=True, width="stretch",
-                     row_height=38)
-        st.caption("All-star leagues are close by design, so a single season is "
-                   "often decided by luck - the projection shows the long-run odds.")
-    with right:
-        st.markdown("#### Playoffs")
-        st.markdown(T.card_html("Bracket", "".join(rows)) +
-                    T.chip(f"Champion: {champ}"), unsafe_allow_html=True)
+def _start_pick_draft(pool: pd.DataFrame, choice: str) -> dict:
+    state = draft.new_pick_draft(np.random.default_rng())
+    state.update(pool=choice, spent=0)
+    _new_offer(state, pool)
+    st.session_state["tb_pick"] = state
+    return state
+
+
+def _tb_pick(season: str | None, key: tuple[int, str]) -> None:
+    state = st.session_state.get("tb_pick")
+    if state is None or key not in state["offer"]:
+        return  # a stale click: a double click, or the offer already moved on
+    pool = db.player_impact_pool(season)
+    label = _slot_labels(pool, [key])[0]
+    if label is None:
+        return
+    state["picks"].append(key)
+    state["spent"] += int(pool.at[label, "cost"])
+    _new_offer(state, pool)
 
 
 def _render_draft(pool: pd.DataFrame, season: str | None, choice: str, meta) -> None:
-    state = st.session_state.get("tb_draft")
-    if state is not None and state.get("pool") != choice:
-        st.session_state.pop("tb_draft", None)
-        state = None
-    n_picks = DRAFT_TEAMS * sim.ROSTER_SIZE
-    if state is None:
-        st.caption("A snake draft: you and five CPU teams take turns for eight rounds, "
-                   "and the order reverses every round. Your slot is drawn at random. "
-                   "The CPU takes the best impact left, steers away from too many "
-                   "ball-dominant players, and adds a little randomness so no two "
-                   "drafts match.")
-        if len(pool) < n_picks:
-            st.info(f"This pool has {len(pool)} players, too few for a "
-                    f"{n_picks}-pick draft - pick another pool.")
-            return
-        st.button("Start draft", key="tb_draft_start", type="primary",
-                  on_click=_tb_start_draft, args=(season, choice))
+    state = st.session_state.get("tb_pick")
+    if state is None or state.get("pool") != choice:
+        state = _start_pick_draft(pool, choice)
+    spot = len(state["picks"])
+    labels = _slot_labels(pool, state["picks"] + [None] * (sim.ROSTER_SIZE - spot))
+
+    if spot < sim.ROSTER_SIZE:
+        offer = _slot_labels(pool, state["offer"])
+        if all(lb is None for lb in offer):  # e.g. the data was refreshed mid-draft
+            _new_offer(state, pool)
+            offer = _slot_labels(pool, state["offer"])
+        st.caption("Eight rounds, one for each spot on your team: pick one of three "
+                   "players each round. A hidden budget decides who gets offered, so "
+                   "taking a star now means cheaper options later. Some drafts draw "
+                   "a bigger budget than others - that's the luck.")
+        st.markdown(f"{T.chip(f'Round {spot + 1} of {sim.ROSTER_SIZE}')} &nbsp;"
+                    f"Pick your **{_slot_label(spot)}**", unsafe_allow_html=True)
+        cols = st.columns(draft.OPTIONS)
+        for k, (col, key, label) in enumerate(zip(cols, state["offer"], offer)):
+            if label is None:
+                continue
+            with col:
+                st.markdown(_option_html(pool.loc[label]), unsafe_allow_html=True)
+                st.button("Pick him", key=f"tb_pick_{k}", type="primary",
+                          width="stretch", on_click=_tb_pick, args=(season, key))
+        st.markdown("#### Your team")
+        _roster_grid(pool, labels, spot, editable=False)
         return
 
-    names = _team_names(state)
-    user = state["user_team"]
-    done = state["pick_no"] >= len(state["order"])
-    if not done:
-        rnd = state["pick_no"] // DRAFT_TEAMS + 1
-        st.markdown(
-            f"{T.chip(f'Round {rnd} of {sim.ROSTER_SIZE}')} &nbsp;"
-            f"You're on the clock with pick **{state['pick_no'] + 1}** of {n_picks}. "
-            f"You pick {_ordinal(user + 1)} in odd rounds and "
-            f"{_ordinal(DRAFT_TEAMS - user)} in even ones.",
-            unsafe_allow_html=True)
-        label, bar = _pool_table(pool, exclude=state["taken"])
-        with bar:
-            c1, c2 = st.columns([1, 4], vertical_alignment="center")
-            if label is not None:
-                r = pool.loc[label]
-                note = f"Selected: **{r.player}**, {r.season} (impact {r.impact:+.2f})."
-            else:
-                note = "Select a row in the table, then draft him."
-            c1.button("Draft player", key="tb_draft_pick", type="primary",
-                      width="stretch", disabled=label is None,
-                      on_click=_tb_draft_pick, args=(season, label))
-            c2.caption(note)
-    else:
-        _draft_results(state, pool, names, choice, meta)
-    st.markdown("#### Draft board")
-    st.markdown(_board_html(state, pool, names), unsafe_allow_html=True)
+    _roster_grid(pool, labels, None, editable=False)
+    rows = pool.loc[[lb for lb in labels if lb is not None]]
+    st.caption(f"Your hidden budget was **{state['budget']} credits** (every draft "
+               f"draws {draft.DRAFT_BUDGET_MIN}-{draft.DRAFT_BUDGET_MAX}); this team "
+               f"cost {state['spent']}. Build mode prices every player and gives "
+               f"everyone {draft.BUDGET}.")
+    st.button("Draft again", key="tb_pick_again", on_click=_tb_reset)
+    if len(rows) == sim.ROSTER_SIZE:
+        _build_results(rows, season, choice, meta, mode="draft")
 
 
 def _explainer(meta_row: dict) -> None:
@@ -957,9 +814,8 @@ court. 0 is a typical rotation player; the best seasons ever reach about +5 to +
 before it's weighed, so a 1988 rebounder and a 2024 shooter are rated on the same
 scale. That's what makes an all-time team possible.
 
-**Minutes.** Starters play {sim.STARTER_MINUTES} minutes and the three bench
-players {sim.BENCH_MINUTES}. In Build mode your top row starts; in Draft mode the
-five best impacts on each team do (5 × {sim.STARTER_MINUTES} + 3 ×
+**Minutes.** Your top row starts and plays {sim.STARTER_MINUTES} minutes; the
+three bench players play {sim.BENCH_MINUTES} (5 × {sim.STARTER_MINUTES} + 3 ×
 {sim.BENCH_MINUTES} = 240, one game's worth of player-minutes). Impact weighted by
 those minutes becomes the team rating.{fit}
 
@@ -971,13 +827,18 @@ positive impact is lost. This rule is a rough heuristic, not fitted to data.
 points for the home team, plus random noise of ±{sim.GAME_SD} points (one standard
 deviation, as measured on real NBA games). Good teams lose plenty of single games.
 
-**A ceiling, and draft leagues.** Real teams top out around +13 (the 1995-96
-Bulls). In Build mode a rating up to +{sim.ABS_NET_KNEE:.0f} is shown exactly as
-computed; past that, a stacked roster's rating bends smoothly toward a
-+{sim.ABS_NET_CAP:.0f} ceiling instead of running off the chart. In Draft mode every
-team is stacked, so each is rated against its own six-team league (the league
-averages 0). Projections can shift slightly when the weekly data refresh updates
-the current season.
+**A ceiling.** Real teams top out around +13 (the 1995-96 Bulls). A rating up to
++{sim.ABS_NET_KNEE:.0f} is shown exactly as computed; past that, a stacked roster's
+rating bends smoothly toward a +{sim.ABS_NET_CAP:.0f} ceiling instead of running off
+the chart. Projections can shift slightly when the weekly data refresh updates the
+current season.
+
+**Draft mode's hidden budget.** Every player-season has a price, 1 to 12 credits
+by impact (Build mode shows it). A draft secretly gets
+{draft.DRAFT_BUDGET_MIN}-{draft.DRAFT_BUDGET_MAX} credits, and each round offers one
+pricier, one fair and one cheaper player for that spot, so whatever you pick, the
+team ends up about as strong as the budget allows. A bigger budget is the lucky
+draft.
 
 **Same team, same projection.** The projection plays 1,000 seasons from a seed tied
 to your roster, so the same eight players always get the same numbers. "Simulate a

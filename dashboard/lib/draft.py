@@ -1,15 +1,18 @@
-"""Rules and CPU drafting for the Arcade team builder.
+"""Rules for the Arcade team builder.
 
 Build mode: pick eight player-seasons under a 36-credit budget
-(validate_build). Draft mode: a snake draft against CPU teams
-(snake_order, cpu_pick, run_cpu_until_user). Pure pandas and numpy, no
+(validate_build). Draft mode: eight rounds, one per roster spot, each
+offering three players to choose from (new_pick_draft, offer_options). A
+hidden budget, drawn from 34-40 credits, steers which players are offered,
+so every draft ends up a fair team without the player doing any budget
+math; a bigger draw is the lucky draft. Pure pandas and numpy, no
 Streamlit; every random choice comes from the numpy Generator the caller
 passes in, so a seeded draft is reproducible.
 
 The pool is the player_impact table (db.player_impact_pool): one row per
-player-season with impact, usage and a 1..12 credit cost. Rows are
-identified by their index label in whatever pool DataFrame the caller holds;
-draft state stores those labels, never positions.
+player-season with impact, usage and a 1..12 credit cost. Picks are kept
+as (player_id, season) pairs, which survive a data refresh; offer_options
+returns index labels of the pool DataFrame it is given.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .sim import ROSTER_SIZE, USAGE_PENALTY, rotation_weights
+from .sim import ROSTER_SIZE, rotation_weights
 
 # Tuned with ml.player_impact.COST_QUANTILES; see the targets there.
 BUDGET = 36
@@ -41,118 +44,70 @@ def validate_build(picks: pd.DataFrame) -> list[str]:
     return problems
 
 
-def snake_order(n_teams: int, rounds: int, user_slot: int) -> list[int]:
-    """Team index for each pick of a snake draft.
-
-    Round 1 runs 0..n-1, round 2 runs back n-1..0, and so on. Team indexes
-    are draft positions and the user is team `user_slot`; it is validated
-    here but does not change the order.
-    """
-    if not 0 <= user_slot < n_teams:
-        raise ValueError(f"user_slot {user_slot} is not a team in 0..{n_teams - 1}")
-    order: list[int] = []
-    for r in range(rounds):
-        teams = list(range(n_teams))
-        order.extend(teams if r % 2 == 0 else reversed(teams))
-    return order
+# Draft mode. The hidden budget is drawn from this range (inclusive).
+DRAFT_BUDGET_MIN = 34
+DRAFT_BUDGET_MAX = 40
+OPTIONS = 3
+OPTION_SPREAD = 3  # credits between the pricier, middle and cheaper option
+LUCKY_CHANCE = 0.15  # chance a round's top option is a bigger star than usual
+LUCKY_BONUS = 3  # extra credits on that lucky top option
+MAX_COST = 12
 
 
-def cpu_pick(
-    available: pd.DataFrame,
-    roster: pd.DataFrame,
-    rng,
-    usage_league_total: float = 5.0,
-    noise_sd: float = 0.3,
-):
-    """The index label (from `available`) the CPU drafts next.
+def new_pick_draft(rng) -> dict:
+    """A fresh Draft-mode state: {"budget": hidden credits, "picks": [],
+    "offer": []}. picks and offer hold (player_id, season) pairs; the picks
+    fill the spots in order, starters 1-5 then bench 1-3."""
+    budget = int(rng.integers(DRAFT_BUDGET_MIN, DRAFT_BUDGET_MAX + 1))
+    return {"budget": budget, "picks": [], "offer": []}
 
-    Score = impact - USAGE_PENALTY * excess + Normal(0, noise_sd), argmax.
 
-    The usage term mirrors the simulator's one-ball rule using the same
-    minutes weights (sim.rotation_weights, summing to 5). The candidate
-    takes the next rotation slot, index len(roster); `roster` rows count in
-    the order given, one per slot. Projected usage is the minutes-weighted
-    sum of the roster's usage plus w_next * candidate usage. A roster of
-    league-average players (usage 1.0 each) projects to the sum of the
-    weights used, so the allowance is usage_league_total * (sum of those
-    weights) / 5. excess = max(0, projected - allowance).
-
-    A CPU team never takes a second season of a player it already has (the
-    user may; only the CPU is held to this), unless nobody else is left.
-
-    Never returns an index that is not in `available`.
-    """
-    if len(available) == 0:
-        raise ValueError("no players left to pick from")
-    slot = len(roster)
-    if slot >= ROSTER_SIZE:
-        raise ValueError("this roster is already full")
-    if slot and "player_id" in available and "player_id" in roster:
-        fresh = available[~available["player_id"].isin(roster["player_id"])]
-        if len(fresh):
-            available = fresh
-
+def spot_target(budget_left: float, spot: int) -> float:
+    """The fair cost for `spot`: what is left, shared out over the remaining
+    spots by their minutes, so a starter spot gets about 1.8x a bench one."""
     w = rotation_weights()
-    held = (w[:slot] * roster["usage"].to_numpy(dtype=float)).sum() if slot else 0.0
-    projected = held + w[slot] * available["usage"].to_numpy(dtype=float)
-    allowance = usage_league_total * w[: slot + 1].sum() / 5.0
-    excess = np.maximum(0.0, projected - allowance)
-
-    noise = np.asarray(rng.normal(0.0, noise_sd, size=len(available)), dtype=float)
-    score = available["impact"].to_numpy(dtype=float) - USAGE_PENALTY * excess + noise
-    return available.index[int(np.argmax(score))]
+    return float(budget_left * w[spot] / w[spot:].sum())
 
 
-def new_draft(n_teams: int, rounds: int, user_team: int) -> dict:
-    """A fresh draft state.
+def offer_options(pool: pd.DataFrame, picks, budget_left: int, spot: int,
+                  rng) -> list:
+    """Index labels of up to OPTIONS players to choose from for `spot`.
 
-    {"order": team index per pick, "pick_no": next pick (0-based),
-     "rosters": {team_idx: [pool index label, ...]}, "taken": set of labels,
-     "user_team": the human's team index}
+    Their costs sit around spot_target: one pricier, one about fair, one
+    cheaper (OPTION_SPREAD apart), and now and then (LUCKY_CHANCE) the
+    pricier one is LUCKY_BONUS credits richer still. On the last spot the
+    target is everything left. No option ever costs more than the budget
+    can carry while leaving a credit for each spot still to fill, so the
+    draft never runs dry. Each option is drawn at random among the players
+    whose cost is nearest its target; the three are three different players,
+    and none is a player-season already picked. Another season of a picked
+    player can still be offered.
     """
-    return {
-        "order": snake_order(n_teams, rounds, user_team),
-        "pick_no": 0,
-        "rosters": {t: [] for t in range(n_teams)},
-        "taken": set(),
-        "user_team": user_team,
-    }
+    rounds_left = ROSTER_SIZE - spot
+    if rounds_left < 1:
+        raise ValueError("every spot is already filled")
+    ceiling = max(1, min(MAX_COST, budget_left - (rounds_left - 1)))
+    target = budget_left if rounds_left == 1 else spot_target(budget_left, spot)
+    top = target + OPTION_SPREAD
+    if rng.random() < LUCKY_CHANCE:
+        top += LUCKY_BONUS
+    targets = [top, target, target - OPTION_SPREAD]
+    targets = [min(max(1, round(t)), ceiling) for t in targets]
 
-
-def apply_pick(state: dict, pool_index) -> None:
-    """Record `pool_index` for whoever is on the clock and advance the draft."""
-    if state["pick_no"] >= len(state["order"]):
-        raise ValueError("the draft is over")
-    if pool_index in state["taken"]:
-        raise ValueError(f"pool index {pool_index!r} is already taken")
-    team = state["order"][state["pick_no"]]
-    state["rosters"][team].append(pool_index)
-    state["taken"].add(pool_index)
-    state["pick_no"] += 1
-
-
-def run_cpu_until_user(
-    state: dict,
-    pool: pd.DataFrame,
-    rng,
-    user_team: int | None = None,
-    usage_league_total: float = 5.0,
-) -> dict:
-    """Make CPU picks until it is the user's turn or the draft is done.
-
-    The user's team comes from `user_team` if given, else state["user_team"].
-    Mutates and returns `state`.
-    """
-    user = state["user_team"] if user_team is None else user_team
-    while state["pick_no"] < len(state["order"]):
-        team = state["order"][state["pick_no"]]
-        if team == user:
+    taken = {(int(p), str(s)) for p, s in picks}
+    keys = list(zip(pool["player_id"].astype(int), pool["season"].astype(str)))
+    avail = pool[[k not in taken for k in keys]]
+    labels: list = []
+    for t in targets:
+        cand = avail[~avail["player_id"].isin(avail.loc[labels, "player_id"])]
+        affordable = cand[cand["cost"] <= ceiling]
+        cand = affordable if len(affordable) else cand
+        if not len(cand):
             break
-        available = pool.loc[~pool.index.isin(state["taken"])]
-        roster = pool.loc[state["rosters"][team]]
-        pick = cpu_pick(available, roster, rng, usage_league_total=usage_league_total)
-        apply_pick(state, pick)
-    return state
+        gap = (cand["cost"] - t).abs()
+        near = cand[gap == gap.min()]
+        labels.append(near.index[int(rng.integers(len(near)))])
+    return labels
 
 
 def auto_rotation(roster_rows: pd.DataFrame) -> pd.DataFrame:

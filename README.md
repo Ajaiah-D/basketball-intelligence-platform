@@ -192,10 +192,11 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
   player-season averaged more, streak scoring), *Mystery Player* (identify a
   notable season from progressively revealed clues) and *Build a team*:
-  pick an 8-man rotation from one season or all-time under a credit budget,
-  or snake-draft against five CPU teams, then see a projected record (1,000
-  simulated seasons, stable for the same roster) and play out single seasons
-  game by game, with playoffs in Draft mode. Players are rated by
+  pick an 8-man rotation from one season or all-time under a credit budget
+  and choose who starts, or draft one spot at a time by picking one of three
+  offered players (a hidden 34-40 credit budget decides who is offered), then
+  see a projected record (1,000 simulated seasons, stable for the same
+  roster) and play out single seasons game by game. Players are rated by
   `ml/player_impact.py`, a ridge model fit on individual on-court plus-minus
   using box-score rates relative to each season's league average, so players
   from different eras compare fairly
