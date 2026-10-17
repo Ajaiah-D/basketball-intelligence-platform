@@ -4,6 +4,7 @@ season-scoped; the Arcade pulls from every ingested season."""
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 import duckdb
@@ -131,6 +132,63 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
 _TEAM_ROSTER_SQL = _PLAYER_SEASON_SQL.replace(
     "    where season = ?\n", "    where season = ? and team_abbreviation = ?\n")
 assert _TEAM_ROSTER_SQL != _PLAYER_SEASON_SQL
+
+
+# The same season line for players found by name across every season: each
+# matching player's most recent season with at least min_games games, plus a
+# season column. Name matching ignores case and accents ("jokic" finds
+# "Jokić"); contains() takes the text literally, so % or _ are not wildcards.
+# Which season to show is picked from mart_player_season (a small table, one
+# row per player-season; its games_played equals the game-log count), so the
+# name search never folds a million game rows.
+_LATEST_CTE = """
+    with latest as (
+        select player_id, max(season) as season
+        from main_marts.mart_player_season
+        where contains(strip_accents(lower(player_name)), ?)
+          and games_played >= ?
+        group by player_id
+        order by season desc
+        limit ?
+    )
+"""
+_LATEST_MATCH_SQL = _LATEST_CTE + _PLAYER_SEASON_SQL.replace(
+    "    select\n        player_id,\n",
+    "    select\n        player_id,\n        season,\n").replace(
+    "    from main_staging.stg_player_game_logs\n    where season = ?\n"
+    "    group by player_id\n    having count(*) >= ?\n",
+    "    from main_staging.stg_player_game_logs\n    join latest using (player_id, season)\n"
+    "    group by player_id, season\n")
+assert "join latest" in _LATEST_MATCH_SQL and "        season,\n" in _LATEST_MATCH_SQL
+
+# team_label for those same player-seasons ("CHI → BOS" when traded), in one
+# query rather than one player_team_paths() call per season found.
+_LATEST_PATHS_SQL = _LATEST_CTE + """
+    select player_id, season,
+           string_agg(team_abbreviation, ' → ' order by first_game) as team_label
+    from (
+        select player_id, season, team_abbreviation, min(game_date) as first_game
+        from main_staging.stg_player_game_logs
+        join latest using (player_id, season)
+        group by player_id, season, team_abbreviation
+    )
+    group by player_id, season
+"""
+
+
+def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.DataFrame:
+    """Players whose name contains `name` (case and accents ignored), each
+    at his most recent season with min_games+ games: the player_season_stats
+    columns plus season and team_label. At most `limit` players, newest
+    seasons first."""
+    needle = (unicodedata.normalize("NFKD", name).encode("ascii", "ignore")
+              .decode().lower().strip())
+    params = (needle or "\x00", int(min_games), int(limit))  # "" would match everyone
+    found = q(_LATEST_MATCH_SQL, params)
+    if found.empty:
+        return found.assign(team_label=pd.Series(dtype=str))
+    return found.merge(q(_LATEST_PATHS_SQL, params), on=["player_id", "season"],
+                       how="left")
 
 
 def team_roster(season: str, team: str, min_games: int = 1) -> pd.DataFrame:
