@@ -53,14 +53,30 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
     return out
 
 
+def _sync_season() -> None:
+    """The page's season box drives the sidebar's (key "season"), which every
+    season-scoped page reads."""
+    st.session_state["season"] = st.session_state["players_season"]
+
+
 def render() -> None:
     season = st.session_state.get("season") or db.latest_season()
 
     head = st.container()  # title renders here once the scope toggle is known
-    f0, f1, f2, f3 = st.columns([2, 2, 2, 3])
+    f0, fs, f1, f2, f3 = st.columns([2, 2, 2, 2, 3])
     scope = f0.segmented_control("Scope", ["Season", "Career"], default="Season",
                                  label_visibility="collapsed") or "Season"
     career = scope == "Career"
+
+    if career:
+        fs.selectbox("Season", ["All seasons"], disabled=True,
+                     label_visibility="collapsed", key="players_season_all")
+    else:
+        # Follow the sidebar, so the two boxes always show the same season.
+        st.session_state["players_season"] = season
+        fs.selectbox("Season", db.seasons(), key="players_season",
+                     label_visibility="collapsed", on_change=_sync_season,
+                     help="Same as the sidebar's season picker")
 
     if career:
         stats = db.player_career_stats()
