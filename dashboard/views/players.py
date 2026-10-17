@@ -4,8 +4,15 @@ Scope toggle: one season, or Career (every ingested season pooled - the
 percentages are recomputed from summed makes/attempts, not averaged).
 Every percentage is shown next to its attempt volume so low-volume
 outliers (a center shooting 100% on three 3PA) are visible at a glance.
+
+Search in Season scope looks in the selected season first; a player who
+didn't play that season is still found, at his most recent season, marked
+by a Season column (db.player_latest_seasons).
 """
 
+import unicodedata
+
+import pandas as pd
 import streamlit as st
 
 from dashboard.lib import db, glossary, media
@@ -51,6 +58,12 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
         if rank is not None:
             out.append((label, rank, value))
     return out
+
+
+def _fold(text) -> str:
+    """Lower-case, accents dropped, so "jokic" finds "Jokić"."""
+    return (unicodedata.normalize("NFKD", str(text))
+            .encode("ascii", "ignore").decode().lower())
 
 
 def _sync_season() -> None:
@@ -107,12 +120,30 @@ def render() -> None:
         # A traded player is listed under every team he played for.
         view = view[view.team_label.str.contains(team, regex=False)]
     if search:
-        view = view[view.player.str.contains(search, case=False, na=False)]
+        view = view[view.player.map(_fold).str.contains(_fold(search).strip(),
+                                                        regex=False)]
     view = view.sort_values("ppg", ascending=False)
+
+    # Season scope: a searched player who didn't play this season shows at
+    # his most recent season instead, after this season's matches.
+    others = pd.DataFrame()
+    if search.strip() and not career:
+        others = db.player_latest_seasons(search, min_gp)
+        others = others[~others.player_id.isin(view.player_id)]
+        if team != "All teams":
+            others = others[others.team_label.str.contains(team, regex=False)]
+        others = others.sort_values("ppg", ascending=False)
+    if not career:
+        view = view.assign(season=season, pick=view.player)
+    if len(others):
+        others = others.assign(pick=others.player + " (" + others.season + ")")
+        view = pd.concat([view, others], ignore_index=True)
 
     table_cols = TABLE_COLS.copy()
     if career:
         table_cols[2:2] = ["seasons", "span"]
+    elif len(others):
+        table_cols[1:1] = ["season"]
 
     # Scale the PTS bar to the best scorer actually in view, so the column
     # still reads as a comparison after a search or a min-games filter
@@ -130,6 +161,10 @@ def render() -> None:
                 "Team", width="small",
                 help="Two teams (CHI → BOS) means traded mid-season; the line covers both"),
             "seasons": st.column_config.NumberColumn("Yrs"),
+            "season": st.column_config.TextColumn(
+                "Season", width="small",
+                help="Players who didn't play the selected season show their most "
+                     "recent one"),
             "span": st.column_config.TextColumn("Span", width="medium"),
             "gp": st.column_config.NumberColumn(**glossary.described("GP")),
             "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
@@ -156,23 +191,36 @@ def render() -> None:
                    "the sidebar season selector does not apply here. Percentages "
                    "are computed from career totals, shown next to attempt volume.")
     else:
+        if len(others):
+            n = len(others)
+            st.caption(f"{n} player{'s' if n > 1 else ''} matching \"{search.strip()}\" "
+                       f"didn't play {season}: shown at their most recent season "
+                       f"(the Season column), after {season}'s players.")
         st.caption("Click a column header to sort. Per-game averages; percentages are "
                    "season totals, shown next to their attempt volume (FGA / 3PA / FTA).")
 
     st.markdown("#### Player detail")
-    options = view if len(view) else stats
-    pick = st.selectbox(
-        "Player", options.sort_values("ppg", ascending=False)["player"],
-        label_visibility="collapsed",
-    )
+    if career:
+        options = (view if len(view) else stats).sort_values("ppg", ascending=False)
+        options = options.assign(pick=options.player)
+    else:
+        options = view if len(view) else (
+            stats.assign(season=season, pick=stats.player)
+            .sort_values("ppg", ascending=False))
+    pick = st.selectbox("Player", options["pick"], label_visibility="collapsed",
+                        key="players_pick")
     if not pick:
         return
-    row = stats[stats.player == pick].iloc[0]
+    row = options[options["pick"] == pick].iloc[0]
+    # The season this row is from: the selected one, or a searched player's
+    # most recent one.
+    row_season = season if career else row.season
 
     tc = T.team_color(row.team)
     chip_text = (f"{row.team} &middot; {row.seasons} seasons &middot; {row.gp} GP"
                  if career else
-                 f"{row.team_label} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG")
+                 f"{row.team_label} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG"
+                 + (f" &middot; {row_season}" if row_season != season else ""))
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:14px;margin:.4rem 0 .8rem 0">'
         f'{media.avatar_html(int(row.player_id), row.player, size=84, ring=tc)}'
@@ -233,7 +281,7 @@ def render() -> None:
                     unsafe_allow_html=True)
         return
 
-    games = db.player_game_log(int(row.player_id), season)
+    games = db.player_game_log(int(row.player_id), row_season)
     c1, c2 = st.columns([3, 2])
     with c1:
         st.markdown("**Scoring trend**")
@@ -242,12 +290,12 @@ def render() -> None:
     with c2:
         st.markdown("**Shooting vs league** (labels show attempts/game)")
         st.plotly_chart(
-            viz.shooting_profile(row, db.league_shooting_averages(season), row.player),
+            viz.shooting_profile(row, db.league_shooting_averages(row_season), row.player),
             config=viz.PLOTLY_CONFIG, width="stretch")
         st.caption("League bars are volume-weighted (total makes / total attempts "
                    "across every player), the same basis the NBA uses.")
 
-    ranks = shooting_percentiles(season, row)
+    ranks = shooting_percentiles(row_season, row)
     if ranks:
         st.markdown("**Where that ranks** - percentile among players with 100+ "
                     "attempts, which is the context a league average alone leaves out")

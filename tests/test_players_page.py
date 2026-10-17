@@ -60,3 +60,77 @@ def test_career_scope_shows_all_seasons_and_no_season_choice(con):
     assert not at.exception, at.exception
     box = at.selectbox(key="players_season_all")
     assert box.disabled and box.value == "All seasons"
+
+
+# --- Search finds players outside the selected season -------------------------
+
+def _unique_name(con, where: str, params=()):
+    """(name, latest season) of a player whose name no other player shares
+    and who never changed its spelling, from mart_player_season rows matching
+    `where` with 25+ games (the page's default minimum)."""
+    row = con.execute(f"""
+        with names as (
+            select player_id, min(player_name) as player_name
+            from main_marts.mart_player_season
+            group by player_id
+            having count(distinct player_name) = 1
+        ),
+        unique_names as (
+            select player_name from names group by player_name having count(*) = 1
+        )
+        select n.player_name, max(m.season)
+        from main_marts.mart_player_season m
+        join names n using (player_id)
+        join unique_names u on u.player_name = n.player_name
+        where m.games_played >= 25 and {where}
+        group by n.player_name
+        order by max(m.season) desc
+        limit 1
+    """, list(params)).fetchone()
+    if row is None:
+        pytest.skip("no suitable player in this warehouse")
+    return row
+
+
+def test_search_finds_a_retired_player_at_his_latest_season(con):
+    newest, _ = _two_seasons()
+    name, last = _unique_name(con, "player_id not in (select player_id from "
+                                   "main_marts.mart_player_season where season = ?)",
+                              (newest,))
+    at = _app()
+    at.text_input[0].input(name).run()
+    assert not at.exception, at.exception
+    table = at.dataframe[0].value
+    assert "season" in table.columns
+    hit = table[table["player"] == name]
+    assert list(hit["season"]) == [last]
+    assert "didn't play" in " ".join(c.value for c in at.caption)
+
+    # The detail section follows that season.
+    at.selectbox(key="players_pick").select(f"{name} ({last})").run()
+    assert not at.exception, at.exception
+    assert last in " ".join(m.value for m in at.markdown)
+
+
+def test_search_keeps_the_selected_season_for_players_in_it(con):
+    newest, _ = _two_seasons()
+    name, _last = _unique_name(con, "season = ?", (newest,))
+    at = _app()
+    at.text_input[0].input(name).run()
+    assert not at.exception, at.exception
+    table = at.dataframe[0].value
+    assert list(table["player"]) == [name]
+    assert "season" not in table.columns  # nothing from another season to mark
+
+
+def test_latest_seasons_search_ignores_case_and_accents(con):
+    row = con.execute("""
+        select player_id, player_name from main_marts.mart_player_season
+        where player_name <> strip_accents(player_name) and games_played >= 25
+        limit 1""").fetchone()
+    if row is None:
+        pytest.skip("no accented names in this warehouse")
+    player_id, name = row
+    plain = con.execute("select upper(strip_accents(?))", [name]).fetchone()[0]
+    found = db.player_latest_seasons(plain, 25)  # "VALANCIUNAS" for "Valančiūnas"
+    assert player_id in set(found["player_id"])
