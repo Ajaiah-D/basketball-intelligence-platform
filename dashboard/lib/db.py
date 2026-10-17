@@ -426,15 +426,16 @@ def game_pbp(game_id: str) -> pd.DataFrame:
 def game_box_score(game_id: str) -> pd.DataFrame:
     return q(
         """
-        select team_abbreviation as team, player_name as player,
+        select team_abbreviation as team, team_id, player_name as player,
                minutes_played as min, points as pts, total_rebounds as reb,
-               assists as ast, steals as stl, blocks as blk,
+               assists as ast, steals as stl, blocks as blk, turnovers as tov,
                field_goals_made as fgm, field_goals_attempted as fga,
                three_pointers_made as tpm, three_pointers_attempted as tpa,
+               free_throws_made as ftm, free_throws_attempted as fta,
                plus_minus
         from main_staging.stg_player_game_logs
         where game_id = ?
-        order by points desc
+        order by minutes_played desc, points desc
         """,
         (game_id,),
     )
