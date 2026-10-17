@@ -1,11 +1,64 @@
 """Games - browse results, game detail with box score and game-flow chart."""
 
+import html
+
+import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary
+from dashboard.lib import db, glossary, media, tables
 from dashboard.lib import theme as T
 from dashboard.lib import viz
+from dashboard.lib.tables import Col
 from dashboard.views.overview import game_card
+
+
+def _made(made, att) -> str:
+    return f"{int(made)}-{int(att)}"
+
+
+def _foot_pct(made, att) -> str:
+    pct = f"{made / att:.1%}" if att else "-"
+    return f'{_made(made, att)}<div class="pct">{pct}</div>'
+
+
+def box_score_html(rows: pd.DataFrame, team: str, side: str, pts: int, won: bool) -> str:
+    """One team's box score card: logo, score, a row per player who played
+    (most minutes first), team totals, and who didn't play."""
+    played = rows[rows["min"].fillna(0) > 0].copy()
+    dnp = rows.loc[rows["min"].fillna(0) <= 0, "player"].tolist()
+    for col, m, a in (("fg", "fgm", "fga"), ("tp", "tpm", "tpa"), ("ft", "ftm", "fta")):
+        played[col] = [_made(x, y) for x, y in zip(played[m], played[a])]
+    top = played["pts"].max() if len(played) else None
+    cols = [
+        Col("player", "Player", left=True, css=lambda v: "name"),
+        Col("min", "MIN"),
+        Col("pts", "PTS", css=lambda v: "hi" if v == top else ""),
+        Col("reb", "REB"), Col("ast", "AST"), Col("stl", "STL"), Col("blk", "BLK"),
+        Col("tov", "TO"),
+        Col("fg", "FG", help="Field goals made-attempted."),
+        Col("tp", "3P", help="Three-pointers made-attempted."),
+        Col("ft", "FT", help="Free throws made-attempted."),
+        Col("plus_minus", "+/-", fmt=tables.signed, help=glossary.TERMS["+/-"],
+            css=tables.pos_neg),
+    ]
+    sums = played[["min", "pts", "reb", "ast", "stl", "blk", "tov", "fgm", "fga",
+                   "tpm", "tpa", "ftm", "fta"]].sum()
+    # No minutes total: each player's minutes are rounded, so they rarely add
+    # up to exactly 240 and a "241" would read as an error.
+    foot = {k: f"{int(sums[k])}" for k in ("pts", "reb", "ast", "stl", "blk", "tov")}
+    foot.update(player="Team", fg=_foot_pct(sums.fgm, sums.fga),
+                tp=_foot_pct(sums.tpm, sums.tpa), ft=_foot_pct(sums.ftm, sums.fta))
+    color = T.team_color(team)
+    team_id = rows["team_id"].iloc[0] if len(rows) else None
+    logo = (media.team_logo_html(int(team_id), team, size=34, color=color)
+            if team_id is not None else T.team_dot(team))
+    head = (f'<div class="bip-box-head">{logo}<span class="tm">{html.escape(team)}</span>'
+            f'<span class="side">{side}</span>'
+            f'<span class="sc{" winner" if won else ""}">{pts}</span></div>')
+    dnp_html = (f'<div class="bip-box-dnp">Did not play: {html.escape(", ".join(dnp))}</div>'
+                if dnp else "")
+    return (f'<div class="bip-card" style="border-top:3px solid {color}">{head}'
+            f'{tables.html_table(played, cols, foot=foot)}{dnp_html}</div>')
 
 
 def render() -> None:
@@ -63,19 +116,9 @@ def render() -> None:
                 "Pull more with `python ingestion/nba_ingest.py --pbp-games N`.")
 
     box = db.game_box_score(g.game_id)
-    box["fg"] = box.fgm.astype(str) + "-" + box.fga.astype(str)
-    box["tp"] = box.tpm.astype(str) + "-" + box.tpa.astype(str)
-    cfg = {
-        "player": st.column_config.TextColumn("Player", width="medium"),
-        "min": "MIN", "pts": "PTS", "reb": "REB", "ast": "AST",
-        "stl": "STL", "blk": "BLK", "fg": "FG", "tp": "3P",
-        "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%d"),
-    }
-    cols_show = ["player", "min", "pts", "reb", "ast", "stl", "blk", "fg", "tp", "plus_minus"]
-    b1, b2 = st.columns(2)
-    with b1:
-        st.markdown(f"**{g.away}** (away)")
-        st.dataframe(box[box.team == g.away][cols_show], hide_index=True, column_config=cfg)
-    with b2:
-        st.markdown(f"**{g.home}** (home)")
-        st.dataframe(box[box.team == g.home][cols_show], hide_index=True, column_config=cfg)
+    st.markdown("#### Box score")
+    home_won = g.home_pts > g.away_pts
+    for team, side, pts, won in ((g.away, "Away", g.away_pts, not home_won),
+                                 (g.home, "Home", g.home_pts, home_won)):
+        st.markdown(box_score_html(box[box.team == team], team, side, int(pts), won),
+                    unsafe_allow_html=True)

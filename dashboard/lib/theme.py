@@ -182,8 +182,10 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
                    border-radius: {RADIUS}; box-shadow: 0 6px 24px rgba(0,0,0,.45);
                    font-size: .78rem; font-weight: 400; line-height: 1.4;
                    text-align: left; white-space: normal;
-                   opacity: 0; pointer-events: none; transition: opacity .12s ease; }}
-.bip-tip:hover::after, .bip-tip:focus::after {{ opacity: 1; }}
+                   display: none; pointer-events: none; }}
+/* display, not opacity: a hidden bubble must take no space, or it widens a
+   scrolling table (lib/tables.py) with blank room past its last column */
+.bip-tip:hover::after, .bip-tip:focus::after {{ display: block; }}
 
 /* ---- leader rows ---- */
 .bip-row {{ display: flex; align-items: baseline; gap: .55rem; padding: .42rem 0;
@@ -238,6 +240,29 @@ table.bip-table tr:hover td {{ background: rgba(255,255,255,.025); }}
 table.bip-table td.tm {{ font-weight: 700; color: {INK}; }}
 table.bip-table td.pos {{ color: {GOOD}; font-weight: 700; }}
 table.bip-table td.neg {{ color: {CRITICAL}; font-weight: 700; }}
+/* lib/tables.py: scroll sideways on a phone instead of squeezing columns */
+table.bip-table th, table.bip-table td {{ border-left: none; border-right: none;
+                                         border-top: none; }}
+table.bip-table, table.bip-table tr {{ border: none; }}
+.bip-table-wrap {{ overflow-x: auto; }}
+.bip-table-wrap table.bip-table th, .bip-table-wrap table.bip-table td {{ white-space: nowrap; }}
+table.bip-table td.name {{ color: {INK}; font-weight: 600; white-space: nowrap; }}
+/* the name column stays put while a phone scrolls the stats sideways */
+.bip-table-wrap table.bip-table tr > :first-child {{ position: sticky; left: 0;
+                                                    background: #1b1b1a; }}
+table.bip-table td.hi {{ color: {INK}; font-weight: 800; }}
+table.bip-table tr.bip-foot td {{ border-top: 1px solid {BORDER}; color: {INK};
+                                  font-weight: 700; }}
+table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weight: 600; }}
+/* box score: one team per card, logo and score in the header */
+.bip-box-head {{ display: flex; align-items: center; gap: .7rem; margin-bottom: .6rem; }}
+.bip-box-head .tm {{ font-size: 1.05rem; font-weight: 800; color: {INK}; }}
+.bip-box-head .side {{ font-size: .7rem; color: {MUTED}; text-transform: uppercase;
+                       letter-spacing: .08em; font-weight: 700; }}
+.bip-box-head .sc {{ margin-left: auto; font-size: 1.6rem; font-weight: 800;
+                     color: {INK_2}; font-variant-numeric: tabular-nums; }}
+.bip-box-head .sc.winner {{ color: {INK}; }}
+.bip-box-dnp {{ font-size: .75rem; color: {MUTED}; margin-top: .55rem; }}
 
 /* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----
    Desktop is untouched: these rules only exist on phone-width viewports.
