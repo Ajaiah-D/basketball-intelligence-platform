@@ -841,33 +841,70 @@ def percentile_of(series: pd.Series, value: float, higher_is_better: bool = True
 
 # --- Arcade -------------------------------------------------------------------
 
+@st.cache_data(ttl=600, show_spinner=False)
+def player_ages_available() -> bool:
+    """Whether stg_player_advanced has the age column (a warehouse published
+    before it was added does not)."""
+    try:
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            con.execute("select age from main_staging.stg_player_advanced limit 1")
+        return True
+    except (duckdb.Error, OSError):
+        return False
+
+
+_ARCADE_POOL_SQL = """
+    select
+        season,
+        player_id,
+        any_value(player_name)               as player,
+        max_by(team_abbreviation, game_date) as team,
+        count(*)                             as gp,
+        round(avg(points), 1)                as ppg,
+        round(avg(total_rebounds), 1)        as rpg,
+        round(avg(assists), 1)               as apg,
+        round(avg(steals), 1)                as spg,
+        round(avg(blocks), 1)                as bpg,
+        round(avg(three_pointers_made), 1)   as tpg,
+        round(avg(three_pointers_attempted), 1) as tpa_pg,
+        round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
+        round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
+        round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct
+    from main_staging.stg_player_game_logs
+    group by season, player_id
+    having count(*) >= ? and avg(points) >= ?
+"""
+
+# Age per player-season. The NBA's own age exists from 1996-97 (the advanced
+# stats); an earlier season counts back from the player's first known age,
+# a year per season (Jordan, 33 in 1996-97, was 25 in 1988-89). A career
+# that ended before 1996-97 has no age.
+_ARCADE_AGES_SQL = """
+    select p.*,
+           cast(floor(coalesce(adv.age, anchor.age0
+                + (cast(left(p.season, 4) as int) - anchor.y0))) as int) as age
+    from ({pool}) p
+    left join (
+        select player_id, season, age
+        from main_staging.stg_player_advanced where age is not null
+    ) adv using (player_id, season)
+    left join (
+        select player_id,
+               arg_min(age, season)               as age0,
+               min(cast(left(season, 4) as int))  as y0
+        from main_staging.stg_player_advanced where age is not null
+        group by player_id
+    ) anchor using (player_id)
+"""
+
+
 def arcade_pool(min_gp: int = 50, min_ppg: float = 14.0) -> pd.DataFrame:
     """Notable player-seasons across every ingested season - the pool both
-    games draw from. One row per player per season."""
-    return q(
-        """
-        select
-            season,
-            player_id,
-            any_value(player_name)               as player,
-            max_by(team_abbreviation, game_date) as team,
-            count(*)                             as gp,
-            round(avg(points), 1)                as ppg,
-            round(avg(total_rebounds), 1)        as rpg,
-            round(avg(assists), 1)               as apg,
-            round(avg(steals), 1)                as spg,
-            round(avg(blocks), 1)                as bpg,
-            round(avg(three_pointers_made), 1)   as tpg,
-            round(avg(three_pointers_attempted), 1) as tpa_pg,
-            round(sum(field_goals_made) / nullif(sum(field_goals_attempted), 0) * 100, 1)       as fg_pct,
-            round(sum(three_pointers_made) / nullif(sum(three_pointers_attempted), 0) * 100, 1) as fg3_pct,
-            round(sum(free_throws_made) / nullif(sum(free_throws_attempted), 0) * 100, 1)       as ft_pct
-        from main_staging.stg_player_game_logs
-        group by season, player_id
-        having count(*) >= ? and avg(points) >= ?
-        """,
-        (min_gp, min_ppg),
-    )
+    games draw from. One row per player per season, with the player's age
+    that season where known (null otherwise, or on an older warehouse)."""
+    if player_ages_available():
+        return q(_ARCADE_AGES_SQL.format(pool=_ARCADE_POOL_SQL), (min_gp, min_ppg))
+    return q(_ARCADE_POOL_SQL, (min_gp, min_ppg)).assign(age=pd.NA)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
