@@ -187,6 +187,20 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
    scrolling table (lib/tables.py) with blank room past its last column */
 .bip-tip:hover::after, .bip-tip:focus::after {{ display: block; }}
 
+/* ---- Arcade player card: everything stacked down the middle ---- */
+.bip-pc {{ text-align: center; padding: 1.2rem 1rem 1.1rem; }}
+.bip-pc-name {{ font-size: 1.45rem; font-weight: 800; color: {INK}; margin-top: .55rem;
+                line-height: 1.2; white-space: nowrap; overflow: hidden;
+                text-overflow: ellipsis; }}
+.bip-pc-meta {{ display: flex; justify-content: center; flex-wrap: wrap; gap: .3rem .5rem;
+                margin-top: .45rem; font-size: .9rem; color: {INK_2}; }}
+.bip-pc-meta b {{ color: {INK}; }}
+.bip-pc-val {{ margin-top: .85rem; padding-top: .75rem; border-top: 1px solid {BORDER};
+               font-size: 2.2rem; font-weight: 800; line-height: 1.1;
+               font-variant-numeric: tabular-nums; }}
+.bip-pc-val .lbl {{ display: block; margin-top: .25rem; font-size: .7rem; font-weight: 700;
+                    color: {MUTED}; text-transform: uppercase; letter-spacing: .08em; }}
+
 /* ---- leader rows ---- */
 .bip-row {{ display: flex; align-items: baseline; gap: .55rem; padding: .42rem 0;
             border-bottom: 1px solid rgba(255,255,255,.06); }}

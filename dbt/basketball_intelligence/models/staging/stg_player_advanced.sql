@@ -8,6 +8,7 @@ select
     cast("PLAYER_ID" as bigint)         as player_id,
     cast("PLAYER_NAME" as varchar)      as player_name,
     cast("TEAM_ABBREVIATION" as varchar) as team_abbreviation,
+    cast("AGE" as double)               as age,  -- the NBA's age for that season
     cast("GP" as integer)               as games_played,
     cast("MIN" as double)               as minutes_per_game,
     cast("OFF_RATING" as double)        as offensive_rating,

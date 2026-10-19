@@ -54,17 +54,27 @@ def _pool():
 
 
 def player_card(r, value_html: str = "") -> str:
+    """A player-season card read top to bottom: headshot, name, then season,
+    team and age on one line under it, then `value_html` (the stat)."""
     tc = T.team_color(r.team)
+    meta = [f"<span>{r.season}</span>",
+            f'<span style="color:{tc};font-weight:800">{T.team_dot(r.team)}{r.team}</span>']
+    age = getattr(r, "age", None)
+    if age is not None and not pd.isna(age):
+        meta.append(f"<span>age <b>{int(age)}</b></span>")
     return (
-        f'<div class="bip-card" style="text-align:center;'
-        f'border-top:3px solid {tc}">'
-        f'<div style="margin-bottom:.45rem">'
-        f'{media.avatar_html(int(r.player_id), r.player, size=76, ring=tc)}</div>'
-        f'<div class="bip-kpi-label">{r.season} &middot; '
-        f'<span style="color:{tc}">{r.team}</span></div>'
-        f'<div class="bip-kpi-value" style="font-size:1.35rem">{r.player}</div>'
+        f'<div class="bip-card bip-pc" style="border-top:3px solid {tc}">'
+        f'{media.avatar_html(int(r.player_id), r.player, size=88, ring=tc)}'
+        f'<div class="bip-pc-name">{html.escape(r.player)}</div>'
+        f'<div class="bip-pc-meta">{" <span>&middot;</span> ".join(meta)}</div>'
         f'{value_html}</div>'
     )
+
+
+def stat_html(value: str, label: str, color: str) -> str:
+    """The big stat at the bottom of a Higher or Lower card."""
+    return (f'<div class="bip-pc-val" style="color:{color}">{value}'
+            f'<span class="lbl">{label}</span></div>')
 
 
 # --- Higher or Lower ------------------------------------------------------------
@@ -111,23 +121,27 @@ def render_higher_lower() -> None:
                 unsafe_allow_html=True)
 
     st.markdown(f"#### Who averaged more **{noun}** ({label})?")
+    if pd.notna(a.get("age")) or pd.notna(b.get("age")):
+        st.caption("Ages are the NBA's, as of the end of that season.")
     c1, c2 = st.columns(2)
     if g["phase"] == "guess":
+        # The "?" holds the stat's place, so the cards keep their height
+        # when the answer appears.
         with c1:
-            st.markdown(player_card(a), unsafe_allow_html=True)
+            st.markdown(player_card(a, stat_html("?", label, T.MUTED)),
+                        unsafe_allow_html=True)
             st.button(f"Pick {a.player}", key="hl_a", width="stretch",
                       on_click=hl_pick, args=("a",))
         with c2:
-            st.markdown(player_card(b), unsafe_allow_html=True)
+            st.markdown(player_card(b, stat_html("?", label, T.MUTED)),
+                        unsafe_allow_html=True)
             st.button(f"Pick {b.player}", key="hl_b", width="stretch",
                       on_click=hl_pick, args=("b",))
     else:
         winner_is_a = a[stat] >= b[stat]
         for col, r, won in ((c1, a, winner_is_a), (c2, b, not winner_is_a)):
-            val_color = "#0ca30c" if won else "#898781"
             col.markdown(player_card(
-                r, f'<div style="font-size:1.6rem;font-weight:700;'
-                   f'color:{val_color}">{r[stat]:.1f} {label}</div>'),
+                r, stat_html(f"{r[stat]:.1f}", label, T.GOOD if won else T.MUTED)),
                 unsafe_allow_html=True)
         if g["correct"]:
             st.success(f"Correct! Streak: {st.session_state.hl_streak}")
