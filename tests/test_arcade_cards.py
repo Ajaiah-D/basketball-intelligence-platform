@@ -53,3 +53,24 @@ def test_old_warehouse_pool_has_an_empty_age_column(con, monkeypatch):
     monkeypatch.setattr(db, "player_ages_available", lambda: False)
     pool = db.arcade_pool()
     assert "age" in pool.columns and pool["age"].isna().all()
+
+
+# --- Mystery Player: the age is part of the first clue -----------------------
+
+def _mystery_row(**kw) -> pd.Series:
+    base = dict(player_id=1, player="Ann Example", season="1994-95", team="CHI", age=27,
+                gp=70, ppg=26.0, rpg=6.0, apg=5.0, spg=1.5, bpg=0.5, tpg=1.0,
+                tpa_pg=3.0, fg_pct=48.0, ft_pct=80.0)
+    base.update(kw)
+    return pd.Series(base)
+
+
+def test_mystery_first_clue_includes_the_age():
+    opener = arcade.my_clues(_mystery_row())[0]
+    assert opener.startswith("A <b>27-year-old</b> <b>1990s</b>")
+
+
+@pytest.mark.parametrize("age", [None, pd.NA])
+def test_mystery_first_clue_without_a_known_age(age):
+    opener = arcade.my_clues(_mystery_row(age=age))[0]
+    assert opener.startswith("A <b>1990s</b>") and "year-old" not in opener

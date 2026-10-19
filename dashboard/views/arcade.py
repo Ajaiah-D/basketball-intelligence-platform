@@ -191,7 +191,11 @@ def my_clues(r) -> list[str]:
     decade = f"{r.season[:3]}0s"
     tier = ('30+' if r.ppg >= 30 else '25+' if r.ppg >= 25
             else '20+' if r.ppg >= 20 else 'under 20')
-    opener = (f"A <b>{decade}</b> {db.conference(r.team)} player &middot; "
+    # Age (when known - see db.arcade_pool) leads the first clue: it frames
+    # everything after it, a 21-year-old and a 34-year-old are different hunts.
+    age = r.get("age")
+    who = f"<b>{int(age)}-year-old</b> " if age is not None and pd.notna(age) else ""
+    opener = (f"A {who}<b>{decade}</b> {db.conference(r.team)} player &middot; "
               f"profile: <b>{archetype(r)}</b> &middot; scored "
               f"<b>{tier} a game</b> that season")
     box = (f"Stat line: <b>{r.ppg:.1f} pts / {r.rpg:.1f} reb / {r.apg:.1f} ast</b> "
