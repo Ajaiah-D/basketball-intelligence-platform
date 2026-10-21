@@ -1,7 +1,8 @@
 # Direct runtime dependencies. Recompile: pip-compile --strip-extras --output-file requirements.txt requirements.in
 nba_api
 pandas
-duckdb
+# A major DuckDB upgrade changes the file format the live app downloads, so it gets its own change.
+duckdb>=1.5,<2
 dbt-duckdb
 streamlit
 plotly
