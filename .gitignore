@@ -14,3 +14,7 @@ dbt/**/logs/
 dbt/**/.user.yml
 .streamlit/secrets.toml
 .superpowers/
+# The weekly refresh: per-step output and its lock (refresh_runs.jsonl is committed)
+logs/runs/
+logs/refresh.lock
+warehouse/next/

@@ -46,20 +46,30 @@ def main() -> None:
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
-    con.execute("CREATE SCHEMA IF NOT EXISTS raw")
-
-    for name, source in sources.items():
-        table = f"raw.{name}"
-        # union_by_name: older seasons can differ in column order/presence
-        con.execute(
-            f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM read_parquet(?, union_by_name=true)",
-            [source],
-        )
-        row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
-        assert row is not None  # count(*) always returns one row
-        log.info("Loaded %-28s %8d rows", table, row[0])
-
-    con.close()
+    try:
+        # One transaction for every table: a parquet that fails to load
+        # leaves the whole raw layer as the previous load left it, instead of
+        # half this week's tables next to half last week's.
+        con.execute("BEGIN TRANSACTION")
+        try:
+            con.execute("CREATE SCHEMA IF NOT EXISTS raw")
+            for name, source in sources.items():
+                table = f"raw.{name}"
+                # union_by_name: older seasons can differ in column order/presence
+                con.execute(
+                    f"CREATE OR REPLACE TABLE {table} AS "
+                    "SELECT * FROM read_parquet(?, union_by_name=true)",
+                    [source],
+                )
+                row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
+                assert row is not None  # count(*) always returns one row
+                log.info("Loaded %-28s %8d rows", table, row[0])
+            con.execute("COMMIT")
+        except BaseException:
+            con.execute("ROLLBACK")
+            raise
+    finally:
+        con.close()
     log.info("Warehouse ready at %s", DB_PATH)
 
 
