@@ -211,7 +211,7 @@ def test_fetch_decodes_pages_as_utf8_even_without_a_declared_charset(monkeypatch
         resp = requests.Response()
         resp.status_code = 200
         resp.headers["Content-Type"] = "text/html"
-        resp._content = "Luka Dončić".encode("utf-8")
+        resp._content = "Luka Dončić".encode()
         # What requests' HTTP adapter does to every real response.
         resp.encoding = requests.utils.get_encoding_from_headers(resp.headers)
         return resp

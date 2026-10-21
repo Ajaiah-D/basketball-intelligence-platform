@@ -11,9 +11,8 @@ gated on minutes played rather than showing the whole league.
 
 import streamlit as st
 
-from dashboard.lib import db, glossary, media
+from dashboard.lib import db, glossary, media, viz
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 
 # The default table: enough to answer "who is efficient and how involved
 # were they" without becoming a spreadsheet.

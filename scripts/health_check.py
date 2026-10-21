@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
@@ -126,7 +126,7 @@ def check_last_run() -> None:
         return
     last = json.loads(lines[-1])
     run_at = datetime.fromisoformat(last["run_at"])
-    age_days = (datetime.now(timezone.utc) - run_at).days
+    age_days = (datetime.now(UTC) - run_at).days
     if not last.get("ok"):
         failed_step = next((s["step"] for s in last["steps"] if not s["ok"]), "unknown")
         fail(f"last run ({last['run_at']}, {age_days}d ago) FAILED at step '{failed_step}'")
@@ -189,7 +189,7 @@ def main() -> None:
     parser.add_argument("--skip-api", action="store_true", help="Skip the live nba_api smoke test")
     args = parser.parse_args()
 
-    print(f"Health check @ {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    print(f"Health check @ {datetime.now(UTC).isoformat(timespec='seconds')}")
     check_warehouse_file()
     check_row_counts()
     check_freshness()

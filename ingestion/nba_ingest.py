@@ -242,10 +242,7 @@ def fetch_teams() -> pd.DataFrame:
 def write_parquet(df: pd.DataFrame, name: str, season: str | None = None) -> Path:
     """Write to data/raw/{name}.parquet, or data/raw/{name}/{season}.parquet
     when a season is given (per-season partitioning for game logs)."""
-    if season:
-        path = RAW_DIR / name / f"{season}.parquet"
-    else:
-        path = RAW_DIR / f"{name}.parquet"
+    path = RAW_DIR / name / f"{season}.parquet" if season else RAW_DIR / f"{name}.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
     log.info(
@@ -284,7 +281,9 @@ def run(
         # adding a new dataset later does not re-pull everything else.
         stale = force or season == latest
 
-        def needed(name: str) -> bool:
+        # stale and season are bound as defaults: needed() is only called
+        # inside this iteration, but this keeps it safe if that ever changes.
+        def needed(name: str, stale: bool = stale, season: str = season) -> bool:
             return stale or not season_done(name, season)
 
         wants_advanced = has_advanced_stats(season) and needed("player_advanced")

@@ -5,9 +5,8 @@ import html
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, media, tables
+from dashboard.lib import db, glossary, media, tables, viz
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 from dashboard.lib.tables import Col
 from dashboard.views.overview import game_card
 
@@ -27,7 +26,7 @@ def box_score_html(rows: pd.DataFrame, team: str, side: str, pts: int, won: bool
     played = rows[rows["min"].fillna(0) > 0].copy()
     dnp = rows.loc[rows["min"].fillna(0) <= 0, "player"].tolist()
     for col, m, a in (("fg", "fgm", "fga"), ("tp", "tpm", "tpa"), ("ft", "ftm", "fta")):
-        played[col] = [_made(x, y) for x, y in zip(played[m], played[a])]
+        played[col] = [_made(x, y) for x, y in zip(played[m], played[a], strict=True)]
     top = played["pts"].max() if len(played) else None
     cols = [
         Col("player", "Player", left=True, css=lambda v: "name"),
@@ -86,7 +85,7 @@ def render() -> None:
     games = db.games_list(season)
     pbp_ids = db.pbp_game_ids()
 
-    teams = ["All teams"] + sorted(set(games.home) | set(games.away))
+    teams = ["All teams", *sorted(set(games.home) | set(games.away))]
     f1, f2 = st.columns([2, 3])
     team = f1.selectbox("Team", teams, label_visibility="collapsed")
     only_pbp = f2.toggle("Only games with play-by-play", value=False)

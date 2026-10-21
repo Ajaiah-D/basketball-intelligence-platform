@@ -5,7 +5,6 @@ colors are brand-adjacent hues tuned for legibility on the dark surface
 
 import html
 
-
 # Categorical series slots (dark-surface steps, fixed order - never cycle).
 # This is the reference palette's own slot order: blue, orange, aqua,
 # yellow, magenta, green, violet, red. An earlier shuffle of these same

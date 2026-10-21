@@ -317,7 +317,7 @@ def _add_settled_games(path, probs, home_won) -> None:
     """Append graded games g_extra{i}: a prediction, a final schedule row and
     a result, one per (probability, home_won) pair."""
     con = duckdb.connect(str(path))
-    for i, (p, won) in enumerate(zip(probs, home_won)):
+    for i, (p, won) in enumerate(zip(probs, home_won, strict=True)):
         gid = f"g_extra{i}"
         day = f"2026-08-{1 + i % 28:02d}"
         con.execute(

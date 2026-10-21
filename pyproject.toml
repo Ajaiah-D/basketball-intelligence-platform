@@ -14,12 +14,21 @@ extend-exclude = ["dbt/**/target", ".venv", ".superpowers"]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "N", "C4"]
 # RUF001-003: the code intentionally uses arrows, middle dots and accented
 # player names. E501: the formatter owns line length.
-ignore = ["RUF001", "RUF002", "RUF003", "E501"]
+# N812: `from . import theme as T` is the project-wide alias for the theme
+# tokens, used in every view.
+ignore = ["RUF001", "RUF002", "RUF003", "E501", "N812"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "PTH"]
 # sys.path must be set before the imports.
 "dashboard/app.py" = ["E402"]
+# Same for the scripts and conftest, which put the repo root on sys.path
+# before importing from it.
+"scripts/*.py" = ["E402"]
+"tests/conftest.py" = ["E402"]
+# sklearn convention: X is the feature matrix, so N803/N806 do not apply.
+"ml/**" = ["N803", "N806"]
+"tests/test_train.py" = ["N803"]
 
 [tool.ruff.format]
 quote-style = "double"

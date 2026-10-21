@@ -801,7 +801,7 @@ def prediction_track_record() -> dict:
         "accuracy": float(((win_probability >= 0.5) == home_won).mean()),
         "brier": float(np.mean((win_probability - home_won.astype(float)) ** 2)),
         "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
-        "n": int(len(settled)),
+        "n": len(settled),
     }
 
 

@@ -11,8 +11,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import config, db
-from dashboard.lib import viz
+from dashboard.lib import config, db, viz
 
 EXAMPLE_QUERY = """\
 -- Example: top 10 scorers (min 40 games)

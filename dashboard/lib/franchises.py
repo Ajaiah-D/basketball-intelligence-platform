@@ -129,7 +129,7 @@ def annotate(df: pd.DataFrame) -> pd.DataFrame:
     """A copy of df (needs team_abbreviation and season) with franchise and
     era_name columns added."""
     out = df.copy()
-    pairs = list(zip(out["team_abbreviation"], out["season"]))
+    pairs = list(zip(out["team_abbreviation"], out["season"], strict=True))
     out["franchise"] = [franchise_of(c, s) for c, s in pairs]
     out["era_name"] = [era_name(c, s) for c, s in pairs]
     return out

@@ -130,5 +130,5 @@ def evaluate(predictions: pd.DataFrame) -> dict:
                 predictions["predicted_margin"].astype(float) - predictions["margin"].astype(float)
             ).mean()
         ),
-        "n": int(len(predictions)),
+        "n": len(predictions),
     }

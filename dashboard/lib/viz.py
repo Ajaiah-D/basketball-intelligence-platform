@@ -17,40 +17,48 @@ PLOTLY_CONFIG = {"displayModeBar": False}
 
 
 def _layout(**overrides) -> dict:
-    base = dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family=T.FONT, color=T.INK_2, size=12),
-        margin=dict(l=8, r=8, t=28, b=8),
+    base = {
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "font": {"family": T.FONT, "color": T.INK_2, "size": 12},
+        "margin": {"l": 8, "r": 8, "t": 28, "b": 8},
         # the modebar is hidden, so a drag/pinch zoom would be unrecoverable -
         # every chart is a fixed view (overriding axes must keep fixedrange)
-        dragmode=False,
+        "dragmode": False,
         # automargin lets plotly reserve room for tick labels and titles. The
         # explicit margin above otherwise wins and clips them: without this a
         # y axis reading 10..50 renders as a column of "0"s. Any chart that
         # replaces these axis dicts wholesale has to set it again.
-        xaxis=dict(
-            gridcolor=T.GRID,
-            zerolinecolor=T.BASELINE,
-            linecolor=T.BASELINE,
-            tickfont=dict(color=T.MUTED),
-            fixedrange=True,
-            automargin=True,
-        ),
-        yaxis=dict(
-            gridcolor=T.GRID,
-            zerolinecolor=T.BASELINE,
-            linecolor=T.BASELINE,
-            tickfont=dict(color=T.MUTED),
-            fixedrange=True,
-            automargin=True,
-        ),
-        hoverlabel=dict(
-            bgcolor=T.SURFACE, bordercolor=T.BORDER, font=dict(family=T.FONT, color=T.INK)
-        ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(color=T.INK_2)),
-        height=320,
-    )
+        "xaxis": {
+            "gridcolor": T.GRID,
+            "zerolinecolor": T.BASELINE,
+            "linecolor": T.BASELINE,
+            "tickfont": {"color": T.MUTED},
+            "fixedrange": True,
+            "automargin": True,
+        },
+        "yaxis": {
+            "gridcolor": T.GRID,
+            "zerolinecolor": T.BASELINE,
+            "linecolor": T.BASELINE,
+            "tickfont": {"color": T.MUTED},
+            "fixedrange": True,
+            "automargin": True,
+        },
+        "hoverlabel": {
+            "bgcolor": T.SURFACE,
+            "bordercolor": T.BORDER,
+            "font": {"family": T.FONT, "color": T.INK},
+        },
+        "legend": {
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "x": 0,
+            "font": {"color": T.INK_2},
+        },
+        "height": 320,
+    }
     base.update(overrides)
     return base
 
@@ -73,7 +81,7 @@ def player_trend(games: pd.DataFrame) -> go.Figure:
         x=df["game_date"],
         y=df["points"],
         name="Points",
-        marker=dict(color=T.BASELINE),
+        marker={"color": T.BASELINE},
         hovertemplate="%{x|%b %d} vs %{customdata}<br>%{y} pts<extra></extra>",
         customdata=df["matchup"].str[-3:],
     )
@@ -89,14 +97,14 @@ def player_trend(games: pd.DataFrame) -> go.Figure:
         showarrow=False,
         yshift=10,
         xanchor="left",
-        font=dict(color=T.MUTED, size=10),
+        font={"color": T.MUTED, "size": 10},
     )
     fig.add_scatter(
         x=df["game_date"],
         y=df["roll"],
         name=f"{window}-game avg",
         mode="lines",
-        line=dict(color=T.ACCENT, width=2),
+        line={"color": T.ACCENT, "width": 2},
         connectgaps=False,
         hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
     )
@@ -108,7 +116,7 @@ def player_trend(games: pd.DataFrame) -> go.Figure:
             text=f"{last['roll']:.1f}",
             showarrow=False,
             xshift=22,
-            font=dict(color=T.ACCENT, size=12),
+            font={"color": T.ACCENT, "size": 12},
         )
     fig.update_layout(**_layout(hovermode="x unified", bargap=0.45))
     return fig
@@ -146,7 +154,7 @@ def career_trend(
             y=df[stat],
             name=label,
             mode="markers",
-            marker=dict(color=T.BASELINE, size=10, line=dict(color=T.SURFACE, width=2)),
+            marker={"color": T.BASELINE, "size": 10, "line": {"color": T.SURFACE, "width": 2}},
             customdata=df[["team", "gp"]],
             hovertemplate=hover,
         )
@@ -155,7 +163,7 @@ def career_trend(
             x=df["season"],
             y=df[stat],
             name=label,
-            marker=dict(color=T.BASELINE),
+            marker={"color": T.BASELINE},
             customdata=df[["team", "gp"]],
             hovertemplate=hover,
         )
@@ -164,7 +172,7 @@ def career_trend(
         y=df["cum"],
         name="Career avg to date",
         mode="lines",
-        line=dict(color=T.ACCENT, width=2),
+        line={"color": T.ACCENT, "width": 2},
         hovertemplate="Career avg: %{y:.1f}<extra></extra>",
     )
     last = df.iloc[-1]
@@ -174,34 +182,34 @@ def career_trend(
         text=f"{last['cum']:.1f}",
         showarrow=False,
         xshift=26,
-        font=dict(color=T.ACCENT, size=12),
+        font={"color": T.ACCENT, "size": 12},
     )
-    layout = dict(
-        hovermode="x unified",
-        bargap=0.45,
+    layout = {
+        "hovermode": "x unified",
+        "bargap": 0.45,
         # season labels like "1984-85" parse as dates unless forced categorical
-        xaxis=dict(
-            type="category",
-            gridcolor=T.GRID,
-            linecolor=T.BASELINE,
-            tickfont=dict(color=T.MUTED),
-            fixedrange=True,
-            automargin=True,
-            tickangle=-45 if len(df) > 14 else 0,
-        ),
-    )
+        "xaxis": {
+            "type": "category",
+            "gridcolor": T.GRID,
+            "linecolor": T.BASELINE,
+            "tickfont": {"color": T.MUTED},
+            "fixedrange": True,
+            "automargin": True,
+            "tickangle": -45 if len(df) > 14 else 0,
+        },
+    }
     if as_rate:
         lo = min(df[stat].min(), df["cum"].min())
         hi = max(df[stat].max(), df["cum"].max())
         pad = max(2.0, (hi - lo) * 0.25)
-        layout["yaxis"] = dict(
-            range=[lo - pad, hi + pad],
-            gridcolor=T.GRID,
-            tickfont=dict(color=T.MUTED),
-            fixedrange=True,
-            automargin=True,
-            ticksuffix="%",
-        )
+        layout["yaxis"] = {
+            "range": [lo - pad, hi + pad],
+            "gridcolor": T.GRID,
+            "tickfont": {"color": T.MUTED},
+            "fixedrange": True,
+            "automargin": True,
+            "ticksuffix": "%",
+        }
     fig.update_layout(**_layout(**layout))
     return fig
 
@@ -226,10 +234,10 @@ def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str)
         x=lvals,
         orientation="h",
         name="League",
-        marker=dict(color=T.BASELINE),
+        marker={"color": T.BASELINE},
         text=[f"{v:.0f}" if pd.notna(v) else "-" for v in lvals],
         textposition="outside",
-        textfont=dict(color=T.MUTED),
+        textfont={"color": T.MUTED},
         hovertemplate="League %{y}: %{x:.1f}<extra></extra>",
     )
     fig.add_bar(
@@ -237,10 +245,10 @@ def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str)
         x=pvals,
         orientation="h",
         name=player_name,
-        marker=dict(color=T.ACCENT),
-        text=[label(v, a) for v, a in zip(pvals, attempts)],
+        marker={"color": T.ACCENT},
+        text=[label(v, a) for v, a in zip(pvals, attempts, strict=True)],
         textposition="outside",
-        textfont=dict(color=T.INK),
+        textfont={"color": T.INK},
         customdata=attempts,
         hovertemplate="%{y}: %{x:.1f} on %{customdata:.1f} attempts/game<extra></extra>",
     )
@@ -253,15 +261,15 @@ def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str)
             barmode="group",
             bargap=0.35,
             height=260,
-            xaxis=dict(
-                range=[0, top * 1.55],
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                tickvals=[0, 25, 50, 75, 100],
-                fixedrange=True,
-                automargin=True,
-            ),
-            yaxis=dict(tickfont=dict(color=T.INK_2), fixedrange=True, automargin=True),
+            xaxis={
+                "range": [0, top * 1.55],
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "tickvals": [0, 25, 50, 75, 100],
+                "fixedrange": True,
+                "automargin": True,
+            },
+            yaxis={"tickfont": {"color": T.INK_2}, "fixedrange": True, "automargin": True},
         )
     )
     return fig
@@ -276,7 +284,7 @@ def team_margins(games: pd.DataFrame) -> go.Figure:
     fig.add_bar(
         x=df["game_date"],
         y=df["margin"],
-        marker=dict(color=colors),
+        marker={"color": colors},
         customdata=df[["opponent", "points", "opp_points"]],
         hovertemplate=(
             "%{x|%b %d} vs %{customdata[0]}<br>"
@@ -310,7 +318,7 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         y=df["margin"].clip(lower=0),
         name=f"{home} lead",
         mode="lines",
-        line=dict(width=0),
+        line={"width": 0},
         fill="tozeroy",
         fillcolor="rgba(57,135,229,0.45)",
         hoverinfo="skip",
@@ -320,7 +328,7 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         y=df["margin"].clip(upper=0),
         name=f"{away} lead",
         mode="lines",
-        line=dict(width=0),
+        line={"width": 0},
         fill="tozeroy",
         fillcolor="rgba(230,103,103,0.45)",
         hoverinfo="skip",
@@ -330,7 +338,7 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         y=df["margin"],
         name="Margin",
         mode="lines",
-        line=dict(color=T.INK_2, width=2),
+        line={"color": T.INK_2, "width": 2},
         showlegend=False,
         customdata=df[["score_home", "score_away"]],
         hovertemplate=(
@@ -348,21 +356,21 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         **_layout(
             hovermode="x unified",
             height=300,
-            xaxis=dict(
-                title=dict(text="Game time (min)", font=dict(color=T.MUTED)),
-                gridcolor="rgba(0,0,0,0)",
-                zerolinecolor=T.BASELINE,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
-            yaxis=dict(
-                title=dict(text=f"← {away}   margin   {home} →", font=dict(color=T.MUTED)),
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
+            xaxis={
+                "title": {"text": "Game time (min)", "font": {"color": T.MUTED}},
+                "gridcolor": "rgba(0,0,0,0)",
+                "zerolinecolor": T.BASELINE,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
+            yaxis={
+                "title": {"text": f"← {away}   margin   {home} →", "font": {"color": T.MUTED}},
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
         )
     )
     return fig
@@ -371,30 +379,48 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
 def _court_shapes() -> list[dict]:
     """Half-court in PBP legacy coordinates: tenths of feet, hoop at (0,0),
     baseline at y=-47.5, halfcourt at y=422.5."""
-    line = dict(color=T.BASELINE, width=1.5)
+    line = {"color": T.BASELINE, "width": 1.5}
     shapes = [
         # boundary
-        dict(type="rect", x0=-250, y0=-47.5, x1=250, y1=422.5, line=line),
+        {"type": "rect", "x0": -250, "y0": -47.5, "x1": 250, "y1": 422.5, "line": line},
         # paint (outer and inner)
-        dict(type="rect", x0=-80, y0=-47.5, x1=80, y1=142.5, line=line),
-        dict(type="rect", x0=-60, y0=-47.5, x1=60, y1=142.5, line=line),
+        {"type": "rect", "x0": -80, "y0": -47.5, "x1": 80, "y1": 142.5, "line": line},
+        {"type": "rect", "x0": -60, "y0": -47.5, "x1": 60, "y1": 142.5, "line": line},
         # backboard + hoop
-        dict(type="line", x0=-30, y0=-7.5, x1=30, y1=-7.5, line=dict(color=T.INK_2, width=2)),
-        dict(type="circle", x0=-7.5, y0=-7.5, x1=7.5, y1=7.5, line=dict(color=T.INK_2, width=1.5)),
+        {
+            "type": "line",
+            "x0": -30,
+            "y0": -7.5,
+            "x1": 30,
+            "y1": -7.5,
+            "line": {"color": T.INK_2, "width": 2},
+        },
+        {
+            "type": "circle",
+            "x0": -7.5,
+            "y0": -7.5,
+            "x1": 7.5,
+            "y1": 7.5,
+            "line": {"color": T.INK_2, "width": 1.5},
+        },
         # free-throw circle
-        dict(type="circle", x0=-60, y0=82.5, x1=60, y1=202.5, line=line),
+        {"type": "circle", "x0": -60, "y0": 82.5, "x1": 60, "y1": 202.5, "line": line},
         # restricted area arc
-        dict(type="path", path="M -40 0 C -40 22, -22 40, 0 40 C 22 40, 40 22, 40 0", line=line),
+        {
+            "type": "path",
+            "path": "M -40 0 C -40 22, -22 40, 0 40 C 22 40, 40 22, 40 0",
+            "line": line,
+        },
         # 3pt: corner lines + arc (r=237.5, corners at x=+/-220, y<=89.5)
-        dict(type="line", x0=-220, y0=-47.5, x1=-220, y1=89.5, line=line),
-        dict(type="line", x0=220, y0=-47.5, x1=220, y1=89.5, line=line),
-        dict(type="path", path="M -220 89.5 C -135 235, 135 235, 220 89.5", line=line),
+        {"type": "line", "x0": -220, "y0": -47.5, "x1": -220, "y1": 89.5, "line": line},
+        {"type": "line", "x0": 220, "y0": -47.5, "x1": 220, "y1": 89.5, "line": line},
+        {"type": "path", "path": "M -220 89.5 C -135 235, 135 235, 220 89.5", "line": line},
         # center circle
-        dict(
-            type="path",
-            path="M -60 422.5 C -60 389, -33 362.5, 0 362.5 C 33 362.5, 60 389, 60 422.5",
-            line=line,
-        ),
+        {
+            "type": "path",
+            "path": "M -60 422.5 C -60 389, -33 362.5, 0 362.5 C 33 362.5, 60 389, 60 422.5",
+            "line": line,
+        },
     ]
     return shapes
 
@@ -415,13 +441,13 @@ def shot_chart(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
                 y=sub["shot_y"],
                 mode="markers",
                 name=f"{team} {result.lower()}",
-                marker=dict(
-                    symbol=symbol,
-                    size=9 if filled else 8,
-                    color=color if filled else "rgba(0,0,0,0)",
-                    line=dict(color=color, width=1.5),
-                    opacity=0.9 if filled else 0.5,
-                ),
+                marker={
+                    "symbol": symbol,
+                    "size": 9 if filled else 8,
+                    "color": color if filled else "rgba(0,0,0,0)",
+                    "line": {"color": color, "width": 1.5},
+                    "opacity": 0.9 if filled else 0.5,
+                },
                 customdata=sub[["player_name", "shot_distance_ft", "period"]],
                 hovertemplate=(
                     "%{customdata[0]} - %{customdata[1]} ft (Q%{customdata[2]})"
@@ -432,19 +458,23 @@ def shot_chart(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         **_layout(
             height=520,
             shapes=_court_shapes(),
-            xaxis=dict(range=[-260, 260], visible=False, fixedrange=True),
-            yaxis=dict(
-                range=[-60, 440], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1
-            ),
-            legend=dict(
-                orientation="h",
-                yanchor="top",
-                y=-0.02,
-                x=0.5,
-                xanchor="center",
-                font=dict(color=T.INK_2),
-            ),
-            margin=dict(l=8, r=8, t=8, b=8),
+            xaxis={"range": [-260, 260], "visible": False, "fixedrange": True},
+            yaxis={
+                "range": [-60, 440],
+                "visible": False,
+                "fixedrange": True,
+                "scaleanchor": "x",
+                "scaleratio": 1,
+            },
+            legend={
+                "orientation": "h",
+                "yanchor": "top",
+                "y": -0.02,
+                "x": 0.5,
+                "xanchor": "center",
+                "font": {"color": T.INK_2},
+            },
+            margin={"l": 8, "r": 8, "t": 8, "b": 8},
         )
     )
     return fig
@@ -479,7 +509,7 @@ def rating_quadrant(teams: pd.DataFrame, highlight: str | None = None) -> go.Fig
         showarrow=False,
         yshift=10,
         xshift=42,
-        font=dict(color=T.MUTED, size=10),
+        font={"color": T.MUTED, "size": 10},
     )
     fig.add_scatter(
         x=df["offensive_rating"],
@@ -487,10 +517,12 @@ def rating_quadrant(teams: pd.DataFrame, highlight: str | None = None) -> go.Fig
         mode="markers+text",
         text=df["team_abbreviation"],
         textposition="top center",
-        textfont=dict(color=T.INK_2, size=9),
-        marker=dict(
-            color=colors, size=sizes, line=dict(color=T.SURFACE, width=2)
-        ),  # 2px surface ring
+        textfont={"color": T.INK_2, "size": 9},
+        marker={
+            "color": colors,
+            "size": sizes,
+            "line": {"color": T.SURFACE, "width": 2},
+        },  # 2px surface ring
         customdata=df[["team_name", "net_rating", "pace"]],
         hovertemplate=(
             "%{customdata[0]}<br>Offence %{x:.1f} · Defence %{y:.1f}"
@@ -502,26 +534,28 @@ def rating_quadrant(teams: pd.DataFrame, highlight: str | None = None) -> go.Fig
     fig.update_layout(
         **_layout(
             height=420,
-            xaxis=dict(
-                title=dict(
-                    text="Offensive rating (points scored per 100)", font=dict(color=T.MUTED)
-                ),
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
+            xaxis={
+                "title": {
+                    "text": "Offensive rating (points scored per 100)",
+                    "font": {"color": T.MUTED},
+                },
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
             # Reversed so better defence (fewer points allowed) is higher up
-            yaxis=dict(
-                title=dict(
-                    text="Defensive rating (points allowed per 100)", font=dict(color=T.MUTED)
-                ),
-                autorange="reversed",
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
+            yaxis={
+                "title": {
+                    "text": "Defensive rating (points allowed per 100)",
+                    "font": {"color": T.MUTED},
+                },
+                "autorange": "reversed",
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
         )
     )
     return fig
@@ -543,10 +577,10 @@ def percentile_bars(rows: list[tuple[str, float, float]]) -> go.Figure:
         y=labels,
         x=pcts,
         orientation="h",
-        marker=dict(color=T.ACCENT, cornerradius=4),
-        text=[f"{v:.1f}  ({p:.0f}th)" for v, p in zip(raws, pcts)],
+        marker={"color": T.ACCENT, "cornerradius": 4},
+        text=[f"{v:.1f}  ({p:.0f}th)" for v, p in zip(raws, pcts, strict=True)],
         textposition="outside",
-        textfont=dict(color=T.INK_2, size=11),
+        textfont={"color": T.INK_2, "size": 11},
         hovertemplate="%{y}: %{customdata:.1f}, better than %{x:.0f}% of qualified players<extra></extra>",
         customdata=raws,
         showlegend=False,
@@ -557,18 +591,21 @@ def percentile_bars(rows: list[tuple[str, float, float]]) -> go.Figure:
             height=max(200, 42 * len(rows)),
             bargap=0.35,
             # Headroom past 100 so the outside labels are never clipped
-            xaxis=dict(
-                range=[0, 148],
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                tickvals=[0, 25, 50, 75, 100],
-                title=dict(text="Percentile among qualified players", font=dict(color=T.MUTED)),
-                automargin=True,
-            ),
-            yaxis=dict(
-                tickfont=dict(color=T.INK_2), fixedrange=True, autorange="reversed", automargin=True
-            ),
+            xaxis={
+                "range": [0, 148],
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "tickvals": [0, 25, 50, 75, 100],
+                "title": {"text": "Percentile among qualified players", "font": {"color": T.MUTED}},
+                "automargin": True,
+            },
+            yaxis={
+                "tickfont": {"color": T.INK_2},
+                "fixedrange": True,
+                "autorange": "reversed",
+                "automargin": True,
+            },
         )
     )
     return fig
@@ -583,12 +620,12 @@ def compare_dumbbell(
     if not metrics:
         return _empty("No shared metrics to compare")
     fig = go.Figure()
-    for m, a, b in zip(metrics, a_vals, b_vals):
+    for m, a, b in zip(metrics, a_vals, b_vals, strict=True):
         fig.add_scatter(
             x=[a, b],
             y=[m, m],
             mode="lines",
-            line=dict(color=T.BASELINE, width=2),
+            line={"color": T.BASELINE, "width": 2},
             hoverinfo="skip",
             showlegend=False,
         )
@@ -598,7 +635,7 @@ def compare_dumbbell(
             y=metrics,
             mode="markers",
             name=name,
-            marker=dict(color=color, size=12, line=dict(color=T.SURFACE, width=2)),
+            marker={"color": color, "size": 12, "line": {"color": T.SURFACE, "width": 2}},
             hovertemplate="%{y}: %{x:.0f}th percentile<extra>" + name + "</extra>",
         )
     # Median marker uses the baseline colour so it separates from the
@@ -607,18 +644,21 @@ def compare_dumbbell(
     fig.update_layout(
         **_layout(
             height=max(240, 46 * len(metrics)),
-            xaxis=dict(
-                range=[0, 100],
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                tickvals=[0, 25, 50, 75, 100],
-                title=dict(text="Percentile among qualified players", font=dict(color=T.MUTED)),
-                automargin=True,
-            ),
-            yaxis=dict(
-                tickfont=dict(color=T.INK_2), fixedrange=True, autorange="reversed", automargin=True
-            ),
+            xaxis={
+                "range": [0, 100],
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "tickvals": [0, 25, 50, 75, 100],
+                "title": {"text": "Percentile among qualified players", "font": {"color": T.MUTED}},
+                "automargin": True,
+            },
+            yaxis={
+                "tickfont": {"color": T.INK_2},
+                "fixedrange": True,
+                "autorange": "reversed",
+                "automargin": True,
+            },
         )
     )
     return fig
@@ -678,7 +718,7 @@ def team_finances_trend(
         y=payroll_y,
         name="Team payroll",
         mode="lines+markers",
-        line=dict(color=T.ACCENT, width=2),
+        line={"color": T.ACCENT, "width": 2},
         connectgaps=False,
         hovertemplate="%{x}<br>$%{y:,.0f}<extra>Team payroll</extra>",
     )
@@ -694,18 +734,18 @@ def team_finances_trend(
         x=x,
         y=merged[_ZONE_COLS[0]],
         mode="lines",
-        line=dict(width=0),
+        line={"width": 0},
         fill="tozeroy",
         fillcolor=_ZONE_COLORS[0],
         showlegend=False,
         hoverinfo="skip",
     )
-    for col, color in zip(_ZONE_COLS[1:], _ZONE_COLORS[1:]):
+    for col, color in zip(_ZONE_COLS[1:], _ZONE_COLORS[1:], strict=True):
         fig.add_scatter(
             x=x,
             y=merged[col],
             mode="lines",
-            line=dict(width=0),
+            line={"width": 0},
             fill="tonexty",
             fillcolor=color,
             showlegend=False,
@@ -726,7 +766,7 @@ def team_finances_trend(
             x=x,
             y=ceiling_y,
             mode="lines",
-            line=dict(width=0),
+            line={"width": 0},
             fill="tonexty",
             fillcolor=_ZONE_CEILING_COLOR,
             showlegend=False,
@@ -740,13 +780,13 @@ def team_finances_trend(
                 y=merged[col],
                 name=label,
                 mode="lines",
-                line=dict(color=color, width=1.5, dash="dash"),
+                line={"color": color, "width": 1.5, "dash": "dash"},
                 hovertemplate="%{x}<br>$%{y:,.0f}<extra>" + label + "</extra>",
             )
     if eras and len(eras) > 1:
         for i, (first, _last, name) in enumerate(eras):
             if i:
-                fig.add_vline(x=first, line=dict(color=T.MUTED, width=1, dash="dot"))
+                fig.add_vline(x=first, line={"color": T.MUTED, "width": 1, "dash": "dot"})
             # Alternating heights: short eras (New Orleans renames three
             # times in 2002-13) would otherwise print on top of each other.
             fig.add_annotation(
@@ -758,7 +798,7 @@ def team_finances_trend(
                 showarrow=False,
                 xanchor="left",
                 yanchor="top",
-                font=dict(color=T.MUTED, size=11),
+                font={"color": T.MUTED, "size": 11},
             )
     fig.update_layout(**_layout(height=420, showlegend=True))
     # Season labels like "1984-85" parse as dates unless forced categorical -
@@ -766,9 +806,9 @@ def team_finances_trend(
     # silently resolves the axis to type="date" and season order/spacing
     # goes wrong.
     fig.update_xaxes(
-        title=dict(text="Season", font=dict(color=T.MUTED)), type="category", automargin=True
+        title={"text": "Season", "font": {"color": T.MUTED}}, type="category", automargin=True
     )
-    fig.update_yaxes(title=dict(text="$", font=dict(color=T.MUTED)), automargin=True)
+    fig.update_yaxes(title={"text": "$", "font": {"color": T.MUTED}}, automargin=True)
     return fig
 
 
@@ -790,10 +830,10 @@ def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> g
         x=d["team_payroll"],
         y=d["team_name"],
         orientation="h",
-        marker=dict(
-            color=d["bar_color"].tolist(),
-            line=dict(color=T.INK, width=[2 if n == highlight else 0 for n in d["team_name"]]),
-        ),
+        marker={
+            "color": d["bar_color"].tolist(),
+            "line": {"color": T.INK, "width": [2 if n == highlight else 0 for n in d["team_name"]]},
+        },
         hovertemplate="%{y}<br>$%{x:,.0f}<extra></extra>",
         showlegend=False,
     )
@@ -809,7 +849,7 @@ def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> g
                 y=ends,
                 mode="lines",
                 name=label,
-                line=dict(color=color, width=1.5, dash="dash"),
+                line={"color": color, "width": 1.5, "dash": "dash"},
                 hovertemplate=f"{label}<br>$%{{x:,.0f}}<extra></extra>",
             )
     fig.update_layout(**_layout(height=max(320, 19 * len(d) + 80), showlegend=True, bargap=0.25))
@@ -831,7 +871,7 @@ def calibration_chart(df: pd.DataFrame) -> go.Figure:
         x=[0, 1],
         y=[0, 1],
         mode="lines",
-        line=dict(color=T.MUTED, width=1, dash="dash"),
+        line={"color": T.MUTED, "width": 1, "dash": "dash"},
         hoverinfo="skip",
         showlegend=False,
     )
@@ -839,15 +879,15 @@ def calibration_chart(df: pd.DataFrame) -> go.Figure:
         x=df["predicted_mean"],
         y=df["actual_rate"],
         mode="lines+markers",
-        line=dict(color=T.ACCENT, width=2),
-        marker=dict(
-            color=T.ACCENT,
-            size=df["n"],
-            sizemode="area",
-            sizeref=2.0 * float(df["n"].max()) / (26**2),
-            sizemin=6,
-            line=dict(color=T.SURFACE, width=2),
-        ),
+        line={"color": T.ACCENT, "width": 2},
+        marker={
+            "color": T.ACCENT,
+            "size": df["n"],
+            "sizemode": "area",
+            "sizeref": 2.0 * float(df["n"].max()) / (26**2),
+            "sizemin": 6,
+            "line": {"color": T.SURFACE, "width": 2},
+        },
         customdata=df[["n"]],
         hovertemplate=(
             "Model said %{x:.0%}<br>Home team won %{y:.0%}<br>%{customdata[0]} games<extra></extra>"
@@ -857,24 +897,27 @@ def calibration_chart(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         **_layout(
             height=360,
-            xaxis=dict(
-                title=dict(text="Chance the model gave the home team", font=dict(color=T.MUTED)),
-                range=[0, 1],
-                tickformat=".0%",
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
-            yaxis=dict(
-                title=dict(text="How often the home team won", font=dict(color=T.MUTED)),
-                range=[0, 1],
-                tickformat=".0%",
-                gridcolor=T.GRID,
-                tickfont=dict(color=T.MUTED),
-                fixedrange=True,
-                automargin=True,
-            ),
+            xaxis={
+                "title": {
+                    "text": "Chance the model gave the home team",
+                    "font": {"color": T.MUTED},
+                },
+                "range": [0, 1],
+                "tickformat": ".0%",
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
+            yaxis={
+                "title": {"text": "How often the home team won", "font": {"color": T.MUTED}},
+                "range": [0, 1],
+                "tickformat": ".0%",
+                "gridcolor": T.GRID,
+                "tickfont": {"color": T.MUTED},
+                "fixedrange": True,
+                "automargin": True,
+            },
         )
     )
     return fig
@@ -887,7 +930,7 @@ def _empty(message: str) -> go.Figure:
     fig.add_annotation(
         text=message,
         showarrow=False,
-        font=dict(color=T.MUTED, size=13),
+        font={"color": T.MUTED, "size": 13},
         xref="paper",
         yref="paper",
         x=0.5,
@@ -896,8 +939,8 @@ def _empty(message: str) -> go.Figure:
     fig.update_layout(
         **_layout(
             height=200,
-            xaxis=dict(visible=False, fixedrange=True),
-            yaxis=dict(visible=False, fixedrange=True),
+            xaxis={"visible": False, "fixedrange": True},
+            yaxis={"visible": False, "fixedrange": True},
         )
     )
     return fig
@@ -916,25 +959,25 @@ def quick_chart(df: pd.DataFrame, kind: str, x: str, y: str, color: str | None =
         c = T.SERIES[i % len(T.SERIES)] if color else T.ACCENT
         label = str(name) if name is not None else y
         if kind == "bar":
-            fig.add_bar(x=g[x], y=g[y], name=label, marker=dict(color=c))
+            fig.add_bar(x=g[x], y=g[y], name=label, marker={"color": c})
         elif kind == "line":
-            fig.add_scatter(x=g[x], y=g[y], name=label, mode="lines", line=dict(color=c, width=2))
+            fig.add_scatter(x=g[x], y=g[y], name=label, mode="lines", line={"color": c, "width": 2})
         elif kind == "area":
             fig.add_scatter(
                 x=g[x],
                 y=g[y],
                 name=label,
                 mode="lines",
-                line=dict(color=c, width=2),
+                line={"color": c, "width": 2},
                 fill="tozeroy",
             )
         else:  # scatter
             fig.add_scatter(
-                x=g[x], y=g[y], name=label, mode="markers", marker=dict(color=c, size=9)
+                x=g[x], y=g[y], name=label, mode="markers", marker={"color": c, "size": 9}
             )
     fig.update_layout(
         **_layout(height=420, showlegend=bool(color), bargap=0.3 if kind == "bar" else 0)
     )
-    fig.update_xaxes(title=dict(text=x, font=dict(color=T.MUTED)), automargin=True)
-    fig.update_yaxes(title=dict(text=y, font=dict(color=T.MUTED)), automargin=True)
+    fig.update_xaxes(title={"text": x, "font": {"color": T.MUTED}}, automargin=True)
+    fig.update_yaxes(title={"text": y, "font": {"color": T.MUTED}}, automargin=True)
     return fig

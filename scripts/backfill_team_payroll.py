@@ -19,8 +19,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(PROJECT_ROOT))
-from ingestion.team_payroll_ingest import write_season  # noqa: E402
-from scripts.season_teams import seasons_and_teams  # noqa: E402
+from ingestion.team_payroll_ingest import write_season
+from scripts.season_teams import seasons_and_teams
 
 log = logging.getLogger("backfill_team_payroll")
 

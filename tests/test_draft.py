@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard.lib import db, draft, sim  # noqa: E402
+from dashboard.lib import db, draft, sim
 
 
 def _picks(n=8, cost=5, dup=False):
@@ -183,8 +183,13 @@ def test_offers_never_cost_more_than_the_budget_can_carry():
 
 def test_any_way_through_a_draft_stays_within_the_hidden_budget():
     pool = _priced_pool()
-    pricey = lambda rows: rows["cost"].idxmax()  # noqa: E731
-    cheap = lambda rows: rows["cost"].idxmin()  # noqa: E731
+
+    def pricey(rows):
+        return rows["cost"].idxmax()
+
+    def cheap(rows):
+        return rows["cost"].idxmin()
+
     for seed in range(30):
         for choose in (pricey, cheap):
             state, spent = _play(pool, np.random.default_rng(seed), choose)
