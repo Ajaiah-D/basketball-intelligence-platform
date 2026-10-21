@@ -148,9 +148,23 @@ def test_a_batch_older_than_the_history_is_refused(tmp_path):
     path = tmp_path / "history.csv"
     append_history(_stamped(at="2026-10-20 10:00:00"), path)
     before = path.read_bytes()
-    with pytest.raises(ValueError, match="older"):
+    with pytest.raises(ValueError, match="older") as refused:
         append_history(_stamped(("0022600002",), at="2026-10-19 10:00:00"), path)
     assert path.read_bytes() == before
+    # the message says what to do about it
+    assert "system clock" in str(refused.value)
+    assert "last row" in str(refused.value)
+
+
+def test_an_aware_predicted_at_is_written_as_naive_utc(tmp_path):
+    path = tmp_path / "history.csv"
+    stamped = _stamped()
+    stamped["predicted_at"] = [pd.Timestamp("2026-10-20 12:00:00+02:00")]
+    append_history(stamped, path)
+    row = path.read_bytes().decode().splitlines()[1].split(",")
+    assert dict(zip(PREDICTION_COLUMNS, row, strict=True))["predicted_at"] == (
+        "2026-10-20 10:00:00.000000"
+    )
 
 
 def test_formats_are_fixed(tmp_path):
@@ -269,6 +283,20 @@ def test_a_dry_run_writes_the_table_but_not_the_history(run_main, monkeypatch):
     monkeypatch.setenv(predict.DRY_RUN_ENV, "1")
     assert len(run_main["go"]()) == 2
     assert not run_main["history"].exists()
+
+
+def test_a_refused_append_fails_the_step_with_its_reason(run_main, caplog):
+    # A history whose last row is newer than this run (a clock gone back):
+    # main exits non-zero, the reason is its last log line - which is what
+    # the refresh records as the predict step's error - and the table is
+    # not written either.
+    newer = _stamped(("0022600009",), at="2030-01-01 00:00:00")
+    append_history(newer, run_main["history"])
+    with pytest.raises(SystemExit) as exit_info:
+        run_main["go"]()
+    assert exit_info.value.code == 1
+    assert "system clock" in caplog.records[-1].getMessage()
+    assert caplog.records[-1].levelname == "ERROR"
 
 
 def test_an_empty_slate_writes_nothing(run_main):

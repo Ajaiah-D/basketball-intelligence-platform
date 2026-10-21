@@ -20,3 +20,6 @@ logs/refresh.lock
 warehouse/next/
 logs/refresh.log
 warehouse/*.wal.stale
+# The refresh's snapshot of the predictions history while a run is going
+data/predictions/*.pre-run
+data/predictions/*.tmp

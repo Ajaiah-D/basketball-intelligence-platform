@@ -42,6 +42,10 @@ def env(tmp_path, monkeypatch):
     history.parent.mkdir(parents=True)
     history.write_bytes(HISTORY)
     monkeypatch.setattr(wr, "HISTORY_PATH", history)
+    # The swap tests fake os.replace to lock the warehouse; the history's
+    # writes would hit the same fake. Their atomicity is core.io's, tested
+    # in test_core_io.py, so here they are plain writes.
+    monkeypatch.setattr(wr, "atomic_write_bytes", lambda data, path: path.write_bytes(data))
     sleeps: list[float] = []
     monkeypatch.setattr(wr.time, "sleep", sleeps.append)
     monkeypatch.setattr(
@@ -520,15 +524,87 @@ def test_a_failed_swap_discards_the_predictions_too(fake_run, env, monkeypatch):
     assert "data/predictions/history.csv" not in _added(out)
 
 
-def test_a_failed_restore_is_recorded(fake_run, env, monkeypatch):
-    def full_disk(data, path):
+def test_a_failed_restore_is_recorded_and_the_snapshot_kept(fake_run, env, monkeypatch):
+    def full_disk(snapshot):
         raise OSError("disk full")
 
-    monkeypatch.setattr(wr, "atomic_write_bytes", full_disk)
+    monkeypatch.setattr(wr, "restore_history", full_disk)
     out = fake_run("score_predictions", after=_predict_appends(env))
     (restore,) = [s for s in out["run"]["steps"] if s["step"] == "restore_history"]
     assert restore["ok"] is False
     assert "disk full" in restore["error"]
+    assert "data/predictions/history.csv" not in _added(out)
+    # still there for the next run to roll back
+    assert wr.snapshot_path().read_bytes() == b"present\n" + HISTORY
+
+
+def test_the_snapshot_is_gone_after_a_published_run(fake_run, env):
+    fake_run(after=_predict_appends(env))
+    assert not wr.snapshot_path().exists()
+
+
+def test_the_snapshot_is_gone_after_a_rolled_back_run(fake_run, env):
+    fake_run("score_predictions", after=_predict_appends(env))
+    assert not wr.snapshot_path().exists()
+
+
+def test_a_snapshot_is_written_before_any_step_runs(fake_run, env):
+    seen: list[bytes] = []
+    fake_run(after={"ingest": lambda _w: seen.append(wr.snapshot_path().read_bytes())})
+    assert seen == [b"present\n" + HISTORY]
+
+
+def test_ctrl_c_after_predict_rolls_the_history_back(fake_run, env, monkeypatch):
+    committed: list[dict] = []
+    monkeypatch.setattr(wr, "commit_and_push", lambda run, **kw: committed.append(kw) or {})
+
+    def interrupt(_warehouse: Path) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        fake_run(after={**_predict_appends(env), "score_predictions": interrupt})
+    assert env["history"].read_bytes() == HISTORY
+    assert not wr.snapshot_path().exists()
+    assert committed == []
+
+
+def test_a_version_upload_failure_keeps_the_released_predictions(fake_run, env):
+    # The warehouse asset - and the predictions in it - is already on the
+    # release; only the marker failed. The run fails, the rows stay.
+    out = fake_run("publish_version", after=_predict_appends(env))
+    assert out["run"]["ok"] is False
+    assert env["history"].read_bytes() == HISTORY + APPENDED
+    assert "data/predictions/history.csv" in _added(out)
+    assert not wr.snapshot_path().exists()
+
+
+@pytest.mark.parametrize("argv", [(), ("--no-publish",)])
+def test_a_killed_run_s_snapshot_is_restored_first(fake_run, env, argv):
+    # A hard kill skips every finally: the next run, of either kind, undoes it.
+    env["history"].write_bytes(HISTORY + APPENDED)
+    wr.snapshot_path().write_bytes(b"present\n" + HISTORY)
+    seen: list[bytes] = []
+    out = fake_run(argv=argv, after={"ingest": lambda _w: seen.append(env["history"].read_bytes())})
+    assert seen == [HISTORY]
+    assert env["history"].read_bytes() == HISTORY
+    refresh_log = (env["logs"].parent / out["run"]["log"]).read_text()
+    assert "previous run was interrupted; discarded its unpublished predictions" in refresh_log
+    assert not wr.snapshot_path().exists()
+
+
+def test_a_killed_run_that_created_the_history_leaves_none(fake_run, env):
+    wr.snapshot_path().write_bytes(b"absent\n")
+    fake_run(argv=("--no-publish",))
+    assert not env["history"].exists()
+    assert not wr.snapshot_path().exists()
+
+
+def test_an_unreadable_snapshot_stops_the_run_and_is_kept(fake_run, env):
+    wr.snapshot_path().write_bytes(b"garbage")
+    out = fake_run()
+    assert out["exit"] == 1
+    assert "ingest" not in out["ran"]
+    assert wr.snapshot_path().read_bytes() == b"garbage"
     assert "data/predictions/history.csv" not in _added(out)
 
 
