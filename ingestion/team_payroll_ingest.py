@@ -28,9 +28,10 @@ one under 80% of their rows, is refused unless --allow-shrink.
 
 Eight team codes differ between this project's nba_api-derived codes and
 Basketball-Reference's own, with a different cutoff season - and in one case
-a different direction - per franchise; see LEGACY_CODE_MAP, MODERN_CODE_MAP
-and PERMANENT_CODE_MAP below, each with the live 200/404 pair that fixes its
-boundary. Every other historical code, relocations included, matches directly.
+a different direction - per franchise. The bbref_code column of dbt's
+team_codes seed holds the mapping (see bbref_code below for the live
+200/404 pairs that fix each boundary). Every other historical code,
+relocations included, matches directly.
 
 Usage:
     python ingestion/team_payroll_ingest.py --season 2026-27
@@ -56,7 +57,7 @@ import requests
 
 # Run as `python ingestion/team_payroll_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core import paths
+from core import paths, teams
 from core.io import (
     TransientError,
     atomic_write_parquet,
@@ -104,40 +105,6 @@ TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
 )
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-# nba_code -> (bbref_code, last season-end-year still under that bbref_code).
-# The first four also switched in nba_api's own codes at 1996-97, so their
-# cutoff is a formality. WAS's is load-bearing: nba_api has used "WAS" across
-# the franchise's entire history, but bbref published under "WSB" (Bullets)
-# through 1996-97 and "WAS" (Wizards) only from the 1997-98 rename onward.
-# Boundary verified live: WAS/1985.html 404, WSB/1985.html 200;
-# WSB/1998.html 404, WAS/1998.html 200.
-LEGACY_CODE_MAP = {
-    "SAN": ("SAS", 1996),  # Spurs
-    "GOS": ("GSW", 1996),  # Warriors
-    "UTH": ("UTA", 1996),  # Jazz
-    "PHL": ("PHI", 1996),  # 76ers
-    "WAS": ("WSB", 1997),  # Bullets -> Wizards, renamed for 1997-98
-}
-
-# nba_code -> (bbref_code, first season-end-year under that bbref_code) - the
-# mirror image of LEGACY_CODE_MAP: nba_api kept "CHA" through the 2014-15
-# Bobcats-to-Hornets rename, bbref switched to "CHO" that same season.
-# Boundary verified live: CHA/2014.html 200, CHO/2014.html 404;
-# CHA/2015.html 404, CHO/2015.html 200.
-MODERN_CODE_MAP = {
-    "CHA": ("CHO", 2015),  # Bobcats -> Hornets
-}
-
-# Unlike the maps above, these two mismatches aren't era-limited: bbref has
-# always published the Suns as "PHO" and the Nets (since the Brooklyn move)
-# as "BRK", for every season this project's data covers.
-# Verified live: PHX/1985.html 404, PHO/1985.html 200; PHX/2025.html 404,
-# PHO/2025.html 200; BKN/2013.html 404, BRK/2013.html 200.
-PERMANENT_CODE_MAP = {
-    "PHX": "PHO",  # Suns
-    "BKN": "BRK",  # Nets, since the 2012-13 Brooklyn move
-}
-
 log = logging.getLogger("team_payroll_ingest")
 _last_request_at = 0.0
 
@@ -158,19 +125,29 @@ def season_end_year(season: str) -> int:
     return end_year
 
 
+# The seed's bbref_code column, and the live evidence for each mismatch:
+# - SAN/GOS/UTH/PHL -> SAS/GSW/UTA/PHI: bbref files the pre-1996-97 Spurs,
+#   Warriors, Jazz and 76ers under their modern codes. nba_api switched to
+#   those codes itself at 1996-97, so the old codes only occur before it.
+# - WAS -> WSB through 1996-97: nba_api has used "WAS" across the
+#   franchise's entire history, but bbref published under "WSB" (Bullets)
+#   until the 1997-98 Wizards rename. WAS/1985.html 404, WSB/1985.html 200;
+#   WSB/1998.html 404, WAS/1998.html 200.
+# - CHA -> CHO from 2014-15: the mirror image - nba_api kept "CHA" through
+#   the Bobcats-to-Hornets rename, bbref switched that season.
+#   CHA/2014.html 200, CHO/2014.html 404; CHA/2015.html 404, CHO/2015.html 200.
+# - PHX -> PHO and BKN -> BRK in every season, not era-limited.
+#   PHX/1985.html 404, PHO/1985.html 200; PHX/2025.html 404, PHO/2025.html
+#   200; BKN/2013.html 404, BRK/2013.html 200.
 def bbref_code(nba_code: str, season: str) -> str:
-    """Map this project's team code to Basketball-Reference's, for the given season."""
-    if nba_code in PERMANENT_CODE_MAP:
-        return PERMANENT_CODE_MAP[nba_code]
-    if nba_code in LEGACY_CODE_MAP:
-        legacy_bbref_code, last_end_year = LEGACY_CODE_MAP[nba_code]
-        if season_end_year(season) <= last_end_year:
-            return legacy_bbref_code
-    if nba_code in MODERN_CODE_MAP:
-        modern_bbref_code, first_end_year = MODERN_CODE_MAP[nba_code]
-        if season_end_year(season) >= first_end_year:
-            return modern_bbref_code
-    return nba_code
+    """Map this project's team code to Basketball-Reference's, for the given
+    season, from the team_codes seed. A code the seed doesn't know is tried
+    as-is: most codes match, and a mismatch shows up as a logged 404 rather
+    than stopping the whole season's payroll."""
+    try:
+        return teams.bbref_code(nba_code, season)
+    except KeyError:
+        return nba_code
 
 
 def parse_salary_table(html: str) -> list[dict]:

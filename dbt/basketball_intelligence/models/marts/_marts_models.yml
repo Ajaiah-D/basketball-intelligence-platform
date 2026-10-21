@@ -72,6 +72,9 @@ models:
         tests: [not_null]
       - name: team_name
         tests: [not_null]
+      - name: conference
+        description: From the team_codes seed; null (and a failed build) for a code it doesn't cover.
+        tests: [not_null]
       - name: games_played
         tests: [not_null]
 

@@ -22,3 +22,61 @@ seeds:
         tests: [unique, not_null]
       - name: salary_cap
         tests: [not_null]
+
+  - name: team_codes
+    description: >
+      One row per (team code, era): the franchise whose contracts the code
+      carried, what the team was called, its conference, its identity
+      colour on the dashboard and Basketball-Reference's code for it.
+      first_season/last_season are inclusive "YYYY-YY" strings; empty means
+      open-ended. Read by mart_team_standings (joined on code and season
+      range) and by core/teams.py, which the dashboard and the payroll
+      ingest use without touching the warehouse - so this file is the one
+      place these facts live. Every code in the team game logs or the
+      payroll must be covered; assert_standings_conference_is_assigned
+      fails the build otherwise.
+
+      Decisions where the old copies disagreed. Era bounds follow the
+      franchise lineage the Finances page used: only SEA (through 2007-08,
+      so a future Seattle team is its own franchise), CHH (through
+      2001-02), the Bobcats/Hornets CHA split at 2014-15 and the
+      Bullets/Wizards WAS split at 1997-98 are bounded. GOS, PHL, SAN and
+      UTH stay open-ended rather than taking the payroll scraper's 1995-96
+      cutoff: nba_api itself switched to GSW/PHI/SAS/UTA at 1996-97, so
+      that cutoff was a formality and the bbref code of a later season
+      under those codes (which never occurs) is now the modern one instead
+      of the old code. The bbref switches for WAS (WSB through 1996-97) and
+      CHA (CHO from 2014-15) fall on the same seasons as the era splits.
+      Conference is the one the code was always given, the same for every
+      season: historical realignments (the 1979-80 Bucks in the West, the
+      Rockets and Spurs in the East; the Hornets' first two New Orleans
+      seasons in the East) are not modelled, exactly as before. SDC, WSB
+      and CAP had a colour and (except CAP) a conference but no franchise
+      lineage; they are now filed under LAC and WAS. WSB and CAP never
+      appear in nba_api's data (it uses WAS throughout) and are kept only
+      so their colour lookup is unchanged; CAP, which used to fall through
+      to a West default, is East.
+    config:
+      column_types:
+        team_code: varchar
+        first_season: varchar
+        last_season: varchar
+        franchise_id: varchar
+        era_name: varchar
+        conference: varchar
+        color: varchar
+        bbref_code: varchar
+    tests:
+      - unique:
+          column_name: "team_code || '|' || coalesce(first_season, '')"
+    columns:
+      - name: team_code
+        tests: [not_null]
+      - name: franchise_id
+        tests: [not_null]
+      - name: conference
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['East', 'West']

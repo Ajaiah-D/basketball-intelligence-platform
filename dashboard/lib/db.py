@@ -11,81 +11,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core import paths
+from core import paths, teams
 
 from . import franchises
 
 # Module constant for now: tests monkeypatch it.
 DB_PATH = paths.warehouse_path()
-
-# nba_api's static team data has no conference field, so map it here.
-# Covers current franchises plus historical/relocated abbreviations.
-#
-# dbt's mart_team_standings is the source of truth for the mapping and
-# carries the same two lists; these must stay in step with it. They are
-# kept here because conference() has a live caller that never touches the
-# mart - views/arcade.py builds its clue text from it - and because
-# standings() needs the mapping in its no-mart fallback path.
-#
-# PHL, GOS and SAN are the modern PHI/GSW/SAS franchises under the
-# abbreviations the source data uses for 1979-80 through 1995-96. They
-# were missing from both lists, and because conference() defaulted
-# anything unlisted to West, a 1980s 76er was reported as a Western
-# Conference player for 17 seasons of data. Anything added here must be
-# added to mart_team_standings.sql too, where
-# assert_standings_conference_is_assigned now fails the build on an
-# unlisted abbreviation.
-EAST = {
-    "ATL",
-    "BOS",
-    "BKN",
-    "NJN",
-    "CHA",
-    "CHH",
-    "CHI",
-    "CLE",
-    "DET",
-    "IND",
-    "MIA",
-    "MIL",
-    "NYK",
-    "ORL",
-    "PHI",
-    "PHL",
-    "TOR",
-    "WAS",
-    "WSB",
-}
-WEST = {
-    "DAL",
-    "DEN",
-    "GSW",
-    "GOS",
-    "HOU",
-    "LAC",
-    "SDC",
-    "LAL",
-    "MEM",
-    "VAN",
-    "MIN",
-    "NOP",
-    "NOH",
-    "NOK",
-    "OKC",
-    "SEA",
-    "PHX",
-    "POR",
-    "SAC",
-    "KCK",
-    "SAS",
-    "SAN",
-    "UTA",
-    "UTH",
-}
-
-
-def conference(team_abbr: str) -> str:
-    return "East" if team_abbr in EAST else "West"
 
 
 def warehouse_exists() -> bool:
@@ -412,7 +343,8 @@ def standings(season: str) -> pd.DataFrame:
 
     Reads dbt's mart_team_standings, which carries a real (if simplified -
     see the model's own comment) head-to-head tiebreak ahead of point
-    differential and is the one place the conference map now lives. Falls
+    differential, and its conference comes from the team_codes seed - the
+    same file core.teams reads for the fallback below. Falls
     back to computing directly from the staging views - the mart's exact
     logic before it existed - when the mart isn't in the warehouse yet (an
     older published copy, or a local build where dbt hasn't run). This
@@ -473,7 +405,7 @@ def standings(season: str) -> pd.DataFrame:
         """,
         (season,),
     )
-    df["conf"] = df["team"].map(conference)
+    df["conf"] = [teams.conference(team, season) for team in df["team"]]
     return df
 
 

@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 COPY .streamlit/ .streamlit/
 COPY core/ core/
 COPY dashboard/ dashboard/
+# core.teams reads team codes, eras, conferences and colours from this dbt
+# seed at runtime; nothing else under dbt/ is needed by the dashboard.
+COPY dbt/basketball_intelligence/seeds/team_codes.csv dbt/basketball_intelligence/seeds/team_codes.csv
 
 # The warehouse is downloaded on first boot via the WAREHOUSE_URL env var
 # (see dashboard/app.py), so no data ships in the image.
