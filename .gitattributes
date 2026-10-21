@@ -1,0 +1,4 @@
+# The predictions history is append-only and ml.predict copies its bytes
+# verbatim: keep it LF in every checkout (core.autocrlf would otherwise hand
+# Windows a CRLF copy), so an append is always a pure add in the diff.
+data/predictions/history.csv text eol=lf

@@ -8,7 +8,8 @@ change of location is one environment variable instead of a dozen edits.
 
 With neither set, everything is under the repo, exactly as before. A
 relative value is read relative to the repo root, whatever the cwd.
-Fixtures and run logs always stay in the repo: the refresh commits the logs.
+Fixtures, run logs and the predictions history always stay in the repo: the
+refresh commits the logs and the history.
 """
 
 from __future__ import annotations
@@ -75,3 +76,10 @@ def fixtures_dir() -> Path:
 def logs_dir() -> Path:
     """Run logs; they stay in the repo because the refresh commits them."""
     return PROJECT_ROOT / "logs"
+
+
+def predictions_history_path() -> Path:
+    """Every prediction ever issued, as a committed CSV. It is the source of
+    truth the warehouse predictions table is rebuilt from, so it never moves
+    with BIP_DATA_HOME."""
+    return PROJECT_ROOT / "data" / "predictions" / "history.csv"

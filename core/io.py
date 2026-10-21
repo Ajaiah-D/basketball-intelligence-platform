@@ -1,5 +1,6 @@
 """Crash-safe parquet files and a retry loop that only retries what is worth
-retrying. Shared by both ingesters.
+retrying. Shared by both ingesters (and the same crash-safe write keeps the
+committed predictions history whole).
 
 A plain to_parquet() killed halfway (Ctrl-C, a reboot, a full disk) leaves a
 file without its footer that still "exists", so the skip-if-done checks
@@ -37,9 +38,18 @@ def atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
     failed write removes its temp file. The temp file keeps a .tmp suffix so
     the loader's *.parquet glob never picks one up.
     """
+    _replace_atomically(path, lambda tmp: df.to_parquet(tmp, index=False))
+
+
+def atomic_write_bytes(data: bytes, path: Path) -> None:
+    """Replace path with data the same crash-safe way as atomic_write_parquet."""
+    _replace_atomically(path, lambda tmp: tmp.write_bytes(data))
+
+
+def _replace_atomically(path: Path, write: Callable[[Path], object]) -> None:
     tmp = path.with_name(path.name + ".tmp")
     try:
-        df.to_parquet(tmp, index=False)
+        write(tmp)
         # r+b, not rb: Windows only flushes a handle opened for writing.
         with tmp.open("r+b") as f:
             os.fsync(f.fileno())

@@ -169,6 +169,14 @@ def test_a_clean_run_publishes_and_commits_ok(fake_run):
     assert ("push",) in out["git"]
 
 
+def test_the_commit_carries_the_predictions_history(fake_run):
+    out = fake_run()
+    add = next(args for args in out["git"] if args[0] == "add")
+    assert "data/predictions/history.csv" in add
+    assert "data/last_updated.json" in add
+    assert "logs/refresh_runs.jsonl" in add
+
+
 def test_dbt_runs_as_one_build_step(fake_run):
     out = fake_run()
     assert "dbt_build" in out["ran"]
@@ -462,6 +470,23 @@ def test_no_publish_touches_nothing(fake_run, env):
     assert out["run"]["dry_run"] is True
     assert "swap" not in [s["step"] for s in out["run"]["steps"]]
     assert len(out["lines"]) == 1  # no git_push line
+
+
+def test_no_publish_tells_every_step_it_is_a_dry_run(fake_run):
+    # ml.predict still writes the copy's table but leaves the committed
+    # history CSV alone: a dry run must not leave rows for the next real
+    # run to commit.
+    out = fake_run(argv=("--no-publish",))
+    for name, call in out["calls"].items():
+        assert call["env"]["BIP_DRY_RUN"] == "1", name
+
+
+def test_a_publishing_run_is_never_a_dry_run(fake_run, monkeypatch):
+    # Not even with BIP_DRY_RUN left over in the shell: the predictions this
+    # run publishes must reach the history.
+    monkeypatch.setenv("BIP_DRY_RUN", "1")
+    out = fake_run()
+    assert "BIP_DRY_RUN" not in out["calls"]["predict"]["env"]
 
 
 # -- the lock -------------------------------------------------------------------

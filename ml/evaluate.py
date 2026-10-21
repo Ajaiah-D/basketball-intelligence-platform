@@ -7,10 +7,15 @@ scored on a prediction made after the result was known.
 
 from __future__ import annotations
 
+import logging
+import sys
+
 import pandas as pd
 
 from core import paths
 from ml.train import evaluate
+
+log = logging.getLogger(__name__)
 
 SETTLED_SQL = """
 with first_prediction as (
@@ -61,7 +66,8 @@ def calibration_table(con, bins: int = 10) -> pd.DataFrame:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Log the track record of every settled prediction in the warehouse."""
     import duckdb
 
     # predictions and/or the marts it joins against may not exist yet (a
@@ -81,12 +87,24 @@ if __name__ == "__main__":
             record = {"n": 0}
 
         if record["n"] == 0:
-            print("No settled predictions to score yet.")
+            log.info("No settled predictions to score yet.")
         else:
-            print(
-                f"Scored {record['n']} settled predictions: "
-                f"accuracy={record['accuracy']:.3f} brier={record['brier']:.3f} "
-                f"margin_mae={record['margin_mae']:.1f}"
+            log.info(
+                "Scored %d settled predictions: accuracy=%.3f brier=%.3f margin_mae=%.1f",
+                record["n"],
+                record["accuracy"],
+                record["brier"],
+                record["margin_mae"],
             )
     finally:
         con.close()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
+    main()
