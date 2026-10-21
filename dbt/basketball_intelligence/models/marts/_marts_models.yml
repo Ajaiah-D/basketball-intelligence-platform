@@ -25,9 +25,9 @@ models:
       - name: minutes
         description: Total minutes played.
       - name: minutes_per_game
-        description: avg(minutes_played), 1 decimal.
+        description: &mpg avg(minutes_played), 1 decimal.
       - name: points_per_game
-        description: avg(points), 1 decimal.
+        description: &ppg avg(points), 1 decimal.
       - name: true_shooting_pct
         description: >
           points / (2 x (FGA + 0.44 x FTA)) x 100, 1 decimal. Null when any of
@@ -53,33 +53,33 @@ models:
           the Advanced page merges a team_path of its own onto this mart.
         tests: [not_null]
       - name: rebounds_per_game
-        description: >
+        description: &rpg >
           avg(total_rebounds), 1 decimal. Like every per-game average here, it
           skips games where the stat is null rather than counting them as 0.
       - name: assists_per_game
-        description: avg(assists), 1 decimal.
+        description: &apg avg(assists), 1 decimal.
       - name: steals_per_game
-        description: avg(steals), 1 decimal.
+        description: &spg avg(steals), 1 decimal.
       - name: blocks_per_game
-        description: avg(blocks), 1 decimal.
+        description: &bpg avg(blocks), 1 decimal.
       - name: threes_made_per_game
-        description: avg(three_pointers_made), 1 decimal.
+        description: &tpg avg(three_pointers_made), 1 decimal.
       - name: fga_per_game
-        description: avg(field_goals_attempted), 1 decimal.
+        description: &fga_pg avg(field_goals_attempted), 1 decimal.
       - name: three_pa_per_game
-        description: avg(three_pointers_attempted), 1 decimal.
+        description: &tpa_pg avg(three_pointers_attempted), 1 decimal.
       - name: fta_per_game
-        description: avg(free_throws_attempted), 1 decimal.
+        description: &fta_pg avg(free_throws_attempted), 1 decimal.
       - name: plus_minus_per_game
-        description: avg(plus_minus), 1 decimal; null before 1996-97, when the source has none.
+        description: &pm_pg avg(plus_minus), 1 decimal; null before 1996-97, when the source has none.
       - name: fga_total
-        description: Total field goal attempts.
+        description: &fga_total Total field goal attempts.
       - name: tpa_total
-        description: Total three-point attempts.
+        description: &tpa_total Total three-point attempts.
       - name: fta_total
-        description: Total free throw attempts.
+        description: &fta_total Total free throw attempts.
       - name: fg_pct
-        description: >
+        description: &fg_pct >
           Made / attempted field goals x 100, 1 decimal, over the games that
           record both (early seasons often have the makes without the
           attempts, which once put a season over 1000%); null with no
@@ -87,11 +87,11 @@ models:
           throws. All three are held to 0-100 by
           assert_advanced_metrics_in_range.
       - name: fg3_pct
-        description: Made / attempted threes x 100, as fg_pct.
+        description: &fg3_pct Made / attempted threes x 100, as fg_pct.
       - name: ft_pct
-        description: Made / attempted free throws x 100, as fg_pct.
+        description: &ft_pct Made / attempted free throws x 100, as fg_pct.
       - name: assist_to_turnover
-        description: Total assists / total turnovers, 2 decimals; null with no turnovers.
+        description: &ast_to Total assists / total turnovers, 2 decimals; null with no turnovers.
       - name: shot_poss
         description: >
           Shooting possessions, FGA + 0.44 x FTA, unrounded. The weight for
@@ -108,28 +108,75 @@ models:
       One row per player per team per season: the season line from
       mart_player_season over only the games a player played for that team,
       so a player traded mid-season appears on both rosters with his games
-      for each. The stints add back up to his mart_player_season row. Grain
-      checked by assert_mart_grain_is_unique.
+      for each. The stints add back up to his mart_player_season row -
+      except where assert_player_season_matches_game_logs only warned (a
+      player game with no team-log row is in a stint here but missing from
+      the season mart). Grain checked by assert_mart_grain_is_unique. Stat
+      columns are defined as in mart_player_season, over this stint's games.
     columns:
       - name: season
+        description: Season, e.g. 2024-25.
         tests: [not_null]
       - name: player_id
+        description: NBA player id.
         tests: [not_null]
       - name: player_name
+        description: The player's name that season.
         tests: [not_null]
       - name: team_id
+        description: The team this stint was with.
         tests: [not_null]
       - name: team_abbreviation
+        description: That team's code that season.
         tests: [not_null]
       - name: first_game
         description: Date of the player's first game for this team that season.
         tests: [not_null]
       - name: games_played
+        description: Games played for this team that season.
         tests: [not_null]
       - name: minutes_per_game
+        description: *mpg
+      - name: points_per_game
+        description: *ppg
+      - name: rebounds_per_game
+        description: *rpg
+      - name: assists_per_game
+        description: *apg
+      - name: steals_per_game
+        description: *spg
+      - name: blocks_per_game
+        description: *bpg
+      - name: threes_made_per_game
+        description: *tpg
+      - name: fga_per_game
+        description: *fga_pg
+      - name: three_pa_per_game
+        description: *tpa_pg
+      - name: fta_per_game
+        description: *fta_pg
+      - name: plus_minus_per_game
+        description: *pm_pg
+      - name: fga_total
+        description: *fga_total
+      - name: tpa_total
+        description: *tpa_total
+      - name: fta_total
+        description: *fta_total
+      - name: fg_pct
+        description: *fg_pct
+      - name: fg3_pct
+        description: *fg3_pct
+      - name: ft_pct
+        description: *ft_pct
+      - name: true_shooting_pct
         description: >
-          This and every stat column after it are defined as in
-          mart_player_season, computed over this stint's games.
+          points / (2 x (FGA + 0.44 x FTA)) x 100, 1 decimal; null when any
+          game in the stint has a null FGA, FTA or points, or with no attempts.
+      - name: assist_to_turnover
+        description: *ast_to
+      - name: shot_poss
+        description: Shooting possessions over the stint, FGA + 0.44 x FTA, unrounded.
 
   - name: mart_player_career
     description: >
@@ -139,6 +186,7 @@ models:
       whole career - true shooting's null rule included.
     columns:
       - name: player_id
+        description: NBA player id.
         tests: [not_null, unique]
       - name: player_name
         description: The most recent spelling (a few players changed theirs).
@@ -150,10 +198,13 @@ models:
         description: Number of distinct seasons played.
         tests: [not_null]
       - name: first_season
+        description: Earliest season with a game.
         tests: [not_null]
       - name: last_season
+        description: Most recent season with a game.
         tests: [not_null]
       - name: games_played
+        description: Career games.
         tests: [not_null]
       - name: career_high
         description: Most points in a single game.
@@ -162,8 +213,48 @@ models:
       - name: wins
         description: Games played that his team won.
         tests: [not_null]
+      - name: minutes_per_game
+        description: *mpg
+      - name: points_per_game
+        description: *ppg
+      - name: rebounds_per_game
+        description: *rpg
+      - name: assists_per_game
+        description: *apg
+      - name: steals_per_game
+        description: *spg
+      - name: blocks_per_game
+        description: *bpg
+      - name: threes_made_per_game
+        description: *tpg
+      - name: fga_per_game
+        description: *fga_pg
+      - name: three_pa_per_game
+        description: *tpa_pg
+      - name: fta_per_game
+        description: *fta_pg
+      - name: plus_minus_per_game
+        description: *pm_pg
+      - name: fga_total
+        description: *fga_total
+      - name: tpa_total
+        description: *tpa_total
+      - name: fta_total
+        description: *fta_total
+      - name: fg_pct
+        description: *fg_pct
+      - name: fg3_pct
+        description: *fg3_pct
+      - name: ft_pct
+        description: *ft_pct
+      - name: true_shooting_pct
+        description: >
+          points / (2 x (FGA + 0.44 x FTA)) x 100, 1 decimal; null when any
+          game in the career has a null FGA, FTA or points, or with no attempts.
+      - name: assist_to_turnover
+        description: *ast_to
       - name: shot_poss
-        description: Career shooting possessions, FGA + 0.44 x FTA.
+        description: Shooting possessions over the career, FGA + 0.44 x FTA, unrounded.
 
   - name: mart_league_shooting
     description: >
@@ -173,6 +264,7 @@ models:
       that kind. The benchmark for a player's percentages.
     columns:
       - name: season
+        description: Season, e.g. 2024-25.
         tests: [not_null, unique]
       - name: fg_pct
         description: League field goal percentage.
