@@ -487,10 +487,10 @@ def test_force_refuses_to_replace_a_bigger_season(monkeypatch, raw, caplog):
     players = raw / "team_payroll_players" / "2009-10.parquet"
     before = (totals.read_bytes(), players.read_bytes())
 
-    # DAL fails this time: the re-fetch has one team where the file has two.
-    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML, "DAL": requests.ConnectionError("x")})
+    # A team list that lost a team: one row where the file has two.
+    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML})
     with caplog.at_level(logging.ERROR, logger="team_payroll_ingest"):
-        assert team_payroll_ingest.write_season("2009-10", ["BOS", "DAL"], force=True) is False
+        assert team_payroll_ingest.write_season("2009-10", ["BOS"], force=True) is False
     assert (totals.read_bytes(), players.read_bytes()) == before
     assert "--allow-shrink" in caplog.text
 
@@ -550,24 +550,106 @@ TEAMS_20 = [f"T{i:02d}" for i in range(20)]
 
 
 @pytest.mark.parametrize(
-    "failing,written",
+    "teams,written",
     [
-        (1, True),  # 19 of 20 teams: a 5% drop is written
-        (5, False),  # 15 of 20: a 25% drop is refused
+        (19, True),  # 19 of 20 teams: a 5% drop is written
+        (15, False),  # 15 of 20: a 25% drop is refused
     ],
 )
-def test_team_rows_only_a_large_shrink_is_refused(monkeypatch, raw, failing, written):
+def test_team_rows_only_a_large_shrink_is_refused(monkeypatch, raw, teams, written):
     _pages_or_errors(monkeypatch, dict.fromkeys(TEAMS_20, _salary_page(1)))
     assert team_payroll_ingest.write_season("2025-26", TEAMS_20) is True
 
-    pages = dict.fromkeys(TEAMS_20, _salary_page(1))
-    pages.update(dict.fromkeys(TEAMS_20[:failing], requests.ConnectionError("x")))
-    _pages_or_errors(monkeypatch, pages)
-    # False either way: a team failed, or the guard kept the old files.
-    assert team_payroll_ingest.write_season("2025-26", TEAMS_20, force=True) is False
+    # A shorter team list (failed teams are carried over, so they can't
+    # shrink the file; a wrong --teams list can).
+    ok = team_payroll_ingest.write_season("2025-26", TEAMS_20[:teams], force=True)
+    assert ok is written
 
     totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
-    assert len(totals) == (20 - failing if written else 20)
+    assert len(totals) == (teams if written else 20)
+
+
+# --- carry-over of a failed team's last fetch -----------------------------------------
+
+
+def _old_fetch(monkeypatch, raw):
+    """Week 1: BOS with the 14-line fixture, DAL with 3 lines."""
+    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML, "DAL": _salary_page(3)})
+    assert team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"]) is True
+    return (
+        pd.read_parquet(raw / "team_payroll" / "2025-26.parquet"),
+        pd.read_parquet(raw / "team_payroll_players" / "2025-26.parquet"),
+    )
+
+
+def test_a_failed_team_keeps_its_last_rows_and_others_are_replaced(monkeypatch, raw, caplog):
+    old_totals, old_players = _old_fetch(monkeypatch, raw)
+
+    # Week 2: BOS's page now has 16 lines, DAL's fetch fails.
+    _pages_or_errors(monkeypatch, {"BOS": _salary_page(16), "DAL": requests.ConnectionError("x")})
+    with caplog.at_level(logging.WARNING, logger="team_payroll_ingest"):
+        ok = team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"], force=True)
+    assert ok is False, "a failed team still fails the run"
+    assert "DAL" in caplog.text and "carried over" in caplog.text
+
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    players = pd.read_parquet(raw / "team_payroll_players" / "2025-26.parquet")
+    assert totals["team_abbreviation"].tolist() == ["BOS", "DAL"]
+    assert totals.dtypes.equals(old_totals.dtypes)
+    assert players.dtypes.equals(old_players.dtypes)
+
+    # DAL: last week's rows, timestamps included, so the page can tell they're old.
+    old_dal = old_totals[old_totals["team_abbreviation"] == "DAL"].reset_index(drop=True)
+    new_dal = totals[totals["team_abbreviation"] == "DAL"].reset_index(drop=True)
+    pd.testing.assert_frame_equal(new_dal, old_dal)
+    old_dal_lines = old_players[old_players["team_abbreviation"] == "DAL"].reset_index(drop=True)
+    new_dal_lines = players[players["team_abbreviation"] == "DAL"].reset_index(drop=True)
+    pd.testing.assert_frame_equal(new_dal_lines, old_dal_lines)
+
+    # BOS: this week's fetch.
+    bos = totals[totals["team_abbreviation"] == "BOS"].iloc[0]
+    assert bos["player_count"] == 16
+    assert (players["team_abbreviation"] == "BOS").sum() == 16
+    old_bos_time = old_totals.loc[old_totals["team_abbreviation"] == "BOS", "fetched_at_utc"]
+    assert bos["fetched_at_utc"] > old_bos_time.iloc[0]
+
+    # Every team is present, so the season counts as done again.
+    _pages_or_errors(monkeypatch, {})
+    assert team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"]) is True
+
+
+def test_with_no_existing_file_a_failed_team_is_absent(monkeypatch, raw):
+    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML, "DAL": requests.ConnectionError("x")})
+    assert team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"]) is False
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    players = pd.read_parquet(raw / "team_payroll_players" / "2025-26.parquet")
+    assert totals["team_abbreviation"].tolist() == ["BOS"]
+    assert set(players["team_abbreviation"]) == {"BOS"}
+
+
+def test_a_failed_team_missing_from_the_old_file_stays_absent(monkeypatch, raw):
+    _old_fetch(monkeypatch, raw)
+    _pages_or_errors(
+        monkeypatch,
+        {"BOS": BOS_HTML, "DAL": _salary_page(3), "MIA": requests.ConnectionError("x")},
+    )
+    assert team_payroll_ingest.write_season("2025-26", ["BOS", "DAL", "MIA"], force=True) is False
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    assert totals["team_abbreviation"].tolist() == ["BOS", "DAL"]
+
+
+def test_main_exits_non_zero_when_a_team_was_carried_over(monkeypatch, raw):
+    _old_fetch(monkeypatch, raw)
+    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML, "DAL": requests.ConnectionError("x")})
+    monkeypatch.setattr(
+        "sys.argv",
+        ["team_payroll_ingest.py", "--season", "2025-26", "--force", "--teams", "BOS", "DAL"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        team_payroll_ingest.main()
+    assert exc.value.code == 1
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    assert totals["team_abbreviation"].tolist() == ["BOS", "DAL"]
 
 
 @pytest.mark.parametrize(
