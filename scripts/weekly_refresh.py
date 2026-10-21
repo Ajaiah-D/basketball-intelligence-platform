@@ -35,6 +35,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from core import paths
+from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
 from scripts.season_teams import current_season_and_teams
 
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
@@ -150,7 +151,17 @@ def main() -> None:
     ok = run_steps(
         run,
         [
-            ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
+            (
+                "ingest",
+                [
+                    PYTHON,
+                    "ingestion/nba_ingest.py",
+                    "--force",
+                    "--pbp-games",
+                    str(PBP_MAX_NEW_GAMES_PER_RUN),
+                ],
+                None,
+            ),
             ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
         ],
     )

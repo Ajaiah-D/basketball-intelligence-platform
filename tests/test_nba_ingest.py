@@ -6,6 +6,7 @@ responses."""
 
 import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -236,6 +237,43 @@ def _stub_fetchers(monkeypatch, rows):
     monkeypatch.setattr(nba_ingest, "fetch_teams", lambda: _rows(30))
 
 
+def _pbp(game_ids, per_game=3, note="new"):
+    """Play-by-play rows the way PlayByPlayV3 returns them: actionNumber
+    repeats within a game (a steal shares its turnover's), actionId doesn't."""
+    return pd.DataFrame(
+        [
+            {
+                "gameId": g,
+                "actionNumber": 10 * (k // 2 + 1),
+                "actionId": k + 1,
+                "season": "2025-26",
+                "note": note,
+            }
+            for g in game_ids
+            for k in range(per_game)
+        ]
+    )
+
+
+def _logs(game_ids):
+    """Team game logs where the later ids are the more recent games."""
+    return pd.DataFrame(
+        {"GAME_ID": game_ids, "GAME_DATE": [f"2025-11-{i + 1:02d}" for i in range(len(game_ids))]}
+    )
+
+
+def _stub_fetchers_except_team_logs(monkeypatch):
+    for name in (
+        "fetch_player_game_logs",
+        "fetch_player_advanced",
+        "fetch_team_advanced",
+        "fetch_schedule",
+        "fetch_players",
+    ):
+        monkeypatch.setattr(nba_ingest, name, lambda s: _rows(3))
+    monkeypatch.setattr(nba_ingest, "fetch_teams", lambda: _rows(30))
+
+
 def _seed(tmp_path, name, season, n):
     (tmp_path / name).mkdir(exist_ok=True)
     core_io.atomic_write_parquet(_rows(n), tmp_path / name / f"{season}.parquet")
@@ -307,8 +345,8 @@ def test_a_corrupt_existing_file_is_replaced_whatever_the_count(tmp_path, monkey
     assert len(pd.read_parquet(tmp_path / "team_game_logs" / "2025-26.parquet")) == 3
 
 
-def test_play_by_play_may_shrink(tmp_path, monkeypatch):
-    # Its size follows --pbp-games, so a smaller file is the normal case.
+def test_play_by_play_is_not_shrink_guarded(tmp_path, monkeypatch):
+    # run() only ever adds to it, so the guard has nothing to catch there.
     monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
     _seed(tmp_path, "play_by_play", "2025-26", 10)
     nba_ingest.write_parquet(_rows(2), "play_by_play", "2025-26")
@@ -347,7 +385,7 @@ def test_refused_team_logs_are_not_used_for_play_by_play(tmp_path, monkeypatch):
 
     def fake_pbp(game_ids, season):
         picked.extend(game_ids)
-        return pd.DataFrame({"GAME_ID": game_ids})
+        return _pbp(game_ids)
 
     monkeypatch.setattr(nba_ingest, "fetch_play_by_play", fake_pbp)
 
@@ -355,3 +393,199 @@ def test_refused_team_logs_are_not_used_for_play_by_play(tmp_path, monkeypatch):
 
     assert "team_game_logs/2025-26" in refused
     assert sorted(picked) == sorted(on_disk["GAME_ID"])
+
+
+# --- play-by-play accumulates -----------------------------------------------------
+
+SEASON = "2025-26"
+
+
+def _game_ids(n):
+    """Ids G00..G{n-1}, G{n-1} being the most recent game."""
+    return [f"G{i:02d}" for i in range(n)]
+
+
+def _pbp_run(tmp_path, monkeypatch, *, played, stored=(), pbp_games=None, fetch=None):
+    """Run the latest season with `played` games in the team logs and
+    `stored` ones already in the play-by-play file. Returns the ids fetched."""
+    monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
+    _stub_fetchers_except_team_logs(monkeypatch)
+    monkeypatch.setattr(nba_ingest, "fetch_team_game_logs", lambda s: _logs(played))
+    if stored:
+        (tmp_path / "play_by_play").mkdir()
+        core_io.atomic_write_parquet(
+            _pbp(stored, note="old"), tmp_path / "play_by_play" / f"{SEASON}.parquet"
+        )
+    fetched: list[str] = []
+
+    def fake_fetch(game_ids, season):
+        fetched.extend(game_ids)
+        return _pbp(game_ids)
+
+    monkeypatch.setattr(nba_ingest, "fetch_play_by_play", fetch or fake_fetch)
+    nba_ingest.run([SEASON], pbp_games, force=True)
+    return fetched
+
+
+def _stored_pbp(tmp_path):
+    return pd.read_parquet(tmp_path / "play_by_play" / f"{SEASON}.parquet")
+
+
+def test_only_games_missing_from_the_file_are_fetched(tmp_path, monkeypatch):
+    ids = _game_ids(6)
+    fetched = _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:3], pbp_games=20)
+    # Newest first, and none of the three already stored.
+    assert fetched == ["G05", "G04", "G03"]
+
+
+def test_stored_games_are_kept_when_new_ones_arrive(tmp_path, monkeypatch):
+    ids = _game_ids(5)
+    _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:3], pbp_games=20)
+
+    out = _stored_pbp(tmp_path)
+    assert sorted(out["gameId"].unique()) == ids
+    # The old rows are the stored ones, not a re-fetch of them.
+    assert set(out[out["gameId"].isin(ids[:3])]["note"]) == {"old"}
+    assert set(out[out["gameId"].isin(ids[3:])]["note"]) == {"new"}
+
+
+def test_a_fully_stored_season_fetches_nothing_and_changes_nothing(tmp_path, monkeypatch):
+    ids = _game_ids(3)
+    fetched = _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids, pbp_games=20)
+    assert fetched == []
+    assert len(_stored_pbp(tmp_path)) == 9
+
+
+def test_rows_are_not_duplicated(tmp_path, monkeypatch):
+    ids = _game_ids(3)
+
+    def overlapping(game_ids, season):
+        # A source that repeats a stored game, and one of its own games.
+        return pd.concat([_pbp(game_ids), _pbp(["G00"]), _pbp(game_ids[:1])], ignore_index=True)
+
+    _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:1], pbp_games=20, fetch=overlapping)
+
+    out = _stored_pbp(tmp_path)
+    assert not out.duplicated(["gameId", "actionNumber", "actionId"]).any()
+    assert len(out) == 9
+
+
+def test_two_events_sharing_an_action_number_both_survive(tmp_path, monkeypatch):
+    # actionNumber alone is not a key: a steal shares its turnover's number.
+    ids = _game_ids(2)
+    _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:1], pbp_games=20)
+
+    out = _stored_pbp(tmp_path)
+    assert out.duplicated(["gameId", "actionNumber"]).any()
+    assert len(out) == 6
+
+
+def test_no_more_than_the_cap_is_fetched_per_run(tmp_path, monkeypatch):
+    ids = _game_ids(10)
+    fetched = _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:2], pbp_games=3)
+
+    assert fetched == ["G09", "G08", "G07"]
+    assert sorted(_stored_pbp(tmp_path)["gameId"].unique()) == ["G00", "G01", "G07", "G08", "G09"]
+
+
+def test_without_a_cap_every_missing_game_is_fetched(tmp_path, monkeypatch):
+    ids = _game_ids(10)
+    fetched = _pbp_run(tmp_path, monkeypatch, played=ids, stored=ids[:2], pbp_games=None)
+    assert len(fetched) == 8
+
+
+def test_an_unreadable_file_is_started_afresh(tmp_path, monkeypatch):
+    ids = _game_ids(3)
+    (tmp_path / "play_by_play").mkdir()
+    (tmp_path / "play_by_play" / f"{SEASON}.parquet").write_bytes(b"PAR1 truncated")
+    fetched = _pbp_run(tmp_path, monkeypatch, played=ids, pbp_games=20)
+    assert sorted(fetched) == ids
+    assert len(_stored_pbp(tmp_path)) == 9
+
+
+def test_play_by_play_failing_for_every_game_does_not_stop_the_run(tmp_path, monkeypatch, caplog):
+    ids = _game_ids(4)
+    monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
+    monkeypatch.setattr(nba_ingest, "fetch_team_game_logs", lambda s: _logs(ids))
+    _stub_fetchers_except_team_logs(monkeypatch)
+    (tmp_path / "play_by_play").mkdir()
+    core_io.atomic_write_parquet(
+        _pbp(ids[:2], note="old"), tmp_path / "play_by_play" / f"{SEASON}.parquet"
+    )
+
+    def always_fails(endpoint_cls, **kwargs):
+        raise ValueError("not JSON")
+
+    monkeypatch.setattr(nba_ingest, "call_endpoint", always_fails)
+    written = []
+    real_write = nba_ingest.write_parquet
+
+    def spy_write(df, name, season=None, **kwargs):
+        written.append(name)
+        return real_write(df, name, season, **kwargs)
+
+    monkeypatch.setattr(nba_ingest, "write_parquet", spy_write)
+
+    with caplog.at_level(logging.WARNING, logger="nba_ingest"):
+        refused = nba_ingest.run([SEASON], 20, force=True)
+
+    assert refused == []
+    assert "play_by_play" not in written
+    # What was stored stays, and the core data landed.
+    assert len(_stored_pbp(tmp_path)) == 6
+    assert (tmp_path / "players.parquet").exists()
+    assert (tmp_path / "teams.parquet").exists()
+    assert (tmp_path / "team_game_logs" / f"{SEASON}.parquet").exists()
+    assert "play-by-play" in caplog.text.lower()
+
+
+def test_play_by_play_is_fetched_and_written_after_the_core_files(tmp_path, monkeypatch):
+    ids = _game_ids(3)
+    events = []
+    monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
+    monkeypatch.setattr(nba_ingest, "fetch_team_game_logs", lambda s: _logs(ids))
+    _stub_fetchers_except_team_logs(monkeypatch)
+    real_write = nba_ingest.write_parquet
+
+    def spy_write(df, name, season=None, **kwargs):
+        events.append(f"write {name}")
+        return real_write(df, name, season, **kwargs)
+
+    def spy_fetch(game_ids, season):
+        events.append("fetch play_by_play")
+        return _pbp(game_ids)
+
+    monkeypatch.setattr(nba_ingest, "write_parquet", spy_write)
+    monkeypatch.setattr(nba_ingest, "fetch_play_by_play", spy_fetch)
+
+    nba_ingest.run([SEASON], 20, force=True)
+
+    assert events[-2:] == ["fetch play_by_play", "write play_by_play"]
+    core = {
+        "write player_game_logs",
+        "write team_game_logs",
+        "write player_advanced",
+        "write team_advanced",
+        "write schedule",
+        "write players",
+        "write teams",
+    }
+    assert core <= set(events[:-2])
+
+
+def test_fetch_play_by_play_returns_nothing_rather_than_raising(monkeypatch):
+    def always_fails(*args, **kwargs):
+        raise ValueError("bad")
+
+    monkeypatch.setattr(nba_ingest, "call_endpoint", always_fails)
+    assert nba_ingest.fetch_play_by_play(["G00", "G01"], SEASON).empty
+
+
+def test_the_refresh_asks_for_the_shared_cap():
+    from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
+    from scripts import weekly_refresh
+
+    source = Path(weekly_refresh.__file__).read_text(encoding="utf-8")
+    assert "PBP_MAX_NEW_GAMES_PER_RUN" in source
+    assert '"--pbp-games", "20"' not in source
+    assert PBP_MAX_NEW_GAMES_PER_RUN == 120
