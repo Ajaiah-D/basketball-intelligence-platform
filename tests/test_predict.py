@@ -23,15 +23,17 @@ def memory_db():
 
 
 def _rows():
-    return pd.DataFrame({
-        "game_id": ["0022600001"],
-        "season": ["2026-27"],
-        "game_date": pd.to_datetime(["2026-10-20"]).date,
-        "home_team_id": [1610612738],
-        "away_team_id": [1610612747],
-        "predicted_margin": [3.5],
-        "win_probability": [0.61],
-    })
+    return pd.DataFrame(
+        {
+            "game_id": ["0022600001"],
+            "season": ["2026-27"],
+            "game_date": pd.to_datetime(["2026-10-20"]).date,
+            "home_team_id": [1610612738],
+            "away_team_id": [1610612747],
+            "predicted_margin": [3.5],
+            "win_probability": [0.61],
+        }
+    )
 
 
 def test_writing_twice_appends_rather_than_overwrites(memory_db):
@@ -43,8 +45,7 @@ def test_writing_twice_appends_rather_than_overwrites(memory_db):
 
 def test_every_row_carries_the_model_version(memory_db):
     write_predictions(memory_db, _rows())
-    versions = memory_db.execute(
-        "select distinct model_version from predictions").fetchall()
+    versions = memory_db.execute("select distinct model_version from predictions").fetchall()
     assert versions == [(MODEL_VERSION,)]
 
 

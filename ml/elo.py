@@ -24,10 +24,7 @@ def expected_score(rating_a: float, rating_b: float) -> float:
 def _regress_toward_mean(ratings: dict[int, float], carry: float) -> dict[int, float]:
     """Pull every rating back toward BASE_RATING - the between-season step,
     shared by compute_elo and current_ratings so they cannot drift apart."""
-    return {
-        team: BASE_RATING + carry * (rating - BASE_RATING)
-        for team, rating in ratings.items()
-    }
+    return {team: BASE_RATING + carry * (rating - BASE_RATING) for team, rating in ratings.items()}
 
 
 def _apply_game(

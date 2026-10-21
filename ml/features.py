@@ -7,14 +7,23 @@ import pandas as pd
 from ml.elo import compute_elo
 
 FEATURE_COLUMNS = [
-    "home_elo_pre", "away_elo_pre", "elo_diff",
-    "home_season_margin", "away_season_margin",
-    "home_season_win_pct", "away_season_win_pct",
-    "home_last5_margin", "away_last5_margin",
-    "home_last10_margin", "away_last10_margin",
-    "home_days_rest", "away_days_rest",
-    "home_back_to_back", "away_back_to_back",
-    "home_games_played", "away_games_played",
+    "home_elo_pre",
+    "away_elo_pre",
+    "elo_diff",
+    "home_season_margin",
+    "away_season_margin",
+    "home_season_win_pct",
+    "away_season_win_pct",
+    "home_last5_margin",
+    "away_last5_margin",
+    "home_last10_margin",
+    "away_last10_margin",
+    "home_days_rest",
+    "away_days_rest",
+    "home_back_to_back",
+    "away_back_to_back",
+    "home_games_played",
+    "away_games_played",
     "is_neutral_site",
 ]
 

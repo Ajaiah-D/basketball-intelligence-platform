@@ -39,7 +39,6 @@ ABS_NET_KNEE = 10.0
 ABS_NET_CAP = 16.0
 
 
-
 def rotation_weights() -> np.ndarray:
     """Minutes share of each rotation slot, scaled to sum to five.
 
@@ -167,9 +166,7 @@ def simulate_vs_league(
     }
 
 
-def simulate_season_once(
-    team_net: float, opponent_nets, rng: np.random.Generator
-) -> dict:
+def simulate_season_once(team_net: float, opponent_nets, rng: np.random.Generator) -> dict:
     """One season, game by game: [(opp_index, is_home, margin, won)].
 
     Same schedule as simulate_vs_league (_vs_league_schedule). opp_index

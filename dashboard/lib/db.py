@@ -33,11 +33,53 @@ DB_PATH = Path(__file__).resolve().parents[2] / "warehouse" / "basketball.duckdb
 # added to mart_team_standings.sql too, where
 # assert_standings_conference_is_assigned now fails the build on an
 # unlisted abbreviation.
-EAST = {"ATL", "BOS", "BKN", "NJN", "CHA", "CHH", "CHI", "CLE", "DET", "IND",
-        "MIA", "MIL", "NYK", "ORL", "PHI", "PHL", "TOR", "WAS", "WSB"}
-WEST = {"DAL", "DEN", "GSW", "GOS", "HOU", "LAC", "SDC", "LAL", "MEM", "VAN",
-        "MIN", "NOP", "NOH", "NOK", "OKC", "SEA", "PHX", "POR", "SAC", "KCK",
-        "SAS", "SAN", "UTA", "UTH"}
+EAST = {
+    "ATL",
+    "BOS",
+    "BKN",
+    "NJN",
+    "CHA",
+    "CHH",
+    "CHI",
+    "CLE",
+    "DET",
+    "IND",
+    "MIA",
+    "MIL",
+    "NYK",
+    "ORL",
+    "PHI",
+    "PHL",
+    "TOR",
+    "WAS",
+    "WSB",
+}
+WEST = {
+    "DAL",
+    "DEN",
+    "GSW",
+    "GOS",
+    "HOU",
+    "LAC",
+    "SDC",
+    "LAL",
+    "MEM",
+    "VAN",
+    "MIN",
+    "NOP",
+    "NOH",
+    "NOK",
+    "OKC",
+    "SEA",
+    "PHX",
+    "POR",
+    "SAC",
+    "KCK",
+    "SAS",
+    "SAN",
+    "UTA",
+    "UTH",
+}
 
 
 def conference(team_abbr: str) -> str:
@@ -57,11 +99,12 @@ def q(sql: str, params: tuple = ()) -> pd.DataFrame:
 
 # --- Seasons ------------------------------------------------------------------
 
+
 def seasons() -> list[str]:
     """All ingested seasons, newest first."""
-    return q(
-        "select distinct season from main_staging.stg_team_game_logs order by 1 desc"
-    )["season"].tolist()
+    return q("select distinct season from main_staging.stg_team_game_logs order by 1 desc")[
+        "season"
+    ].tolist()
 
 
 def latest_season() -> str:
@@ -130,7 +173,8 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
 # the games he played there - player_season_stats() sums his whole season
 # under his last team, which credited the old team's games to the new one.
 _TEAM_ROSTER_SQL = _PLAYER_SEASON_SQL.replace(
-    "    where season = ?\n", "    where season = ? and team_abbreviation = ?\n")
+    "    where season = ?\n", "    where season = ? and team_abbreviation = ?\n"
+)
 assert _TEAM_ROSTER_SQL != _PLAYER_SEASON_SQL
 
 
@@ -153,17 +197,20 @@ _LATEST_CTE = """
     )
 """
 _LATEST_MATCH_SQL = _LATEST_CTE + _PLAYER_SEASON_SQL.replace(
-    "    select\n        player_id,\n",
-    "    select\n        player_id,\n        season,\n").replace(
+    "    select\n        player_id,\n", "    select\n        player_id,\n        season,\n"
+).replace(
     "    from main_staging.stg_player_game_logs\n    where season = ?\n"
     "    group by player_id\n    having count(*) >= ?\n",
     "    from main_staging.stg_player_game_logs\n    join latest using (player_id, season)\n"
-    "    group by player_id, season\n")
+    "    group by player_id, season\n",
+)
 assert "join latest" in _LATEST_MATCH_SQL and "        season,\n" in _LATEST_MATCH_SQL
 
 # team_label for those same player-seasons ("CHI → BOS" when traded), in one
 # query rather than one player_team_paths() call per season found.
-_LATEST_PATHS_SQL = _LATEST_CTE + """
+_LATEST_PATHS_SQL = (
+    _LATEST_CTE
+    + """
     select player_id, season,
            string_agg(team_abbreviation, ' → ' order by first_game) as team_label
     from (
@@ -174,6 +221,7 @@ _LATEST_PATHS_SQL = _LATEST_CTE + """
     )
     group by player_id, season
 """
+)
 
 
 def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.DataFrame:
@@ -181,14 +229,12 @@ def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.
     at his most recent season with min_games+ games: the player_season_stats
     columns plus season and team_label. At most `limit` players, newest
     seasons first."""
-    needle = (unicodedata.normalize("NFKD", name).encode("ascii", "ignore")
-              .decode().lower().strip())
+    needle = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower().strip()
     params = (needle or "\x00", int(min_games), int(limit))  # "" would match everyone
     found = q(_LATEST_MATCH_SQL, params)
     if found.empty:
         return found.assign(team_label=pd.Series(dtype=str))
-    return found.merge(q(_LATEST_PATHS_SQL, params), on=["player_id", "season"],
-                       how="left")
+    return found.merge(q(_LATEST_PATHS_SQL, params), on=["player_id", "season"], how="left")
 
 
 def team_roster(season: str, team: str, min_games: int = 1) -> pd.DataFrame:
@@ -215,15 +261,19 @@ def player_team_paths(season: str) -> pd.DataFrame:
     )
 
 
-def with_team_labels(stats: pd.DataFrame, season: str, id_col: str = "player_id",
-                     team_col: str = "team") -> pd.DataFrame:
+def with_team_labels(
+    stats: pd.DataFrame, season: str, id_col: str = "player_id", team_col: str = "team"
+) -> pd.DataFrame:
     """A copy of a player-season frame with team_label: "CHI → BOS" for a
     player who changed teams mid-season, his one team otherwise. The season
     line itself still covers his whole season - this only makes that
     visible instead of filing it silently under the last team."""
     paths = player_team_paths(season)
-    out = stats.merge(paths[["player_id", "team_path"]].rename(columns={"player_id": id_col}),
-                      on=id_col, how="left")
+    out = stats.merge(
+        paths[["player_id", "team_path"]].rename(columns={"player_id": id_col}),
+        on=id_col,
+        how="left",
+    )
     out["team_label"] = out["team_path"].where(out["team_path"].notna(), out[team_col])
     return out.drop(columns="team_path")
 
@@ -352,6 +402,7 @@ def league_shooting_averages(season: str) -> pd.Series:
 
 
 # --- Teams / games -------------------------------------------------------------
+
 
 def standings(season: str) -> pd.DataFrame:
     """Standings for one season: record, scoring splits, conference and the
@@ -504,30 +555,57 @@ def game_box_score(game_id: str) -> pd.DataFrame:
 # Label -> (column, higher_is_better, help text). Drives the Advanced page so
 # the metric list lives in one place instead of being restated per widget.
 ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
-    "TS%": ("true_shooting_pct", True,
-            "True shooting: points per shooting possession, counting 3s and free throws"),
-    "eFG%": ("effective_fg_pct", True,
-             "Effective FG%: field goal percentage with 3-pointers weighted 1.5x"),
-    "USG%": ("usage_pct", True,
-             "Usage: share of team possessions a player ends while on the floor"),
-    "AST%": ("assist_pct", True,
-             "Assist rate: share of teammate field goals a player assisted while on the floor"),
-    "REB%": ("rebound_pct", True,
-             "Rebound rate: share of available rebounds a player grabbed while on the floor"),
-    "TOV%": ("turnover_pct", False,
-             "Turnover rate: turnovers per 100 individual plays (lower is better)"),
+    "TS%": (
+        "true_shooting_pct",
+        True,
+        "True shooting: points per shooting possession, counting 3s and free throws",
+    ),
+    "eFG%": (
+        "effective_fg_pct",
+        True,
+        "Effective FG%: field goal percentage with 3-pointers weighted 1.5x",
+    ),
+    "USG%": (
+        "usage_pct",
+        True,
+        "Usage: share of team possessions a player ends while on the floor",
+    ),
+    "AST%": (
+        "assist_pct",
+        True,
+        "Assist rate: share of teammate field goals a player assisted while on the floor",
+    ),
+    "REB%": (
+        "rebound_pct",
+        True,
+        "Rebound rate: share of available rebounds a player grabbed while on the floor",
+    ),
+    "TOV%": (
+        "turnover_pct",
+        False,
+        "Turnover rate: turnovers per 100 individual plays (lower is better)",
+    ),
     "STL%": ("steal_pct", True, "Steals per opponent possession while on the floor"),
     "BLK%": ("block_pct", True, "Share of opponent 2-point attempts blocked"),
     "PTS/36": ("points_per_36", True, "Points per 36 minutes, pace of a starter's night"),
     "PTS/100": ("points_per_100", True, "Points per 100 team possessions on the floor"),
-    "Game score": ("game_score", True,
-                   "Hollinger game score: one-number box score summary, ~10 is average"),
-    "Net rating": ("net_rating", True,
-                   "Team point differential per 100 possessions with the player on the floor "
-                   "(official NBA figure, 1996-97 on)"),
-    "PIE": ("player_impact_estimate", True,
-            "Player impact estimate: share of the game's total production "
-            "(official NBA figure, 1996-97 on)"),
+    "Game score": (
+        "game_score",
+        True,
+        "Hollinger game score: one-number box score summary, ~10 is average",
+    ),
+    "Net rating": (
+        "net_rating",
+        True,
+        "Team point differential per 100 possessions with the player on the floor "
+        "(official NBA figure, 1996-97 on)",
+    ),
+    "PIE": (
+        "player_impact_estimate",
+        True,
+        "Player impact estimate: share of the game's total production "
+        "(official NBA figure, 1996-97 on)",
+    ),
 }
 
 
@@ -732,8 +810,16 @@ def recent_settled_predictions(n: int = 20) -> pd.DataFrame:
     score, what the model said and whether it called the winner. Uses the same
     earliest-prediction-per-game join as the track record. Empty when nothing
     has settled (or the warehouse predates the tables it needs)."""
-    cols = ["game_date", "home", "away", "home_pts", "away_pts",
-            "win_probability", "predicted_margin", "correct"]
+    cols = [
+        "game_date",
+        "home",
+        "away",
+        "home_pts",
+        "away_pts",
+        "win_probability",
+        "predicted_margin",
+        "correct",
+    ]
     if not predictions_available():
         return pd.DataFrame(columns=cols)
     try:
@@ -778,9 +864,11 @@ def calibration_bins(bins: int = 10) -> pd.DataFrame:
     # p == 1.0 belongs in the top bin, not a phantom eleventh.
     idx = np.minimum((prob * bins).astype(int), bins - 1)
     frame = pd.DataFrame({"bin": idx, "p": prob, "won": won})
-    out = frame.groupby("bin").agg(predicted_mean=("p", "mean"),
-                                   actual_rate=("won", "mean"),
-                                   n=("p", "size")).reset_index()
+    out = (
+        frame.groupby("bin")
+        .agg(predicted_mean=("p", "mean"), actual_rate=("won", "mean"), n=("p", "size"))
+        .reset_index()
+    )
     out["bin_mid"] = (out["bin"] + 0.5) / bins
     return out[cols]
 
@@ -840,6 +928,7 @@ def percentile_of(series: pd.Series, value: float, higher_is_better: bool = True
 
 
 # --- Arcade -------------------------------------------------------------------
+
 
 @st.cache_data(ttl=600, show_spinner=False)
 def player_ages_available() -> bool:
@@ -923,18 +1012,11 @@ def player_impact_available() -> bool:
 def player_impact_pool(season: str | None) -> pd.DataFrame:
     """The team builder's pool: one season's player-seasons, or every season
     when `season` is None, best impact first."""
-    cols = (
-        "season, player_id, player, team, gp, mpg, ppg, rpg, apg, "
-        "impact, usage, cost"
-    )
+    cols = "season, player_id, player, team, gp, mpg, ppg, rpg, apg, impact, usage, cost"
     if season is None:
-        return q(
-            f"select {cols} from main.player_impact "
-            "order by impact desc, player_id, season"
-        )
+        return q(f"select {cols} from main.player_impact order by impact desc, player_id, season")
     return q(
-        f"select {cols} from main.player_impact where season = ? "
-        "order by impact desc, player_id",
+        f"select {cols} from main.player_impact where season = ? order by impact desc, player_id",
         (season,),
     )
 

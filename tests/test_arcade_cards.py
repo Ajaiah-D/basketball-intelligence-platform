@@ -9,8 +9,7 @@ from dashboard.views import arcade
 
 
 def _row(**kw) -> pd.Series:
-    base = dict(player_id=1, player="Ann <Example>", season="1988-89", team="CHI",
-                age=26)
+    base = dict(player_id=1, player="Ann <Example>", season="1988-89", team="CHI", age=26)
     base.update(kw)
     return pd.Series(base)
 
@@ -22,7 +21,7 @@ def _no_headshots(monkeypatch):
 
 def test_card_puts_season_team_and_age_on_one_line_under_the_name():
     out = arcade.player_card(_row())
-    meta = out[out.index('class="bip-pc-meta"'):]
+    meta = out[out.index('class="bip-pc-meta"') :]
     assert meta.index("1988-89") < meta.index("CHI") < meta.index("age <b>26</b>")
     assert "Ann &lt;Example&gt;" in out
 
@@ -57,10 +56,25 @@ def test_old_warehouse_pool_has_an_empty_age_column(con, monkeypatch):
 
 # --- Mystery Player: the age is part of the first clue -----------------------
 
+
 def _mystery_row(**kw) -> pd.Series:
-    base = dict(player_id=1, player="Ann Example", season="1994-95", team="CHI", age=27,
-                gp=70, ppg=26.0, rpg=6.0, apg=5.0, spg=1.5, bpg=0.5, tpg=1.0,
-                tpa_pg=3.0, fg_pct=48.0, ft_pct=80.0)
+    base = dict(
+        player_id=1,
+        player="Ann Example",
+        season="1994-95",
+        team="CHI",
+        age=27,
+        gp=70,
+        ppg=26.0,
+        rpg=6.0,
+        apg=5.0,
+        spg=1.5,
+        bpg=0.5,
+        tpg=1.0,
+        tpa_pg=3.0,
+        fg_pct=48.0,
+        ft_pct=80.0,
+    )
     base.update(kw)
     return pd.Series(base)
 

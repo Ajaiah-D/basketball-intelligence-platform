@@ -54,8 +54,7 @@ def _markdown(at: AppTest) -> str:
     return " ".join(m.value for m in at.markdown).replace("\\$", "$")
 
 
-def test_dollar_signs_are_escaped_so_markdown_does_not_render_math(
-        warehouse_with_finances_mart):
+def test_dollar_signs_are_escaped_so_markdown_does_not_render_math(warehouse_with_finances_mart):
     raw = " ".join(m.value for m in _run("BOS").markdown)
     assert "\\$180.0M" in raw
     assert "spent $" not in raw
@@ -99,12 +98,14 @@ def test_old_warehouse_without_contracts_or_dates_still_renders(legacy_finances_
 
 def test_a_team_with_no_row_that_season_says_so(warehouse_with_finances_mart):
     at = _run("DEN")  # the fixture's DEN has 1986-87 and 1995-96 only
-    assert any("No payroll data for the Denver Nuggets in 2023-24" in i.value
-               for i in at.get("info"))
+    assert any(
+        "No payroll data for the Denver Nuggets in 2023-24" in i.value for i in at.get("info")
+    )
 
 
 def test_renders_a_source_gap_team_and_says_the_source_is_missing_rows(
-        warehouse_with_finances_mart):
+    warehouse_with_finances_mart,
+):
     """DEN's 1986-87 is 'sparse_source_data' - one salary row on record.
     That one really is Basketball-Reference missing the roster, so the
     strong sentence is the correct one here."""
@@ -112,12 +113,10 @@ def test_renders_a_source_gap_team_and_says_the_source_is_missing_rows(
     captions = _captions(at)
     assert "No reliable payroll total exists for 1986-87" in captions
     assert "salary records for that season are missing" in captions
-    assert "There's no reliable payroll figure for the Denver Nuggets in 1986-87." \
-        in _markdown(at)
+    assert "There's no reliable payroll figure for the Denver Nuggets in 1986-87." in _markdown(at)
 
 
-def test_a_real_but_cheap_roster_is_not_called_a_missing_source(
-        warehouse_with_finances_mart):
+def test_a_real_but_cheap_roster_is_not_called_a_missing_source(warehouse_with_finances_mart):
     """MIA's 1988-89 is flagged only for being under half the cap, and it is
     a complete 13-player inaugural expansion roster. The caption must say the
     number is low - not that the data is absent."""
@@ -147,16 +146,19 @@ def test_every_team_in_the_fixture_renders(warehouse_with_finances_mart, team):
 
 
 def test_a_sidebar_season_before_payroll_data_falls_back_to_the_latest(
-        warehouse_with_finances_mart):
+    warehouse_with_finances_mart,
+):
     at = _run(season="1980-81")
-    assert "No salary data for 1980-81 (it starts in 1986-87), so this shows 2023-24."         in _captions(at)
+    assert "No salary data for 1980-81 (it starts in 1986-87), so this shows 2023-24." in _captions(
+        at
+    )
     assert "In 2023-24, 2 of 2 teams were over the salary cap" in _markdown(at)
 
 
-def test_a_season_with_too_few_reliable_payrolls_skips_the_comparison(
-        warehouse_with_finances_mart):
+def test_a_season_with_too_few_reliable_payrolls_skips_the_comparison(warehouse_with_finances_mart):
     """1986-87's source is missing most rosters (1 of 23 teams usable in the
     real data); a 'league snapshot' of one bar compares nothing."""
     at = _run("DEN", season="1986-87")
-    assert any("Too few teams have reliable salary data in 1986-87" in i.value
-               for i in at.get("info"))
+    assert any(
+        "Too few teams have reliable salary data in 1986-87" in i.value for i in at.get("info")
+    )

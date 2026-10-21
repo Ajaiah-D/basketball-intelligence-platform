@@ -36,13 +36,19 @@ def main() -> None:
     con.close()
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps({
-        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "season_range": f"{first_season} to {last_season}",
-        "latest_game_date": str(latest_game_date),
-        "player_game_rows": player_rows,
-        "team_game_rows": team_rows,
-    }, indent=2) + "\n")
+    OUT_PATH.write_text(
+        json.dumps(
+            {
+                "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "season_range": f"{first_season} to {last_season}",
+                "latest_game_date": str(latest_game_date),
+                "player_game_rows": player_rows,
+                "team_game_rows": team_rows,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"Wrote {OUT_PATH}")
 
 

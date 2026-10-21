@@ -70,7 +70,7 @@ def prediction_card(r, tip: str) -> str:
         f'<span class="tm">{home} {home_pct}%</span></div>'
         f'<div class="bip-game-line" style="margin-top:.2rem">'
         f'<span class="tm winner">{fav} by {by} · {fav_pct}%</span></div>'
-        f'</div>'
+        f"</div>"
     )
 
 
@@ -83,8 +83,7 @@ def _upcoming(upcoming: pd.DataFrame) -> pd.DataFrame:
     tips = [_eastern_tipoff(t) for t in df["tipoff_utc"]]
     df["tip_label"] = [_clock(t) for t in tips]
     df["day_et"] = [
-        t.date() if t is not None else pd.Timestamp(g).date()
-        for t, g in zip(tips, df["game_date"])
+        t.date() if t is not None else pd.Timestamp(g).date() for t, g in zip(tips, df["game_date"])
     ]
     # Within a day: by tip-off, unknown times last.
     df["sort_key"] = [t.value if t is not None else float("inf") for t in tips]
@@ -114,8 +113,7 @@ def _upcoming_section(upcoming: pd.DataFrame) -> None:
         st.markdown(f"#### {_day(day)}", unsafe_allow_html=True)
         cols = st.columns(3)
         for i, r in enumerate(group.itertuples()):
-            cols[i % 3].markdown(prediction_card(r, r.tip_label),
-                                 unsafe_allow_html=True)
+            cols[i % 3].markdown(prediction_card(r, r.tip_label), unsafe_allow_html=True)
 
 
 def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
@@ -129,13 +127,15 @@ def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
         home_won = r.home_pts > r.away_pts
         winner = r.home if home_won else r.away
         hi, lo = max(r.home_pts, r.away_pts), min(r.home_pts, r.away_pts)
-        rows.append({
-            "Date": _day(pd.Timestamp(r.game_date)),
-            "Matchup": f"{r.away} @ {r.home}",
-            "Pick": f"{pick} {pick_pct}%",
-            "Final": f"{winner} {hi}-{lo}",
-            "Correct": "✓" if r.correct else "✗",
-        })
+        rows.append(
+            {
+                "Date": _day(pd.Timestamp(r.game_date)),
+                "Matchup": f"{r.away} @ {r.home}",
+                "Pick": f"{pick} {pick_pct}%",
+                "Final": f"{winner} {hi}-{lo}",
+                "Correct": "✓" if r.correct else "✗",
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -144,38 +144,60 @@ def _track_record(upcoming: pd.DataFrame) -> None:
     record = db.prediction_track_record()
     if record.get("n", 0) == 0:
         if upcoming.empty:
-            st.info("No predictions have been settled yet. Check back after the "
-                    "first games are played.")
+            st.info(
+                "No predictions have been settled yet. Check back after the first games are played."
+            )
         else:
             first = _upcoming(upcoming).iloc[0]["day_et"]
             st.info(f"The first predictions settle after opening night ({_day(first)}).")
         return
 
     c1, c2, c3 = st.columns(3)
-    c1.markdown(T.kpi("Accuracy", f"{record['accuracy'] * 100:.1f}%",
-                      f"over {record['n']} games", help=glossary.TERMS["Accuracy"]),
-                unsafe_allow_html=True)
-    c2.markdown(T.kpi("Brier score", f"{record['brier']:.3f}",
-                      "lower is better; 0.25 is a coin flip",
-                      help=glossary.TERMS["Brier score"]), unsafe_allow_html=True)
-    c3.markdown(T.kpi("Margin error", f"{record['margin_mae']:.1f}",
-                      "average points off", help=glossary.TERMS["Margin error"]),
-                unsafe_allow_html=True)
+    c1.markdown(
+        T.kpi(
+            "Accuracy",
+            f"{record['accuracy'] * 100:.1f}%",
+            f"over {record['n']} games",
+            help=glossary.TERMS["Accuracy"],
+        ),
+        unsafe_allow_html=True,
+    )
+    c2.markdown(
+        T.kpi(
+            "Brier score",
+            f"{record['brier']:.3f}",
+            "lower is better; 0.25 is a coin flip",
+            help=glossary.TERMS["Brier score"],
+        ),
+        unsafe_allow_html=True,
+    )
+    c3.markdown(
+        T.kpi(
+            "Margin error",
+            f"{record['margin_mae']:.1f}",
+            "average points off",
+            help=glossary.TERMS["Margin error"],
+        ),
+        unsafe_allow_html=True,
+    )
 
     bins = db.calibration_bins()
     if not bins.empty:
-        st.markdown(f"#### Calibration{T.tip(glossary.TERMS['Calibration'])}",
-                    unsafe_allow_html=True)
+        st.markdown(
+            f"#### Calibration{T.tip(glossary.TERMS['Calibration'])}", unsafe_allow_html=True
+        )
         st.caption("When the model gave the home team a chance, how often it won.")
-        st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG,
-                        width="stretch")
+        st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG, width="stretch")
 
     recent = db.recent_settled_predictions()
     if not recent.empty:
         st.markdown("#### Recent results")
         grid = _recent_results(recent)
         st.dataframe(
-            grid, hide_index=True, width="stretch", row_height=38,
+            grid,
+            hide_index=True,
+            width="stretch",
+            row_height=38,
             # Tall enough for every row: a short list should not scroll.
             height=38 * (len(grid) + 1) + 3,
             column_config={"Correct": st.column_config.TextColumn("Correct", width="small")},

@@ -10,8 +10,10 @@ from dashboard.views import games
 
 def test_html_table_escapes_text_and_applies_classes():
     df = pd.DataFrame({"name": ["<b>Ann</b>", "Bo"], "pm": [4, -2]})
-    out = tables.html_table(df, [Col("name", "Name", left=True),
-                                 Col("pm", "+/-", fmt=tables.signed, css=tables.pos_neg)])
+    out = tables.html_table(
+        df,
+        [Col("name", "Name", left=True), Col("pm", "+/-", fmt=tables.signed, css=tables.pos_neg)],
+    )
     assert "&lt;b&gt;Ann&lt;/b&gt;" in out and "<b>Ann</b>" not in out
     assert '<td class="pos">+4</td>' in out and '<td class="neg">-2</td>' in out
     assert '<th class="lft">Name</th>' in out
@@ -31,14 +33,27 @@ def test_signed_and_pos_neg():
 
 
 def _box() -> pd.DataFrame:
-    return pd.DataFrame({
-        "team": "BOS", "team_id": 1610612738,
-        "player": ["Star", "Role", "Benchwarmer"],
-        "min": [36, 24, 0], "pts": [30, 8, 0], "reb": [5, 6, 0], "ast": [7, 1, 0],
-        "stl": [1, 0, 0], "blk": [0, 2, 0], "tov": [3, 1, 0],
-        "fgm": [11, 3, 0], "fga": [20, 7, 0], "tpm": [4, 0, 0], "tpa": [9, 2, 0],
-        "ftm": [4, 2, 0], "fta": [4, 2, 0], "plus_minus": [12, -3, 0],
-    })
+    return pd.DataFrame(
+        {
+            "team": "BOS",
+            "team_id": 1610612738,
+            "player": ["Star", "Role", "Benchwarmer"],
+            "min": [36, 24, 0],
+            "pts": [30, 8, 0],
+            "reb": [5, 6, 0],
+            "ast": [7, 1, 0],
+            "stl": [1, 0, 0],
+            "blk": [0, 2, 0],
+            "tov": [3, 1, 0],
+            "fgm": [11, 3, 0],
+            "fga": [20, 7, 0],
+            "tpm": [4, 0, 0],
+            "tpa": [9, 2, 0],
+            "ftm": [4, 2, 0],
+            "fta": [4, 2, 0],
+            "plus_minus": [12, -3, 0],
+        }
+    )
 
 
 def test_box_score_card(monkeypatch):

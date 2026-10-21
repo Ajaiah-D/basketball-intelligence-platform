@@ -13,47 +13,78 @@ import html
 # close to tell apart (the red/magenta pair measured a perceptual distance
 # of 7.8 against a floor of 15, so even full-colour vision struggled). The
 # order is what makes adjacent slots legible, so keep it.
-SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500",
-          "#d55181", "#008300", "#9085e9", "#e66767"]
+SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
 
-ACCENT = SERIES[0]          # blue - primary/emphasis hue
-DIVERGE_POS = "#3987e5"     # diverging pair: blue <-> red
+ACCENT = SERIES[0]  # blue - primary/emphasis hue
+DIVERGE_POS = "#3987e5"  # diverging pair: blue <-> red
 DIVERGE_NEG = "#e66767"
-GOOD = "#0ca30c"            # status - reserved, never a series color
+GOOD = "#0ca30c"  # status - reserved, never a series color
 CRITICAL = "#d03b3b"
 
-SURFACE = "#1a1a19"         # card / chart surface
-PAGE = "#0d0d0d"            # page plane
-INK = "#ffffff"             # primary text
-INK_2 = "#c3c2b7"           # secondary text
-MUTED = "#898781"           # axis / labels
-GRID = "#2c2c2a"            # hairline gridlines
-BASELINE = "#383835"        # axis baseline / de-emphasis marks
+SURFACE = "#1a1a19"  # card / chart surface
+PAGE = "#0d0d0d"  # page plane
+INK = "#ffffff"  # primary text
+INK_2 = "#c3c2b7"  # secondary text
+MUTED = "#898781"  # axis / labels
+GRID = "#2c2c2a"  # hairline gridlines
+BASELINE = "#383835"  # axis baseline / de-emphasis marks
 BORDER = "rgba(255,255,255,0.10)"
 
 RADIUS = "2px"  # sharp, not rounded - the site-wide corner radius for every
-                # custom card/chip/badge/hero shape (native widgets get the
-                # same value via [theme] baseRadius/buttonRadius in
-                # .streamlit/config.toml, so nothing looks half-rounded)
+# custom card/chip/badge/hero shape (native widgets get the
+# same value via [theme] baseRadius/buttonRadius in
+# .streamlit/config.toml, so nothing looks half-rounded)
 
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 # One recognizable color per franchise, brightened where the true primary
 # is too dark to read on the dark surface. Historical codes included.
 TEAM_COLORS = {
-    "ATL": "#E03A3E", "BOS": "#00B25A", "BKN": "#A7A9AC", "CHA": "#00A9C4",
-    "CHI": "#E23A47", "CLE": "#FDBB30", "DAL": "#2E8FE0", "DEN": "#FEC524",
-    "DET": "#E01E38", "GSW": "#FFC72C", "HOU": "#E5313E", "IND": "#FDBB30",
-    "LAC": "#E5484D", "LAL": "#FDB927", "MEM": "#7B9FD4", "MIA": "#F9A01B",
-    "MIL": "#00B25A", "MIN": "#78BE20", "NOP": "#C9A25C", "NYK": "#F58426",
-    "OKC": "#3AA0E0", "ORL": "#2E9BE0", "PHI": "#3B8FE0", "PHX": "#E56020",
-    "POR": "#E03A3E", "SAC": "#9B6BC9", "SAS": "#C4CED4", "TOR": "#E5484D",
-    "UTA": "#F9A01B", "WAS": "#E31837",
+    "ATL": "#E03A3E",
+    "BOS": "#00B25A",
+    "BKN": "#A7A9AC",
+    "CHA": "#00A9C4",
+    "CHI": "#E23A47",
+    "CLE": "#FDBB30",
+    "DAL": "#2E8FE0",
+    "DEN": "#FEC524",
+    "DET": "#E01E38",
+    "GSW": "#FFC72C",
+    "HOU": "#E5313E",
+    "IND": "#FDBB30",
+    "LAC": "#E5484D",
+    "LAL": "#FDB927",
+    "MEM": "#7B9FD4",
+    "MIA": "#F9A01B",
+    "MIL": "#00B25A",
+    "MIN": "#78BE20",
+    "NOP": "#C9A25C",
+    "NYK": "#F58426",
+    "OKC": "#3AA0E0",
+    "ORL": "#2E9BE0",
+    "PHI": "#3B8FE0",
+    "PHX": "#E56020",
+    "POR": "#E03A3E",
+    "SAC": "#9B6BC9",
+    "SAS": "#C4CED4",
+    "TOR": "#E5484D",
+    "UTA": "#F9A01B",
+    "WAS": "#E31837",
     # historical / relocated franchises
-    "SEA": "#2DA05A", "VAN": "#00B2A9", "NJN": "#A7A9AC", "WSB": "#E31837",
-    "SDC": "#E5484D", "KCK": "#4B8FD4", "CHH": "#00A9C4", "NOH": "#C9A25C",
-    "NOK": "#C9A25C", "GOS": "#FFC72C", "SAN": "#C4CED4", "UTH": "#F9A01B",
-    "PHL": "#3B8FE0", "CAP": "#E31837",
+    "SEA": "#2DA05A",
+    "VAN": "#00B2A9",
+    "NJN": "#A7A9AC",
+    "WSB": "#E31837",
+    "SDC": "#E5484D",
+    "KCK": "#4B8FD4",
+    "CHH": "#00A9C4",
+    "NOH": "#C9A25C",
+    "NOK": "#C9A25C",
+    "GOS": "#FFC72C",
+    "SAN": "#C4CED4",
+    "UTH": "#F9A01B",
+    "PHL": "#3B8FE0",
+    "CAP": "#E31837",
 }
 
 
@@ -62,9 +93,11 @@ def team_color(abbr: str) -> str:
 
 
 def team_dot(abbr: str, size: int = 9) -> str:
-    return (f'<span style="display:inline-block;width:{size}px;height:{size}px;'
-            f'border-radius:50%;background:{team_color(abbr)};'
-            f'margin-right:6px;vertical-align:baseline"></span>')
+    return (
+        f'<span style="display:inline-block;width:{size}px;height:{size}px;'
+        f"border-radius:50%;background:{team_color(abbr)};"
+        f'margin-right:6px;vertical-align:baseline"></span>'
+    )
 
 
 CSS = f"""
@@ -308,32 +341,39 @@ def tip(text: str) -> str:
     """A small ⓘ that shows `text` on hover - or on tap/keyboard focus, via
     tabindex, since phones have no hover. Pure CSS (.bip-tip), no script."""
     safe = html.escape(text, quote=True)
-    return (f'<span class="bip-tip" tabindex="0" role="note" aria-label="{safe}" '
-            f'data-tip="{safe}">i</span>')
+    return (
+        f'<span class="bip-tip" tabindex="0" role="note" aria-label="{safe}" '
+        f'data-tip="{safe}">i</span>'
+    )
 
 
 def card_html(title: str, body_html: str, help: str = "", style: str = "") -> str:
     # `style` is extra inline CSS for the card box (e.g. a highlighted border).
     style_attr = f' style="{style}"' if style else ""
-    return (f'<div class="bip-card"{style_attr}><h4>{title}{tip(help) if help else ""}'
-            f'</h4>{body_html}</div>')
+    return (
+        f'<div class="bip-card"{style_attr}><h4>{title}{tip(help) if help else ""}'
+        f"</h4>{body_html}</div>"
+    )
 
 
 def card(st, title: str, body_html: str, help: str = "") -> None:
     st.markdown(card_html(title, body_html, help), unsafe_allow_html=True)
 
 
-def kpi(label: str, value: str, sub: str = "", accent: str = ACCENT, note: str = "",
-        help: str = "") -> str:
+def kpi(
+    label: str, value: str, sub: str = "", accent: str = ACCENT, note: str = "", help: str = ""
+) -> str:
     # `note` is a short qualifier on the label's own line (keeps the card the
     # same height as its neighbours); `sub` adds a line under the value;
     # `help` adds a hoverable explanation icon after the label.
     note_html = f'<span class="bip-kpi-note">{note}</span>' if note else ""
     sub_html = f'<div class="bip-kpi-sub">{sub}</div>' if sub else ""
     tip_html = tip(help) if help else ""
-    return (f'<div class="bip-card bip-kpi" style="border-left-color:{accent}">'
-            f'<div class="bip-kpi-label"><span>{label}{tip_html}</span>{note_html}</div>'
-            f'<div class="bip-kpi-value">{value}</div>{sub_html}</div>')
+    return (
+        f'<div class="bip-card bip-kpi" style="border-left-color:{accent}">'
+        f'<div class="bip-kpi-label"><span>{label}{tip_html}</span>{note_html}</div>'
+        f'<div class="bip-kpi-value">{value}</div>{sub_html}</div>'
+    )
 
 
 def rank_badge(i: int) -> str:
@@ -344,5 +384,7 @@ def rank_badge(i: int) -> str:
 
 
 def chip(text: str, color: str = ACCENT) -> str:
-    return (f'<span class="bip-chip" style="background:{color}26;'
-            f'border-color:{color}40;color:{color}">{text}</span>')
+    return (
+        f'<span class="bip-chip" style="background:{color}26;'
+        f'border-color:{color}40;color:{color}">{text}</span>'
+    )

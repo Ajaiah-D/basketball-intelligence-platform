@@ -17,8 +17,14 @@ from dashboard.lib import db, draft, sim  # noqa: E402
 
 def _picks(n=8, cost=5, dup=False):
     rows = [
-        {"season": "2024-25", "player_id": i, "player": f"P{i}", "cost": cost,
-         "impact": 1.0, "usage": 1.0}
+        {
+            "season": "2024-25",
+            "player_id": i,
+            "player": f"P{i}",
+            "cost": cost,
+            "impact": 1.0,
+            "usage": 1.0,
+        }
         for i in range(n)
     ]
     if dup and n >= 2:
@@ -28,17 +34,20 @@ def _picks(n=8, cost=5, dup=False):
 
 def _pool(n=100, seed=0):
     r = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "season": "2024-25",
-        "player_id": np.arange(n),
-        "player": [f"P{i}" for i in range(n)],
-        "impact": r.normal(0, 2, n).round(2),
-        "usage": r.uniform(0.6, 1.6, n).round(2),
-        "cost": r.integers(1, 11, n),
-    })
+    return pd.DataFrame(
+        {
+            "season": "2024-25",
+            "player_id": np.arange(n),
+            "player": [f"P{i}" for i in range(n)],
+            "impact": r.normal(0, 2, n).round(2),
+            "usage": r.uniform(0.6, 1.6, n).round(2),
+            "cost": r.integers(1, 11, n),
+        }
+    )
 
 
 # --- validate_build ------------------------------------------------------------
+
 
 def test_constants_come_from_sim():
     assert draft.BUDGET == 36
@@ -87,6 +96,7 @@ def test_validate_build_empty():
 
 # --- Draft mode: pick one of three ------------------------------------------
 
+
 def _priced_pool(per_cost=6, seasons=("2024-25",)):
     """per_cost players at every cost 1..12, impact rising with cost; with
     two seasons, every player appears in both."""
@@ -95,9 +105,16 @@ def _priced_pool(per_cost=6, seasons=("2024-25",)):
         pid = 0
         for cost in range(1, 13):
             for k in range(per_cost):
-                rows.append({"season": season, "player_id": pid, "player": f"P{pid}",
-                             "cost": cost, "impact": cost * 0.5 + k * 0.01,
-                             "usage": 1.0})
+                rows.append(
+                    {
+                        "season": season,
+                        "player_id": pid,
+                        "player": f"P{pid}",
+                        "cost": cost,
+                        "impact": cost * 0.5 + k * 0.01,
+                        "usage": 1.0,
+                    }
+                )
                 pid += 1
     return pd.DataFrame(rows)
 
@@ -107,8 +124,7 @@ def _play(pool, rng, choose):
     state = draft.new_pick_draft(rng)
     spent = 0
     for spot in range(sim.ROSTER_SIZE):
-        offer = draft.offer_options(pool, state["picks"], state["budget"] - spent,
-                                    spot, rng)
+        offer = draft.offer_options(pool, state["picks"], state["budget"] - spent, spot, rng)
         label = choose(pool.loc[offer])
         r = pool.loc[label]
         state["picks"].append((int(r.player_id), str(r.season)))
@@ -189,11 +205,11 @@ def test_taking_the_cheap_option_leaves_better_options_later():
 
 def test_offer_options_rejects_a_full_roster():
     with pytest.raises(ValueError):
-        draft.offer_options(_priced_pool(), [], 10, sim.ROSTER_SIZE,
-                            np.random.default_rng(0))
+        draft.offer_options(_priced_pool(), [], 10, sim.ROSTER_SIZE, np.random.default_rng(0))
 
 
 # --- auto_rotation -------------------------------------------------------------
+
 
 def test_auto_rotation_sorts_by_impact_desc():
     rows = pd.DataFrame({"player": list("abcdefgh"), "impact": [1, 5, 3, 8, 2, 7, 4, 6]})
@@ -203,6 +219,7 @@ def test_auto_rotation_sorts_by_impact_desc():
 
 
 # --- db pool loaders -----------------------------------------------------------
+
 
 def test_player_impact_unavailable_on_a_warehouse_without_the_tables(tmp_warehouse_without_marts):
     assert db.player_impact_available() is False

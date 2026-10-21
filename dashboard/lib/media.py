@@ -48,34 +48,35 @@ def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = "#3987e
     """Team logo; a team-color disc with the abbreviation if the CDN has none."""
     uri = team_logo_data_uri(team_id)
     if uri:
-        return (f'<img src="{uri}" alt="{abbr}" '
-                f'style="width:{size}px;height:{size}px;object-fit:contain"/>')
+        return (
+            f'<img src="{uri}" alt="{abbr}" '
+            f'style="width:{size}px;height:{size}px;object-fit:contain"/>'
+        )
     return (
         f'<span style="display:inline-flex;width:{size}px;height:{size}px;'
-        f'border-radius:50%;border:2px solid {color};background:{color}26;'
-        f'color:{color};align-items:center;justify-content:center;'
+        f"border-radius:50%;border:2px solid {color};background:{color}26;"
+        f"color:{color};align-items:center;justify-content:center;"
         f'font-weight:800;font-size:{size * 0.3:.0f}px">{abbr}</span>'
     )
 
 
-def avatar_html(player_id: int, name: str, size: int = 72,
-                ring: str = "#3987e5") -> str:
+def avatar_html(player_id: int, name: str, size: int = 72, ring: str = "#3987e5") -> str:
     """Circular headshot with a team-color ring; initials disc fallback."""
     uri = headshot_data_uri(player_id)
     if uri:
         return (
             f'<span style="display:inline-block;width:{size}px;height:{size}px;'
-            f'border-radius:50%;border:2px solid {ring};overflow:hidden;'
+            f"border-radius:50%;border:2px solid {ring};overflow:hidden;"
             f'vertical-align:middle;background:#242423">'
             f'<img src="{uri}" alt="" '
             f'style="width:100%;height:100%;object-fit:cover;object-position:top"/>'
-            f'</span>'
+            f"</span>"
         )
     initials = "".join(w[0] for w in name.split()[:2]).upper()
     return (
         f'<span style="display:inline-flex;width:{size}px;height:{size}px;'
-        f'border-radius:50%;border:2px solid {ring};background:{ring}26;'
-        f'color:{ring};align-items:center;justify-content:center;'
+        f"border-radius:50%;border:2px solid {ring};background:{ring}26;"
+        f"color:{ring};align-items:center;justify-content:center;"
         f'font-weight:800;font-size:{size * 0.34:.0f}px;vertical-align:middle">'
-        f'{initials}</span>'
+        f"{initials}</span>"
     )

@@ -16,14 +16,16 @@ def test_four_hundred_points_is_ten_to_one():
 
 
 def test_ratings_start_at_1500_and_are_pre_game():
-    games = pd.DataFrame({
-        "game_id": ["1", "2"],
-        "season": ["2000-01", "2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01", "2000-11-03"]),
-        "home_team_id": [10, 10],
-        "away_team_id": [20, 20],
-        "home_won": [True, True],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1", "2"],
+            "season": ["2000-01", "2000-01"],
+            "game_date": pd.to_datetime(["2000-11-01", "2000-11-03"]),
+            "home_team_id": [10, 10],
+            "away_team_id": [20, 20],
+            "home_won": [True, True],
+        }
+    )
     out = compute_elo(games).set_index("game_id")
     assert out.loc["1", "home_elo_pre"] == pytest.approx(1500.0)
     assert out.loc["1", "away_elo_pre"] == pytest.approx(1500.0)
@@ -32,14 +34,16 @@ def test_ratings_start_at_1500_and_are_pre_game():
 
 
 def test_ratings_regress_toward_the_mean_between_seasons():
-    games = pd.DataFrame({
-        "game_id": ["1", "2"],
-        "season": ["2000-01", "2001-02"],
-        "game_date": pd.to_datetime(["2001-01-01", "2001-11-01"]),
-        "home_team_id": [10, 10],
-        "away_team_id": [20, 20],
-        "home_won": [True, True],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1", "2"],
+            "season": ["2000-01", "2001-02"],
+            "game_date": pd.to_datetime(["2001-01-01", "2001-11-01"]),
+            "home_team_id": [10, 10],
+            "away_team_id": [20, 20],
+            "home_won": [True, True],
+        }
+    )
     carried = compute_elo(games, carry=0.75).set_index("game_id")
     gain = carried.loc["2", "home_elo_pre"] - 1500.0
     full = compute_elo(games, carry=1.0).set_index("game_id")
@@ -59,26 +63,36 @@ def test_neutral_site_games_get_no_home_advantage():
     rating bump than a neutral win (both sides plain 1500) for the same K.
     """
     base_game = {
-        "game_id": ["1"], "season": ["2000-01"],
+        "game_id": ["1"],
+        "season": ["2000-01"],
         "game_date": pd.to_datetime(["2000-11-01"]),
-        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
+        "home_team_id": [10],
+        "away_team_id": [20],
+        "home_won": [True],
     }
     # compute_elo only returns pre-game ratings, so to observe a post-game
     # rating, read the PRE-game rating of a second game for the same team.
     second_game = {
-        "game_id": ["2"], "season": ["2000-01"],
+        "game_id": ["2"],
+        "season": ["2000-01"],
         "game_date": pd.to_datetime(["2000-11-03"]),
-        "home_team_id": [10], "away_team_id": [30], "home_won": [False],
+        "home_team_id": [10],
+        "away_team_id": [30],
+        "home_won": [False],
         "is_neutral_site": [False],
     }
-    neutral_then_second = compute_elo(pd.concat(
-        [pd.DataFrame({**base_game, "is_neutral_site": [True]}), pd.DataFrame(second_game)],
-        ignore_index=True,
-    ))
-    home_then_second = compute_elo(pd.concat(
-        [pd.DataFrame({**base_game, "is_neutral_site": [False]}), pd.DataFrame(second_game)],
-        ignore_index=True,
-    ))
+    neutral_then_second = compute_elo(
+        pd.concat(
+            [pd.DataFrame({**base_game, "is_neutral_site": [True]}), pd.DataFrame(second_game)],
+            ignore_index=True,
+        )
+    )
+    home_then_second = compute_elo(
+        pd.concat(
+            [pd.DataFrame({**base_game, "is_neutral_site": [False]}), pd.DataFrame(second_game)],
+            ignore_index=True,
+        )
+    )
     rating_after_neutral_win = neutral_then_second.set_index("game_id").loc["2", "home_elo_pre"]
     rating_after_real_home_win = home_then_second.set_index("game_id").loc["2", "home_elo_pre"]
 
@@ -105,14 +119,16 @@ def test_missing_is_neutral_site_column_defaults_to_all_regular_games():
     the post-game rating, and pin it to the real-home-win value - i.e. the
     +100 term was applied, not suppressed.
     """
-    games = pd.DataFrame({
-        "game_id": ["1", "2"],
-        "season": ["2000-01", "2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01", "2000-11-03"]),
-        "home_team_id": [10, 10],
-        "away_team_id": [20, 30],
-        "home_won": [True, False],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1", "2"],
+            "season": ["2000-01", "2000-01"],
+            "game_date": pd.to_datetime(["2000-11-01", "2000-11-03"]),
+            "home_team_id": [10, 10],
+            "away_team_id": [20, 30],
+            "home_won": [True, False],
+        }
+    )
     out = compute_elo(games)  # must not raise
     assert len(out) == 2
     assert out.set_index("game_id").loc["2", "home_elo_pre"] == pytest.approx(
@@ -127,11 +143,16 @@ def test_current_ratings_regresses_when_the_new_season_has_no_games_yet():
     A caller that read the last row of compute_elo's output for this team
     would get 2000-01's raw, unregressed rating - current_ratings must not
     make that mistake."""
-    games = pd.DataFrame({
-        "game_id": ["1"], "season": ["2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01"]),
-        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1"],
+            "season": ["2000-01"],
+            "game_date": pd.to_datetime(["2000-11-01"]),
+            "home_team_id": [10],
+            "away_team_id": [20],
+            "home_won": [True],
+        }
+    )
     ratings = current_ratings(games, as_of_season="2001-02")
     adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))
     assert ratings[10] == pytest.approx(1500.0 + 0.75 * adjustment)
@@ -141,11 +162,16 @@ def test_current_ratings_regresses_when_the_new_season_has_no_games_yet():
 def test_current_ratings_applies_no_extra_regression_within_the_same_season():
     """as_of_season matching the season already played must not double-apply
     the regression on top of whatever compute_elo's own loop already did."""
-    games = pd.DataFrame({
-        "game_id": ["1"], "season": ["2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01"]),
-        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1"],
+            "season": ["2000-01"],
+            "game_date": pd.to_datetime(["2000-11-01"]),
+            "home_team_id": [10],
+            "away_team_id": [20],
+            "home_won": [True],
+        }
+    )
     ratings = current_ratings(games, as_of_season="2000-01")
     adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))
     assert ratings[10] == pytest.approx(1500.0 + adjustment)
@@ -159,11 +185,16 @@ def test_current_ratings_is_post_game_not_pre_game():
     current_ratings exists to fix. Pin the gap to precisely one game's
     adjustment, with as_of_season equal to the existing season so no
     between-season regression is in play to muddy the comparison."""
-    games = pd.DataFrame({
-        "game_id": ["1"], "season": ["2000-01"],
-        "game_date": pd.to_datetime(["2000-11-01"]),
-        "home_team_id": [10], "away_team_id": [20], "home_won": [True],
-    })
+    games = pd.DataFrame(
+        {
+            "game_id": ["1"],
+            "season": ["2000-01"],
+            "game_date": pd.to_datetime(["2000-11-01"]),
+            "home_team_id": [10],
+            "away_team_id": [20],
+            "home_won": [True],
+        }
+    )
     pre_game = compute_elo(games).set_index("game_id").loc["1", "home_elo_pre"]
     post_game = current_ratings(games, as_of_season="2000-01")[10]
     adjustment = 20.0 * (1.0 - expected_score(1600.0, 1500.0))

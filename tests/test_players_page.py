@@ -64,11 +64,13 @@ def test_career_scope_shows_all_seasons_and_no_season_choice(con):
 
 # --- Search finds players outside the selected season -------------------------
 
+
 def _unique_name(con, where: str, params=()):
     """(name, latest season) of a player whose name no other player shares
     and who never changed its spelling, from mart_player_season rows matching
     `where` with 25+ games (the page's default minimum)."""
-    row = con.execute(f"""
+    row = con.execute(
+        f"""
         with names as (
             select player_id, min(player_name) as player_name
             from main_marts.mart_player_season
@@ -86,7 +88,9 @@ def _unique_name(con, where: str, params=()):
         group by n.player_name
         order by max(m.season) desc
         limit 1
-    """, list(params)).fetchone()
+    """,
+        list(params),
+    ).fetchone()
     if row is None:
         pytest.skip("no suitable player in this warehouse")
     return row
@@ -94,9 +98,11 @@ def _unique_name(con, where: str, params=()):
 
 def test_search_finds_a_retired_player_at_his_latest_season(con):
     newest, _ = _two_seasons()
-    name, last = _unique_name(con, "player_id not in (select player_id from "
-                                   "main_marts.mart_player_season where season = ?)",
-                              (newest,))
+    name, last = _unique_name(
+        con,
+        "player_id not in (select player_id from main_marts.mart_player_season where season = ?)",
+        (newest,),
+    )
     at = _app()
     at.text_input[0].input(name).run()
     assert not at.exception, at.exception

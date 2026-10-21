@@ -85,11 +85,13 @@ except Exception as exc:
     st.error(f"Warehouse download failed: {exc}")
 
 if not db.warehouse_exists():
-    st.error("Warehouse not found. Run the pipeline first (see README):\n\n"
-             "1. `python ingestion/nba_ingest.py`\n"
-             "2. `python scripts/load_to_duckdb.py`\n"
-             "3. `dbt run --profiles-dir .` (from dbt/basketball_intelligence)\n\n"
-             "On a cloud deploy, set the `WAREHOUSE_URL` secret instead.")
+    st.error(
+        "Warehouse not found. Run the pipeline first (see README):\n\n"
+        "1. `python ingestion/nba_ingest.py`\n"
+        "2. `python scripts/load_to_duckdb.py`\n"
+        "3. `dbt run --profiles-dir .` (from dbt/basketball_intelligence)\n\n"
+        "On a cloud deploy, set the `WAREHOUSE_URL` secret instead."
+    )
     st.stop()
 
 from dashboard.views import (  # noqa: E402
@@ -106,28 +108,28 @@ from dashboard.views import (  # noqa: E402
 
 nav = {
     "Explore": [
-        st.Page(overview.render, title="Overview", icon=":material/home:",
-                default=True),  # default page serves at "/", no url_path
-        st.Page(players.render, title="Players", icon=":material/person:",
-                url_path="players"),
-        st.Page(teams.render, title="Teams", icon=":material/groups:",
-                url_path="teams"),
-        st.Page(games.render, title="Games", icon=":material/sports_basketball:",
-                url_path="games"),
-        st.Page(advanced.render, title="Advanced", icon=":material/insights:",
-                url_path="advanced"),
-        st.Page(arcade.render, title="Arcade", icon=":material/stadia_controller:",
-                url_path="arcade"),
-        st.Page(predictions.render, title="Predictions", icon=":material/query_stats:",
-                url_path="predictions"),
-        st.Page(finances.render, title="Finances", icon=":material/payments:",
-                url_path="finances"),
+        st.Page(
+            overview.render, title="Overview", icon=":material/home:", default=True
+        ),  # default page serves at "/", no url_path
+        st.Page(players.render, title="Players", icon=":material/person:", url_path="players"),
+        st.Page(teams.render, title="Teams", icon=":material/groups:", url_path="teams"),
+        st.Page(games.render, title="Games", icon=":material/sports_basketball:", url_path="games"),
+        st.Page(advanced.render, title="Advanced", icon=":material/insights:", url_path="advanced"),
+        st.Page(
+            arcade.render, title="Arcade", icon=":material/stadia_controller:", url_path="arcade"
+        ),
+        st.Page(
+            predictions.render,
+            title="Predictions",
+            icon=":material/query_stats:",
+            url_path="predictions",
+        ),
+        st.Page(finances.render, title="Finances", icon=":material/payments:", url_path="finances"),
     ],
 }
 if config.dev_lab_enabled():
     nav["Developer"] = [
-        st.Page(dev_lab.render, title="Dev Lab", icon=":material/terminal:",
-                url_path="dev"),
+        st.Page(dev_lab.render, title="Dev Lab", icon=":material/terminal:", url_path="dev"),
     ]
 pages = st.navigation(nav)
 
@@ -138,7 +140,8 @@ with st.sidebar:
         '<span style="font-size:.72rem;color:#898781">INTELLIGENCE PLATFORM</span></div>',
         unsafe_allow_html=True,
     )
-    st.selectbox("Season", db.seasons(), key="season",
-                 help="Applies to Overview, Players, Teams, and Games")
+    st.selectbox(
+        "Season", db.seasons(), key="season", help="Applies to Overview, Players, Teams, and Games"
+    )
 
 pages.run()

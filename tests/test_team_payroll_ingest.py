@@ -29,14 +29,17 @@ def test_parse_salary_table_extracts_every_player_row():
 
 
 def test_parse_salary_table_unescapes_player_names():
-    html = ('<table id="salaries2"><tr>'
-            '<td class="left" data-append-csv="oneilsh01" data-stat="player" >'
-            '<a href="/players/o/oneilsh01.html">Shaquille O&#x27;Neal</a></td>'
-            '<td class="right" data-stat="salary" csk="17142000" >$17,142,000</td>'
-            '</tr></table>')
+    html = (
+        '<table id="salaries2"><tr>'
+        '<td class="left" data-append-csv="oneilsh01" data-stat="player" >'
+        '<a href="/players/o/oneilsh01.html">Shaquille O&#x27;Neal</a></td>'
+        '<td class="right" data-stat="salary" csk="17142000" >$17,142,000</td>'
+        "</tr></table>"
+    )
     rows = parse_salary_table(html)
-    assert rows == [{"bbref_player_id": "oneilsh01", "player": "Shaquille O'Neal",
-                     "salary_usd": 17142000}]
+    assert rows == [
+        {"bbref_player_id": "oneilsh01", "player": "Shaquille O'Neal", "salary_usd": 17142000}
+    ]
 
 
 def test_parse_salary_table_total_matches_known_payroll():
@@ -50,44 +53,52 @@ def test_parse_salary_table_empty_page_returns_empty_list():
     assert parse_salary_table("<html><body>no table here</body></html>") == []
 
 
-@pytest.mark.parametrize("season,expected", [
-    ("1984-85", 1985),
-    ("1999-00", 2000),
-    ("2009-10", 2010),
-    ("2026-27", 2027),
-])
+@pytest.mark.parametrize(
+    "season,expected",
+    [
+        ("1984-85", 1985),
+        ("1999-00", 2000),
+        ("2009-10", 2010),
+        ("2026-27", 2027),
+    ],
+)
 def test_season_end_year(season, expected):
     assert season_end_year(season) == expected
 
 
-@pytest.mark.parametrize("nba_code,season,expected", [
-    ("SAN", "1990-91", "SAS"),   # Spurs, pre-1996-97 legacy code
-    ("GOS", "1990-91", "GSW"),   # Warriors, pre-1996-97 legacy code
-    ("UTH", "1990-91", "UTA"),   # Jazz, pre-1996-97 legacy code
-    ("PHL", "1990-91", "PHI"),   # 76ers, pre-1996-97 legacy code
-    ("BOS", "1990-91", "BOS"),   # unaffected code, passes through unchanged
-    ("SAS", "2020-21", "SAS"),   # modern code, passes through unchanged
-    ("PHX", "1984-85", "PHO"),   # Suns, permanent mismatch (not era-limited)
-    ("PHX", "2025-26", "PHO"),   # Suns, still PHO in the modern era too
-    ("WAS", "1984-85", "WSB"),   # Bullets, pre-1997-98 rename
-    ("WAS", "1996-97", "WSB"),   # last season still under "WSB"
-    ("WAS", "1997-98", "WAS"),   # Wizards rename season, bbref code changes too
-    ("WAS", "2020-21", "WAS"),   # modern code, passes through unchanged
-    ("BKN", "2012-13", "BRK"),   # Nets, permanent mismatch since the Brooklyn move
-    ("BKN", "2025-26", "BRK"),   # Nets, still BRK in the modern era too
-    ("CHA", "1984-85", "CHA"),   # unaffected pre-expansion year, passes through unchanged
-    ("CHA", "2013-14", "CHA"),   # last season still under "CHA" (Bobcats era)
-    ("CHA", "2014-15", "CHO"),   # Hornets rename season, bbref code changes too
-    ("CHA", "2020-21", "CHO"),   # modern code stays CHO
-])
+@pytest.mark.parametrize(
+    "nba_code,season,expected",
+    [
+        ("SAN", "1990-91", "SAS"),  # Spurs, pre-1996-97 legacy code
+        ("GOS", "1990-91", "GSW"),  # Warriors, pre-1996-97 legacy code
+        ("UTH", "1990-91", "UTA"),  # Jazz, pre-1996-97 legacy code
+        ("PHL", "1990-91", "PHI"),  # 76ers, pre-1996-97 legacy code
+        ("BOS", "1990-91", "BOS"),  # unaffected code, passes through unchanged
+        ("SAS", "2020-21", "SAS"),  # modern code, passes through unchanged
+        ("PHX", "1984-85", "PHO"),  # Suns, permanent mismatch (not era-limited)
+        ("PHX", "2025-26", "PHO"),  # Suns, still PHO in the modern era too
+        ("WAS", "1984-85", "WSB"),  # Bullets, pre-1997-98 rename
+        ("WAS", "1996-97", "WSB"),  # last season still under "WSB"
+        ("WAS", "1997-98", "WAS"),  # Wizards rename season, bbref code changes too
+        ("WAS", "2020-21", "WAS"),  # modern code, passes through unchanged
+        ("BKN", "2012-13", "BRK"),  # Nets, permanent mismatch since the Brooklyn move
+        ("BKN", "2025-26", "BRK"),  # Nets, still BRK in the modern era too
+        ("CHA", "1984-85", "CHA"),  # unaffected pre-expansion year, passes through unchanged
+        ("CHA", "2013-14", "CHA"),  # last season still under "CHA" (Bobcats era)
+        ("CHA", "2014-15", "CHO"),  # Hornets rename season, bbref code changes too
+        ("CHA", "2020-21", "CHO"),  # modern code stays CHO
+    ],
+)
 def test_bbref_code_maps_legacy_codes(nba_code, season, expected):
     assert bbref_code(nba_code, season) == expected
 
 
 def _fake_pages(pages: dict[str, str], monkeypatch):
     """Serve canned HTML per bbref team code, so the tests below never hit the network."""
+
     def fake_fetch(team_code, season):
         return pages[team_code]
+
     monkeypatch.setattr(team_payroll_ingest, "fetch_team_season_html", fake_fetch)
 
 
@@ -131,10 +142,15 @@ def test_ingest_season_writes_a_row_for_a_team_with_no_data(monkeypatch):
     assert set(players["team_abbreviation"]) == {"BOS"}
 
 
-TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count",
-                 "fetched_at_utc"]
-PLAYER_COLUMNS = ["season", "team_abbreviation", "bbref_player_id", "player",
-                  "salary_usd", "fetched_at_utc"]
+TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count", "fetched_at_utc"]
+PLAYER_COLUMNS = [
+    "season",
+    "team_abbreviation",
+    "bbref_player_id",
+    "player",
+    "salary_usd",
+    "fetched_at_utc",
+]
 
 
 def test_ingest_season_columns(monkeypatch):
