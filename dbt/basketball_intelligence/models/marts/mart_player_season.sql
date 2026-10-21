@@ -10,6 +10,12 @@
 -- Rate formulas follow the standard public definitions (Basketball
 -- Reference); "team game minutes" below is team minutes / 5, i.e. the
 -- minutes of game time the team played.
+--
+-- The plain season line (per-game averages, shooting percentages, true
+-- shooting) comes from the player_stat_line macro, the same definitions
+-- mart_player_team_season and mart_player_career use. The joins below must
+-- keep every player game: assert_player_season_matches_game_logs fails the
+-- build if a season-player or a single game goes missing.
 
 with player_games as (
     select
@@ -64,7 +70,11 @@ totals as (
         season,
         player_id,
         any_value(player_name)                as player_name,
-        max_by(team_abbreviation, game_date)  as team_abbreviation,
+        -- The last team. The source logs a few players in two games, for
+        -- two teams, on one date (88 player-dates, all but one before
+        -- 1985-86); the team code breaks that tie so the answer can't
+        -- change between builds. team_label below breaks it the same way.
+        max_by(team_abbreviation, (game_date, team_abbreviation)) as team_abbreviation,
         count(*)                              as games_played,
         -- Box scores are only complete from 1985-86; before that whole
         -- columns are missing (1979-80 has no field goal attempts, rebounds
@@ -108,7 +118,7 @@ totals as (
         sum(blocks)                           as blocks,
         sum(turnovers)                        as turnovers,
         sum(personal_fouls)                   as personal_fouls,
-        avg(plus_minus)                       as plus_minus_per_game,
+        {{ player_stat_line() }},
         -- Team and opponent context over the player's games only
         sum(team_minutes) / 5.0               as team_game_minutes,
         sum(team_field_goals_made)            as team_field_goals_made,
@@ -142,6 +152,30 @@ derived as (
         -- Share of the team's floor time this player was on for
         minutes / nullif(team_game_minutes, 0)         as minutes_share
     from totals
+),
+
+-- "CHI → BOS" for a player traded mid-season, in the order of each stint's
+-- first game; his one team otherwise.
+team_paths as (
+    select
+        season,
+        player_id,
+        string_agg(team_abbreviation, ' → '
+                   order by first_game, team_abbreviation) as team_path
+    from {{ ref('mart_player_team_season') }}
+    group by season, player_id
+),
+
+-- What an age is counted from in seasons the NBA publishes none for: the
+-- player's earliest season with one.
+age_anchor as (
+    select
+        player_id,
+        arg_min(age, season)               as age0,
+        min(cast(left(season, 4) as int))  as y0
+    from {{ ref('stg_player_advanced') }}
+    where age is not null
+    group by player_id
 )
 
 select
@@ -151,13 +185,12 @@ select
     d.team_abbreviation,
     d.games_played,
     d.minutes,
-    round(d.minutes / nullif(d.games_played, 0), 1)    as minutes_per_game,
-    round(d.points / nullif(d.games_played, 0), 1)     as points_per_game,
+    d.minutes_per_game,
+    d.points_per_game,
 
     -- Shooting efficiency
-    case when d.box_score_complete then
-        round(100 * d.points / nullif(2 * (d.field_goals_attempted
-            + 0.44 * d.free_throws_attempted), 0), 1) end as true_shooting_pct,
+    -- Gated on its own three inputs, not box_score_complete (see the macro)
+    d.true_shooting_pct,
     case when d.box_score_complete then
         round(100 * (d.field_goals_made + 0.5 * d.three_pointers_made)
             / nullif(d.field_goals_attempted, 0), 1) end  as effective_fg_pct,
@@ -224,7 +257,7 @@ select
             + 0.7 * d.offensive_rebounds + 0.3 * d.defensive_rebounds + d.steals
             + 0.7 * d.assists + 0.7 * d.blocks - 0.4 * d.personal_fouls - d.turnovers)
             / nullif(d.games_played, 0), 1) end        as game_score,
-    round(d.plus_minus_per_game, 1)                    as plus_minus,
+    d.plus_minus_per_game                              as plus_minus,
     d.box_score_complete,
 
     -- On/off efficiency and PIE cannot be recovered from box score totals
@@ -234,8 +267,45 @@ select
     a.defensive_rating        as defensive_rating,
     a.net_rating              as net_rating,
     a.player_impact_estimate  as player_impact_estimate,
-    a.offensive_rating is not null as has_official_advanced
+    a.offensive_rating is not null as has_official_advanced,
+
+    -- The dashboard's season line, under the same names in all three
+    -- player marts
+    d.team_abbreviation                                as team,
+    -- Not called team_path: the Advanced page reads this mart with
+    -- select * and merges player_team_paths()' team_path onto it, which a
+    -- same-named column here would split into team_path_x/_y and break.
+    tp.team_path                                       as team_label,
+    d.rebounds_per_game,
+    d.assists_per_game,
+    d.steals_per_game,
+    d.blocks_per_game,
+    d.threes_made_per_game,
+    d.fga_per_game,
+    d.three_pa_per_game,
+    d.fta_per_game,
+    d.plus_minus_per_game,
+    d.fga_total,
+    d.tpa_total,
+    d.fta_total,
+    d.fg_pct,
+    d.fg3_pct,
+    d.ft_pct,
+    d.assist_to_turnover,
+    d.shot_poss,
+
+    -- The NBA's age where it publishes one (1996-97 on); otherwise a year
+    -- per season from the player's earliest known age (Jordan, 33 in
+    -- 1996-97, was 25 in 1988-89). Null for a career that ended before
+    -- 1996-97.
+    cast(floor(coalesce(a.age, an.age0
+        + (cast(left(d.season, 4) as int) - an.y0))) as int) as age
 from derived d
 left join {{ ref('stg_player_advanced') }} a
        on a.season = d.season
       and a.player_id = d.player_id
+left join team_paths tp
+       on tp.season = d.season
+      and tp.player_id = d.player_id
+left join age_anchor an
+       on an.player_id = d.player_id

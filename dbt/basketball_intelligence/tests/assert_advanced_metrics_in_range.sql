@@ -76,3 +76,71 @@ where value is not null
        (metric = 'usage_pct' and (value < 0 or value > 60))
     or (metric = 'pace' and (value < 80 or value > 120))
   )
+
+union all
+
+-- The season-line marts. A league percentage is pooled over a whole season,
+-- so it moves a few points at most (1979-80 to 2025-26: FG% 43.7-49.2, 3P%
+-- 24.2-36.7, FT% 72.8-78.4); far outside that, a column went missing. An age
+-- counted back from a bad anchor would land outside a playing career. Career
+-- true shooting gets the same bounds as a season's, past 100 games.
+select 'line ' || metric, season, entity, value
+from (
+    select season, 'league' as entity, 'league fg_pct' as metric, fg_pct as value
+    from {{ ref('mart_league_shooting') }}
+    union all
+    select season, 'league', 'league fg3_pct', fg3_pct from {{ ref('mart_league_shooting') }}
+    union all
+    select season, 'league', 'league ft_pct', ft_pct from {{ ref('mart_league_shooting') }}
+    union all
+    select season, player_name, 'age', age from {{ ref('mart_player_season') }}
+    union all
+    select last_season, player_name, 'career true_shooting_pct', true_shooting_pct
+    from {{ ref('mart_player_career') }} where games_played >= 100
+)
+where value is not null
+  and (
+       (metric = 'league fg_pct' and (value < 40 or value > 55))
+    or (metric = 'league fg3_pct' and (value < 20 or value > 45))
+    or (metric = 'league ft_pct' and (value < 65 or value > 85))
+    or (metric = 'age' and (value < 17 or value > 50))
+    or (metric = 'career true_shooting_pct' and (value < 20 or value > 100))
+  )
+
+union all
+
+-- A shooting percentage is makes over attempts from the same games, so it
+-- can't leave 0-100 on any sample, however small. Outside it means the two
+-- sides were summed over different games again - the sum()-skips-nulls
+-- trap that once gave 1980-81 seasons 1080% from the field.
+select 'shooting ' || metric, season, entity, value
+from (
+    select season, player_name as entity, 'season fg_pct' as metric, fg_pct as value
+    from {{ ref('mart_player_season') }}
+    union all
+    select season, player_name, 'season fg3_pct', fg3_pct from {{ ref('mart_player_season') }}
+    union all
+    select season, player_name, 'season ft_pct', ft_pct from {{ ref('mart_player_season') }}
+    union all
+    select season, player_name || ' ' || team_abbreviation, 'stint fg_pct', fg_pct
+    from {{ ref('mart_player_team_season') }}
+    union all
+    select season, player_name || ' ' || team_abbreviation, 'stint fg3_pct', fg3_pct
+    from {{ ref('mart_player_team_season') }}
+    union all
+    select season, player_name || ' ' || team_abbreviation, 'stint ft_pct', ft_pct
+    from {{ ref('mart_player_team_season') }}
+    union all
+    select last_season, player_name, 'career fg_pct', fg_pct from {{ ref('mart_player_career') }}
+    union all
+    select last_season, player_name, 'career fg3_pct', fg3_pct from {{ ref('mart_player_career') }}
+    union all
+    select last_season, player_name, 'career ft_pct', ft_pct from {{ ref('mart_player_career') }}
+    union all
+    select season, 'league', 'league fg_pct', fg_pct from {{ ref('mart_league_shooting') }}
+    union all
+    select season, 'league', 'league fg3_pct', fg3_pct from {{ ref('mart_league_shooting') }}
+    union all
+    select season, 'league', 'league ft_pct', ft_pct from {{ ref('mart_league_shooting') }}
+)
+where value < 0 or value > 100
