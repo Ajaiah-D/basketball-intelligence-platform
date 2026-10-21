@@ -134,6 +134,9 @@ pipeline/ML/UI). Decisions made with the user, all the recommended options:
   team columns were missing.
 - A few pre-1985 per-game averages change slightly, now that unrecorded
   games are no longer counted as zeros.
+- FG% and 3P% for some 1979-80 to 1985-86 player-seasons (and that era's
+  league benchmarks) are corrected: they now count only games where both
+  makes and attempts were recorded, so no percentage can exceed 100.
 
 ## Rollout
 
