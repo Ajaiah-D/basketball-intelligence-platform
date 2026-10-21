@@ -39,6 +39,35 @@ def con():
     connection.close()
 
 
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """With CI set, fail the run if any test skipped.
+
+    CI deselects the tests that need the full warehouse (-m "not
+    full_warehouse"), so everything it does run should run. A skip there
+    means a gap in the fixture warehouse is hiding a test, and the run goes
+    green while testing less than it claims. Deselected tests are not skips
+    and do not count. Locally, skips are fine.
+    """
+    if not os.environ.get("CI"):
+        return
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is None:
+        return
+    skipped = reporter.stats.get("skipped", [])
+    if not skipped:
+        return
+    reporter.write_line("")
+    reporter.write_sep("=", f"CI is set: {len(skipped)} skipped test(s) fail the run", red=True)
+    for report in skipped:
+        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else ""
+        reporter.write_line(f"{report.nodeid}: {reason}")
+    reporter.write_line(
+        "Fix the skip, or mark the test full_warehouse if it needs the full local warehouse."
+    )
+    if exitstatus == pytest.ExitCode.OK:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
 # --- Finances page coverage ----------------------------------------------------
 #
 # Same isolated-tmp-warehouse pattern as test_predictions_page.py's

@@ -11,6 +11,8 @@ a law.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 BASE_RATING = 1500.0
@@ -92,6 +94,9 @@ def compute_elo(
     current_season: str | None = None
     rows = []
 
+    # pandas-stubs type each itertuples field as any scalar; the columns are
+    # only known at runtime.
+    game: Any
     for game in ordered.itertuples(index=False):
         if game.season != current_season:
             ratings = _regress_toward_mean(ratings, carry)
@@ -134,6 +139,7 @@ def current_ratings(
     ratings: dict[int, float] = {}
     current_season: str | None = None
 
+    game: Any  # see compute_elo
     for game in ordered.itertuples(index=False):
         if game.season != current_season:
             ratings = _regress_toward_mean(ratings, carry)

@@ -1,6 +1,6 @@
 name: Tests
 
-# dbt build + pytest only, against committed parquet fixtures. No live API
+# Lint, then dbt build + pytest against committed parquet fixtures. No live API
 # calls: stats.nba.com blocks GitHub-hosted runners' IPs (confirmed by a
 # failed test run - see DEPLOYMENT.md), so ingestion/nba_ingest.py never
 # runs here. Real data refreshes stay a local, residential-IP job.
@@ -12,6 +12,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +24,12 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy
+
       - name: Build a warehouse from the committed fixtures
         run: |
           mkdir -p data/raw
@@ -31,10 +38,9 @@ jobs:
 
       - name: dbt build
         working-directory: dbt/basketball_intelligence
-        run: |
-          dbt seed --profiles-dir .
-          dbt run --profiles-dir .
-          dbt test --profiles-dir .
+        run: dbt build --profiles-dir .
 
+      # The fixtures hold a handful of seasons, so tests that need the full
+      # warehouse are deselected; conftest.py fails the run on any skip.
       - name: pytest
-        run: pytest tests/ -v --tb=short
+        run: pytest -m "not full_warehouse" -v --tb=short

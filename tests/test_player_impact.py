@@ -299,11 +299,14 @@ def built(con):
     ).fetchone()[0]
     if n < HOLDOUT_SEASONS + 1:
         # CI's fixture warehouse has a single post-1996 season. The rankings
-        # and calibration checks below only mean anything on the full one.
+        # and calibration checks below only mean anything on the full one,
+        # so they are marked full_warehouse and CI deselects them; this skip
+        # is for a partial local warehouse.
         pytest.skip(f"needs the full warehouse ({n} plus-minus seasons here)")
     return build(con)
 
 
+@pytest.mark.full_warehouse
 def test_the_best_seasons_are_recognisable_stars(built):
     impact, _ = built
     top10 = impact.nlargest(10, "impact")["player"].tolist()
@@ -311,12 +314,14 @@ def test_the_best_seasons_are_recognisable_stars(built):
     assert stars & set(top10), f"no all-time star in the top 10: {top10}"
 
 
+@pytest.mark.full_warehouse
 def test_rebounding_specialists_are_not_rated_the_best_ever(built):
     impact, _ = built
     top50 = impact.nlargest(50, "impact")["player"].tolist()
     assert "Dennis Rodman" not in top50
 
 
+@pytest.mark.full_warehouse
 def test_team_calibration_explains_real_net_rating(built):
     _, meta = built
     # Measured at 0.68 on the 2026-10-14 warehouse (1,177 team-seasons, MAE
@@ -330,6 +335,7 @@ def test_team_calibration_explains_real_net_rating(built):
     assert all(isinstance(v, float) for v in coefs.values())
 
 
+@pytest.mark.full_warehouse
 def test_pool_is_eligible_and_costs_are_in_range(built):
     impact, _ = built
     assert impact["cost"].between(1, 12).all()

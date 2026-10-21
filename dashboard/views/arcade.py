@@ -898,7 +898,8 @@ def _new_offer(state: dict, pool: pd.DataFrame) -> None:
     rng = np.random.default_rng()
     labels = draft.offer_options(pool, state["picks"], state["budget"] - state["spent"], spot, rng)
     labels = [labels[i] for i in rng.permutation(len(labels))]
-    state["offer"] = [(int(pool.at[lb, "player_id"]), str(pool.at[lb, "season"])) for lb in labels]
+    # pandas-stubs type a .at cell as any scalar, which int() rejects.
+    state["offer"] = [(int(pool.at[lb, "player_id"]), str(pool.at[lb, "season"])) for lb in labels]  # type: ignore[arg-type]
 
 
 def _start_pick_draft(pool: pd.DataFrame, choice: str) -> dict:
@@ -918,7 +919,7 @@ def _tb_pick(season: str | None, key: tuple[int, str]) -> None:
     if label is None:
         return
     state["picks"].append(key)
-    state["spent"] += int(pool.at[label, "cost"])
+    state["spent"] += int(pool.at[label, "cost"])  # type: ignore[arg-type]  # .at cell, see _new_offer
     _new_offer(state, pool)
 
 

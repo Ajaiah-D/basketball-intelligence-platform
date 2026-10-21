@@ -21,18 +21,25 @@ DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
 OUT_PATH = PROJECT_ROOT / "data" / "last_updated.json"
 
 
+def _one_row(con: duckdb.DuckDBPyConnection, sql: str) -> tuple:
+    """The single row of an aggregate query (no GROUP BY, so always one)."""
+    row = con.execute(sql).fetchone()
+    assert row is not None
+    return row
+
+
 def main() -> None:
     con = duckdb.connect(str(DB_PATH), read_only=True)
     player_rows, team_rows = (
-        con.execute("select count(*) from raw.player_game_logs").fetchone()[0],
-        con.execute("select count(*) from raw.team_game_logs").fetchone()[0],
+        _one_row(con, "select count(*) from raw.player_game_logs")[0],
+        _one_row(con, "select count(*) from raw.team_game_logs")[0],
     )
-    first_season, last_season = con.execute(
-        "select min(season), max(season) from main_staging.stg_team_game_logs"
-    ).fetchone()
-    latest_game_date = con.execute(
-        "select max(game_date) from main_staging.stg_team_game_logs"
-    ).fetchone()[0]
+    first_season, last_season = _one_row(
+        con, "select min(season), max(season) from main_staging.stg_team_game_logs"
+    )
+    (latest_game_date,) = _one_row(
+        con, "select max(game_date) from main_staging.stg_team_game_logs"
+    )
     con.close()
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

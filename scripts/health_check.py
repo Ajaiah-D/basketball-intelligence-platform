@@ -75,10 +75,12 @@ def check_row_counts() -> None:
     ]
     for table, min_rows in tables:
         try:
-            n = con.execute(f"select count(*) from {table}").fetchone()[0]
+            row = con.execute(f"select count(*) from {table}").fetchone()
         except duckdb.Error as exc:
             fail(f"{table}: query failed ({exc})")
             continue
+        assert row is not None  # count(*) always returns one row
+        n = row[0]
         if n < min_rows:
             fail(f"{table}: only {n:,} rows (expected >= {min_rows:,})")
         else:
@@ -93,14 +95,14 @@ def check_freshness() -> None:
         return
     con = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        latest = con.execute(
-            "select max(game_date) from main_staging.stg_team_game_logs"
-        ).fetchone()[0]
+        row = con.execute("select max(game_date) from main_staging.stg_team_game_logs").fetchone()
     except duckdb.Error as exc:
         fail(f"could not read latest game date ({exc})")
         con.close()
         return
     con.close()
+    assert row is not None  # an aggregate without GROUP BY always returns one row
+    latest = row[0]
     if latest is None:
         fail("no games in the warehouse")
         return

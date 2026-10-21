@@ -36,3 +36,25 @@ quote-style = "double"
 # ruff 0.17 also reformats python code blocks inside markdown; keep the docs
 # and plans as written.
 exclude = ["*.md"]
+
+[tool.mypy]
+python_version = "3.12"
+# Gradual typing: unannotated functions are still checked, but nothing is
+# forced to carry annotations. `core` joins this list once the package exists
+# (mypy errors on a path that is not there).
+files = ["dashboard", "ingestion", "ml", "scripts"]
+# dashboard/, dashboard/lib/, ingestion/ and scripts/ have no __init__.py;
+# resolve their modules from the repo root, the way the app imports them.
+explicit_package_bases = true
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "full_warehouse: needs the full local warehouse (all seasons); deselected in CI",
+]
+addopts = "-ra"

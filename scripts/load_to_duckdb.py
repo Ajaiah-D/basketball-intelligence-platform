@@ -52,8 +52,9 @@ def main() -> None:
             f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM read_parquet(?, union_by_name=true)",
             [source],
         )
-        rows = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-        log.info("Loaded %-28s %8d rows", table, rows)
+        row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
+        assert row is not None  # count(*) always returns one row
+        log.info("Loaded %-28s %8d rows", table, row[0])
 
     con.close()
     log.info("Warehouse ready at %s", DB_PATH)
