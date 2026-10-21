@@ -30,7 +30,7 @@ answer from the API should not quietly erase good data. A smaller drop is
 normal - the NBA corrects box scores. --allow-shrink overrides it.
 
 Usage:
-    python ingestion/nba_ingest.py                      # current season, up to 20 new games of PBP
+    python ingestion/nba_ingest.py                      # current season, up to 120 new games of PBP
     python ingestion/nba_ingest.py --season 2025-26 --pbp-games 50
     python ingestion/nba_ingest.py --backfill 1979-80   # everything from 1979-80 to now
     python ingestion/nba_ingest.py --all-pbp            # every missing game (slow: ~1300 calls)
@@ -62,6 +62,7 @@ from nba_api.stats.static import teams as static_teams
 # Run as `python ingestion/nba_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
+from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
 from core.io import (
     TransientError,
     atomic_write_parquet,
@@ -222,6 +223,8 @@ def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
         len(game_ids) * MIN_SECONDS_BETWEEN_REQUESTS,
     )
     frames = []
+    failed = 0
+    empty = 0
     for i, game_id in enumerate(game_ids, 1):
         # One bad game shouldn't sink the other nineteen. Programming errors
         # (a TypeError and the like) still propagate.
@@ -229,11 +232,27 @@ def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
             df = call_endpoint(playbyplayv3.PlayByPlayV3, game_id=game_id)
         except (requests.RequestException, TransientError, ValueError, KeyError) as exc:
             log.error("  giving up on game %s: %s", game_id, exc)
+            failed += 1
+            continue
+        if df.empty:
+            # Answered, but with nothing in it. It stays "missing", so it is
+            # asked for again every run: a game that is always empty shows up
+            # in the summary below rather than going unnoticed.
+            log.warning("  game %s returned no rows", game_id)
+            empty += 1
             continue
         df["season"] = season
         frames.append(df)
         if i % 10 == 0 or i == len(game_ids):
             log.info("  %d/%d games done", i, len(game_ids))
+    if failed or empty:
+        log.warning(
+            "Play-by-play: %d of %d games failed and %d returned no rows - "
+            "they stay missing and are tried again next run",
+            failed,
+            len(game_ids),
+            empty,
+        )
     if not frames:
         # Not an error: play-by-play is the optional, flaky part of the run,
         # and the games that failed are still missing, so the next run tries
@@ -269,6 +288,11 @@ def accumulate_play_by_play(
     path = RAW_DIR / "play_by_play" / f"{season}.parquet"
     # An unreadable file is started afresh rather than trusted.
     existing = pd.read_parquet(path) if is_valid_parquet(path) else None
+    if existing is not None and "gameId" not in existing.columns:
+        log.warning(
+            "%s/%s.parquet has no gameId column - starting it afresh", "play_by_play", season
+        )
+        existing = None
     stored = set(existing["gameId"]) if existing is not None else set()
     missing = [g for g in played_game_ids if g not in stored]
     if not missing:
@@ -523,7 +547,7 @@ def run(
     return refused
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--season",
@@ -547,9 +571,10 @@ def main() -> None:
     parser.add_argument(
         "--pbp-games",
         type=int,
-        default=20,
+        default=PBP_MAX_NEW_GAMES_PER_RUN,
         help="Play-by-play: fetch at most this many games the latest season's "
-        "file doesn't have yet, newest first (default: 20; 0 to skip)",
+        "file doesn't have yet, newest first (default: %(default)s, the cap the "
+        "weekly refresh uses; 0 to skip)",
     )
     parser.add_argument(
         "--all-pbp",
@@ -561,7 +586,11 @@ def main() -> None:
         action="store_true",
         help="Single small API call to verify connectivity, no files written",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
