@@ -231,8 +231,9 @@ def test_a_traded_player_is_split_across_both_rosters(con):
 # record both the makes and the attempts. Early seasons often have one
 # without the other, and the dashboard's sum(made) / sum(attempted) then
 # divides over different games (1980-81 seasons at 1080% from the field).
-# Where a group has such a game, the mart's value is checked to be a real
-# percentage instead; everywhere else it must equal the dashboard's.
+# Where a group has such a game, the mart's value must instead equal a
+# reference query written here, independently of the dbt macro; everywhere
+# else it must equal the dashboard's.
 
 # Dashboard column -> mart column, for the season line all three player
 # marts share.
@@ -367,36 +368,36 @@ _PCT_PAIRS = {
 }
 
 
-def _gappy_pcts(snap, group_by):
-    """Per group, whether any game is missing the makes or the attempts for
-    each percentage - the groups where the marts' percentage is corrected."""
-    flags = ", ".join(
-        f"bool_or({made} is null or {att} is null) as {pct}"
-        for pct, (made, att) in _PCT_PAIRS.items()
-    )
+def _corrected_pcts(snap, group_by):
+    """Per group: for each percentage, whether any game is missing the makes
+    or the attempts (`<pct>_gappy`, the groups the marts correct) and the
+    corrected value, computed only over games that record both."""
+    exprs = []
+    for pct, (made, att) in _PCT_PAIRS.items():
+        both = f"filter (where {made} is not null and {att} is not null)"
+        exprs.append(f"bool_or({made} is null or {att} is null) as {pct}_gappy")
+        exprs.append(f"round(sum({made}) {both} / nullif(sum({att}) {both}, 0) * 100, 1) as {pct}")
     cols = ", ".join(group_by)
     return snap.execute(
-        f"select {cols}, {flags} from main_staging.stg_player_game_logs group by {cols}"
+        f"select {cols}, {', '.join(exprs)} from main_staging.stg_player_game_logs group by {cols}"
     ).df()
 
 
-def _adopt_corrected_pcts(dash, mart, gappy, keys):
-    """The dashboard's frame with its percentages replaced by the mart's in
-    the gappy groups, after checking each of those is a real percentage (or
-    null). Returns the frame and the number of values replaced."""
+def _adopt_corrected_pcts(dash, corrected, keys):
+    """The dashboard's frame with its percentages replaced by the corrected
+    reference values in the gappy groups, after checking each of those is a
+    real percentage (or null). The mart is then compared to this frame, so
+    it must match the reference there and the dashboard everywhere else."""
     pcts = list(_PCT_PAIRS)
     dash = dash.reset_index(drop=True)
-    flags = dash[keys].merge(gappy, on=keys, how="left")
-    fixed = dash[keys].merge(mart[keys + pcts], on=keys, how="left")
-    replaced = 0
+    ref = dash[keys].merge(corrected, on=keys, how="left")
     for col in pcts:
-        mask = flags[col].fillna(False).astype(bool).to_numpy()
-        new = fixed.loc[mask, col]
+        mask = ref[f"{col}_gappy"].fillna(False).astype(bool).to_numpy()
+        new = ref.loc[mask, col]
         bad = new[(new < 0) | (new > 100)]
-        assert bad.empty, (col, fixed.loc[bad.index, keys].to_dict("records")[:5], bad.tolist()[:5])
+        assert bad.empty, (col, ref.loc[bad.index, keys].to_dict("records")[:5], bad.tolist()[:5])
         dash.loc[mask, col] = new.to_numpy()
-        replaced += int(mask.sum())
-    return dash, replaced
+    return dash
 
 
 def _seasons(snap):
@@ -413,14 +414,14 @@ def test_season_mart_matches_the_players_page(player_snapshot):
     snap = player_snapshot
     keys = ["season", "player_id"]
     ties = _tied_last_team(snap, keys)
-    gappy = _gappy_pcts(snap, keys)
+    corrected = _corrected_pcts(snap, keys)
     mart = snap.execute("select * from main_marts.mart_player_season").df()
     seasons = _seasons(snap)
     assert seasons
     for season in seasons:
         dash = db.player_season_stats(season).assign(season=season)
         dash = _apply_tie_break(dash, ties, keys)
-        dash, _ = _adopt_corrected_pcts(dash, mart, gappy, keys)
+        dash = _adopt_corrected_pcts(dash, corrected, keys)
         _assert_same_rows(
             dash,
             mart[mart["season"] == season],
@@ -450,12 +451,12 @@ def test_team_season_mart_matches_every_team_roster(player_snapshot):
     snap = player_snapshot
     mart = snap.execute("select * from main_marts.mart_player_team_season").df()
     keys = ["season", "team_abbreviation", "player_id"]
-    gappy = _gappy_pcts(snap, keys)
+    corrected = _corrected_pcts(snap, keys)
     seasons = _seasons(snap)
     for season in seasons:
         dash = db.q(_ALL_ROSTERS_SQL, (season, 1)).assign(season=season)
         dash["team_abbreviation"] = dash["team"]
-        dash, _ = _adopt_corrected_pcts(dash, mart, gappy, keys)
+        dash = _adopt_corrected_pcts(dash, corrected, keys)
         _assert_same_rows(
             dash,
             mart[mart["season"] == season],
@@ -466,7 +467,7 @@ def test_team_season_mart_matches_every_team_roster(player_snapshot):
     latest = mart[mart["season"] == seasons[-1]]
     for team in sorted(latest["team_abbreviation"].unique()):
         dash = db.team_roster(seasons[-1], team).assign(season=seasons[-1], team_abbreviation=team)
-        dash, _ = _adopt_corrected_pcts(dash, mart, gappy, keys)
+        dash = _adopt_corrected_pcts(dash, corrected, keys)
         _assert_same_rows(
             dash,
             latest[latest["team_abbreviation"] == team],
@@ -538,7 +539,7 @@ def test_career_mart_matches_player_career_stats(player_snapshot):
     )
     for pid in renamed:
         dash.loc[dash["player_id"] == pid, "player"] = latest[pid]
-    dash, _ = _adopt_corrected_pcts(dash, mart, _gappy_pcts(snap, ["player_id"]), ["player_id"])
+    dash = _adopt_corrected_pcts(dash, _corrected_pcts(snap, ["player_id"]), ["player_id"])
     _assert_same_rows(
         dash, mart, ["player_id"], {**_CAREER_LINE, "team": "team"}, "mart_player_career"
     )
@@ -599,7 +600,7 @@ def test_league_shooting_mart_matches_league_shooting_averages(player_snapshot):
     dash = pd.DataFrame(
         [db.league_shooting_averages(season).to_dict() | {"season": season} for season in seasons]
     )
-    dash, _ = _adopt_corrected_pcts(dash, mart, _gappy_pcts(snap, ["season"]), ["season"])
+    dash = _adopt_corrected_pcts(dash, _corrected_pcts(snap, ["season"]), ["season"])
     _assert_same_rows(dash, mart, ["season"], {c: c for c in _PCT_PAIRS}, "mart_league_shooting")
 
 

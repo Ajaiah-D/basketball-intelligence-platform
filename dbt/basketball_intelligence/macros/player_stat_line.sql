@@ -12,23 +12,24 @@
 -- mart_player_season, mart_player_team_season and mart_player_career all
 -- call it, so their definitions can't drift apart.
 --
--- The definitions are the dashboard's (dashboard/lib/db.py), kept expression
--- for expression - including dividing before the * 100 - so the values
--- round identically, with one correction to the shooting percentages:
+-- Averages and true shooting are the dashboard's own definitions
+-- (dashboard/lib/db.py), kept expression for expression - including
+-- dividing before the * 100 - so the values round identically:
 --   - averages are avg(stat), which skips a game whose stat is null. The
 --     source has whole columns missing in early seasons; counting those
 --     games as zeros would understate the player.
---   - percentages (shooting_pct below) are summed makes over summed
---     attempts, counting only games where both are recorded, and null with
---     no attempts. Before 1985-86 the source often has the makes but not
---     the attempts; summing each side over its own games put 1980-81
---     seasons at 1080% from the field.
 --   - true shooting is withheld when any game in the group has a null
 --     field_goals_attempted, free_throws_attempted or points. sum() skips
 --     nulls, so one such game would add its points to the numerator and
 --     nothing to the denominator (Jim Brewer's 1979-80 came out at 78.1%).
 --     This is narrower than mart_player_season's box_score_complete, which
 --     also needs team and opponent columns true shooting does not use.
+--
+-- The shooting percentages correct the dashboard's: summed makes over
+-- summed attempts, counting only games where both are recorded (see
+-- shooting_pct below), null with no attempts. Before 1985-86 the source
+-- often has the makes but not the attempts, and summing each side over its
+-- own games put 1980-81 seasons at 1080% from the field.
 
 {% macro player_stat_line() %}
         round(avg(minutes_played), 1)            as minutes_per_game,
