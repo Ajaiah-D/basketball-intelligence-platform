@@ -5,6 +5,8 @@ colors are brand-adjacent hues tuned for legibility on the dark surface
 
 import html
 
+from core import teams
+
 # Categorical series slots (dark-surface steps, fixed order - never cycle).
 # This is the reference palette's own slot order: blue, orange, aqua,
 # yellow, magenta, green, violet, red. An earlier shuffle of these same
@@ -36,59 +38,16 @@ RADIUS = "2px"  # sharp, not rounded - the site-wide corner radius for every
 
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
-# One recognizable color per franchise, brightened where the true primary
-# is too dark to read on the dark surface. Historical codes included.
-TEAM_COLORS = {
-    "ATL": "#E03A3E",
-    "BOS": "#00B25A",
-    "BKN": "#A7A9AC",
-    "CHA": "#00A9C4",
-    "CHI": "#E23A47",
-    "CLE": "#FDBB30",
-    "DAL": "#2E8FE0",
-    "DEN": "#FEC524",
-    "DET": "#E01E38",
-    "GSW": "#FFC72C",
-    "HOU": "#E5313E",
-    "IND": "#FDBB30",
-    "LAC": "#E5484D",
-    "LAL": "#FDB927",
-    "MEM": "#7B9FD4",
-    "MIA": "#F9A01B",
-    "MIL": "#00B25A",
-    "MIN": "#78BE20",
-    "NOP": "#C9A25C",
-    "NYK": "#F58426",
-    "OKC": "#3AA0E0",
-    "ORL": "#2E9BE0",
-    "PHI": "#3B8FE0",
-    "PHX": "#E56020",
-    "POR": "#E03A3E",
-    "SAC": "#9B6BC9",
-    "SAS": "#C4CED4",
-    "TOR": "#E5484D",
-    "UTA": "#F9A01B",
-    "WAS": "#E31837",
-    # historical / relocated franchises
-    "SEA": "#2DA05A",
-    "VAN": "#00B2A9",
-    "NJN": "#A7A9AC",
-    "WSB": "#E31837",
-    "SDC": "#E5484D",
-    "KCK": "#4B8FD4",
-    "CHH": "#00A9C4",
-    "NOH": "#C9A25C",
-    "NOK": "#C9A25C",
-    "GOS": "#FFC72C",
-    "SAN": "#C4CED4",
-    "UTH": "#F9A01B",
-    "PHL": "#3B8FE0",
-    "CAP": "#E31837",
-}
-
 
 def team_color(abbr: str) -> str:
-    return TEAM_COLORS.get(abbr, ACCENT)
+    """The team's identity colour from the team_codes seed: one recognizable
+    colour per franchise, historical codes included, brightened where the
+    true primary is too dark to read on the dark surface. ACCENT for a code
+    the seed doesn't know."""
+    try:
+        return teams.color(abbr)
+    except KeyError:
+        return ACCENT
 
 
 def team_dot(abbr: str, size: int = 9) -> str:

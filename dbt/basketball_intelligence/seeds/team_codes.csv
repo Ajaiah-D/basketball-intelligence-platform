@@ -1,0 +1,47 @@
+team_code,first_season,last_season,franchise_id,era_name,conference,color,bbref_code
+ATL,,,ATL,Atlanta Hawks,East,#E03A3E,ATL
+BOS,,,BOS,Boston Celtics,East,#00B25A,BOS
+BKN,,,BKN,Brooklyn Nets,East,#A7A9AC,BRK
+CHA,,2013-14,CHA,Charlotte Bobcats,East,#00A9C4,CHA
+CHA,2014-15,,CHA,Charlotte Hornets,East,#00A9C4,CHO
+CHI,,,CHI,Chicago Bulls,East,#E23A47,CHI
+CLE,,,CLE,Cleveland Cavaliers,East,#FDBB30,CLE
+DAL,,,DAL,Dallas Mavericks,West,#2E8FE0,DAL
+DEN,,,DEN,Denver Nuggets,West,#FEC524,DEN
+DET,,,DET,Detroit Pistons,East,#E01E38,DET
+GSW,,,GSW,Golden State Warriors,West,#FFC72C,GSW
+HOU,,,HOU,Houston Rockets,West,#E5313E,HOU
+IND,,,IND,Indiana Pacers,East,#FDBB30,IND
+LAC,,,LAC,LA Clippers,West,#E5484D,LAC
+LAL,,,LAL,Los Angeles Lakers,West,#FDB927,LAL
+MEM,,,MEM,Memphis Grizzlies,West,#7B9FD4,MEM
+MIA,,,MIA,Miami Heat,East,#F9A01B,MIA
+MIL,,,MIL,Milwaukee Bucks,East,#00B25A,MIL
+MIN,,,MIN,Minnesota Timberwolves,West,#78BE20,MIN
+NOP,,,NOP,New Orleans Pelicans,West,#C9A25C,NOP
+NYK,,,NYK,New York Knicks,East,#F58426,NYK
+OKC,,,OKC,Oklahoma City Thunder,West,#3AA0E0,OKC
+ORL,,,ORL,Orlando Magic,East,#2E9BE0,ORL
+PHI,,,PHI,Philadelphia 76ers,East,#3B8FE0,PHI
+PHX,,,PHX,Phoenix Suns,West,#E56020,PHO
+POR,,,POR,Portland Trail Blazers,West,#E03A3E,POR
+SAC,,,SAC,Sacramento Kings,West,#9B6BC9,SAC
+SAS,,,SAS,San Antonio Spurs,West,#C4CED4,SAS
+TOR,,,TOR,Toronto Raptors,East,#E5484D,TOR
+UTA,,,UTA,Utah Jazz,West,#F9A01B,UTA
+WAS,,1996-97,WAS,Washington Bullets,East,#E31837,WSB
+WAS,1997-98,,WAS,Washington Wizards,East,#E31837,WAS
+CAP,,,WAS,Capital Bullets,East,#E31837,CAP
+CHH,,2001-02,NOP,Charlotte Hornets,East,#00A9C4,CHH
+GOS,,,GSW,Golden State Warriors,West,#FFC72C,GSW
+KCK,,,SAC,Kansas City Kings,West,#4B8FD4,KCK
+NJN,,,BKN,New Jersey Nets,East,#A7A9AC,NJN
+NOH,,,NOP,New Orleans Hornets,West,#C9A25C,NOH
+NOK,,,NOP,New Orleans/Oklahoma City Hornets,West,#C9A25C,NOK
+PHL,,,PHI,Philadelphia 76ers,East,#3B8FE0,PHI
+SAN,,,SAS,San Antonio Spurs,West,#C4CED4,SAS
+SDC,,,LAC,San Diego Clippers,West,#E5484D,SDC
+SEA,,2007-08,OKC,Seattle SuperSonics,West,#2DA05A,SEA
+UTH,,,UTA,Utah Jazz,West,#F9A01B,UTA
+VAN,,,MEM,Vancouver Grizzlies,West,#00B2A9,VAN
+WSB,,,WAS,Washington Bullets,East,#E31837,WSB

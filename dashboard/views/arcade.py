@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from core import teams
 from dashboard.lib import db, draft, glossary, media, sim
 from dashboard.lib import theme as T
 
@@ -209,7 +210,7 @@ def my_clues(r) -> list[str]:
     age = r.get("age")
     who = f"<b>{int(age)}-year-old</b> " if age is not None and pd.notna(age) else ""
     opener = (
-        f"A {who}<b>{decade}</b> {db.conference(r.team)} player &middot; "
+        f"A {who}<b>{decade}</b> {teams.conference(r.team, r.season)} player &middot; "
         f"profile: <b>{archetype(r)}</b> &middot; scored "
         f"<b>{tier} a game</b> that season"
     )

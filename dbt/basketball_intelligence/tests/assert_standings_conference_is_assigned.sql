@@ -1,16 +1,16 @@
--- Every team abbreviation that appears in the data must land in one of
--- mart_team_standings' two explicit conference lists.
+-- Every team abbreviation that appears in the data must get a conference
+-- from the team_codes seed in mart_team_standings.
 --
 -- This exists because the conference map used to end in `else 'West'`.
 -- That default is silent: PHL (Philadelphia, 1979-80 through 1995-96) was
 -- filed in the West for 17 seasons and nothing complained, because a
--- default always produces an answer. The mart now lists East and West
--- explicitly with no else branch, so an unmatched abbreviation produces a
--- null - and this test turns that null into a failed build.
+-- default always produces an answer. The mart now left-joins the seed on
+-- code and season range with no default, so an uncovered abbreviation
+-- produces a null - and this test turns that null into a failed build.
 --
 -- Two ways an abbreviation can go unassigned, both caught here:
 --
--- 1. It reaches the mart but matches neither list, so conference is null
+-- 1. It reaches the mart but no seed era covers it, so conference is null
 --    (or, if someone reintroduces a default, is not one of the two legal
 --    values).
 --

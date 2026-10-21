@@ -4,23 +4,17 @@
 -- standings() query, moved here so it is tested and has one home.
 --
 -- Conference: nba_api's static team data carries no conference field, so
--- it is assigned by team abbreviation below, covering current franchises
--- plus historical/relocated codes. Ported from the EAST/WEST sets that
--- used to be hardcoded in dashboard/lib/db.py - that module still exports
--- db.conference() for callers that want the mapping in Python, but this
--- mart is now the source of truth.
+-- it comes from the team_codes seed, joined on the abbreviation and the
+-- season range of each era. The seed is the one place team-code facts
+-- live; core/teams.py reads the same file for Python callers.
 --
--- Both lists are explicit and there is no else branch, on purpose. The
--- ported version defaulted anything unmatched to 'West', which silently
--- misfiled three abbreviations the sets never listed: PHL (Philadelphia
--- 76ers, 1979-80 through 1995-96, 1394 games) landed in the West, and GOS
--- (Golden State) and SAN (San Antonio, same 17 seasons - not one, and
--- West in every season they have existed) were only right by luck. All
--- three are the same team_id as their modern code (PHI, GSW, SAS) and are
--- now listed alongside it. An abbreviation matching neither list now
--- yields a null conference, which fails
--- assert_standings_conference_is_assigned, so the next unlisted code
--- breaks a build instead of quietly defaulting.
+-- The join is a left join with no default, on purpose. The mapping used to
+-- be two hardcoded lists ending in `else 'West'`, which silently misfiled
+-- PHL (Philadelphia 76ers, 1979-80 through 1995-96, 1394 games) in the
+-- West, and filed GOS and SAN right only by luck. A code or season the
+-- seed doesn't cover now yields a null conference, which fails
+-- assert_standings_conference_is_assigned and the column's not_null test,
+-- so the next unlisted code breaks a build instead of quietly defaulting.
 --
 -- Tiebreak: the app previously ordered standings by `pct desc, net desc`,
 -- which breaks a win-percentage tie on point differential alone. The
@@ -65,23 +59,6 @@ with team_game as (
       on g.game_id = i.game_id and g.team_id = i.team_id
 ),
 
-conference_lookup as (
-    select distinct
-        team_abbreviation,
-        case
-            when team_abbreviation in (
-                'ATL', 'BOS', 'BKN', 'NJN', 'CHA', 'CHH', 'CHI', 'CLE', 'DET', 'IND',
-                'MIA', 'MIL', 'NYK', 'ORL', 'PHI', 'PHL', 'TOR', 'WAS', 'WSB'
-            ) then 'East'
-            when team_abbreviation in (
-                'DAL', 'DEN', 'GSW', 'GOS', 'HOU', 'LAC', 'SDC', 'LAL', 'MEM', 'VAN',
-                'MIN', 'NOP', 'NOH', 'NOK', 'OKC', 'SEA', 'PHX', 'POR', 'SAC', 'KCK',
-                'SAS', 'SAN', 'UTA', 'UTH'
-            ) then 'West'
-        end as conference
-    from team_game
-),
-
 totals as (
     select
         season,
@@ -110,7 +87,10 @@ standings as (
         t.*,
         c.conference
     from totals t
-    join conference_lookup c on c.team_abbreviation = t.team_abbreviation
+    left join {{ ref('team_codes') }} c
+      on c.team_code = t.team_abbreviation
+     and (c.first_season is null or t.season >= c.first_season)
+     and (c.last_season is null or t.season <= c.last_season)
 ),
 
 -- Teams that share an exact win_pct with at least one other team in the

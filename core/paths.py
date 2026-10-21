@@ -83,3 +83,10 @@ def predictions_history_path() -> Path:
     truth the warehouse predictions table is rebuilt from, so it never moves
     with BIP_DATA_HOME."""
     return PROJECT_ROOT / "data" / "predictions" / "history.csv"
+
+
+def team_codes_seed_path() -> Path:
+    """The team_codes dbt seed. core.teams reads it directly, so ingestion
+    (which runs before dbt) and the dashboard share dbt's facts without a
+    warehouse; it is committed, so it never moves with BIP_DATA_HOME."""
+    return PROJECT_ROOT / "dbt" / "basketball_intelligence" / "seeds" / "team_codes.csv"

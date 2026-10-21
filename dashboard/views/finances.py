@@ -14,6 +14,7 @@ import html
 import pandas as pd
 import streamlit as st
 
+from core import teams
 from dashboard.lib import db, franchises, payroll, viz
 from dashboard.lib import theme as T
 
@@ -163,14 +164,14 @@ def render() -> None:
             f"{all_seasons['season'].min()}), so this shows {season}."
         )
 
-    teams = sorted(all_seasons["franchise"].unique(), key=franchises.franchise_name)
+    franchise_ids = sorted(all_seasons["franchise"].unique(), key=teams.franchise_name)
     team = st.selectbox(
         "Team",
-        teams,
-        index=teams.index("BOS") if "BOS" in teams else 0,
-        format_func=franchises.franchise_name,
+        franchise_ids,
+        index=franchise_ids.index("BOS") if "BOS" in franchise_ids else 0,
+        format_func=teams.franchise_name,
     )
-    team_name = franchises.franchise_name(team)
+    team_name = teams.franchise_name(team)
     team_df = all_seasons[all_seasons["franchise"] == team].sort_values("season")
     league = all_seasons[all_seasons["season"] == season]
 

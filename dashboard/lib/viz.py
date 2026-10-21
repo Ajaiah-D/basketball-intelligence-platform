@@ -432,7 +432,7 @@ def shot_chart(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
     shots["shot_y"] = shots["shot_y"].clip(upper=420)
     fig = go.Figure()
     for team in (away, home):
-        color = T.TEAM_COLORS.get(team, T.ACCENT)
+        color = T.team_color(team)
         tshots = shots[shots["team_tricode"] == team]
         for result, symbol, filled in (("Made", "circle", True), ("Missed", "x-thin", False)):
             sub = tshots[tshots["shot_result"] == result]
