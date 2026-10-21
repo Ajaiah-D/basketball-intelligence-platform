@@ -26,7 +26,11 @@ What a run leaves behind (Task Scheduler keeps no output of its own):
                             history is checkable by reading the repo. The
                             push result goes in a second line after the
                             commit, which the next run's commit carries.
-  logs/runs/<run_at>/       the full output of every step (not committed).
+  logs/runs/<run_at>/       refresh.log (what this script said: retries,
+                            swap and git errors) and the full output of
+                            every step (not committed).
+  logs/refresh.log          one line per launch, and why a launch that
+                            found the lock held did nothing (not committed).
   logs/refresh.lock         held while a run is going; stops a second one.
 
 Usage:
@@ -42,12 +46,15 @@ import json
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +69,10 @@ from scripts.season_teams import current_season_and_teams
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
 RUNS_DIR = paths.logs_dir() / "runs"
 LOCK_PATH = paths.logs_dir() / "refresh.lock"
+# Where this script's own messages go before a run has a logs/runs/ folder
+# (a run that finds the lock held never gets one). Task Scheduler keeps no
+# output, so without this a skipped run would leave no trace at all.
+LAUNCH_LOG_PATH = paths.logs_dir() / "refresh.log"
 # Far longer than a run ever takes (minutes), so a lock this old was left by
 # a run that was killed without reaching its finally block.
 LOCK_STALE_SECONDS = 6 * 3600
@@ -79,6 +90,14 @@ STEP_TIMEOUT_SECONDS = {"ingest": 3600, "payroll": 1800, "dbt_build": 1800}
 DEFAULT_STEP_TIMEOUT_SECONDS = 900
 ERROR_TAIL_CHARS = 2000
 GIT_TIMEOUT_SECONDS = 300
+# Windows refuses to rename or delete a file another process has open, and
+# the holder is often only briefly there: an antivirus or indexer scan, or
+# OneDrive, touching a 100 MB file that just changed. Waits between the
+# FILE_LOCK_ATTEMPTS tries before giving up (23 s in all).
+FILE_LOCK_ATTEMPTS = 6
+FILE_LOCK_RETRY_DELAYS_SECONDS = (1, 2, 4, 8, 8)
+LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
+LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 log = logging.getLogger("weekly_refresh")
 
@@ -121,24 +140,33 @@ def run_step(
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
     }
+    # Its own process group on POSIX, so a timeout can kill the whole tree.
+    group: dict[str, Any] = {} if sys.platform == "win32" else {"start_new_session": True}
+    reason: str | None
     started = time.monotonic()
     with log_path.open("wb") as out:
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=cwd or PROJECT_ROOT,
                 env=env,
                 stdout=out,
                 stderr=subprocess.STDOUT,
-                timeout=timeout,
+                **group,
             )
-            reason = None if result.returncode == 0 else f"exit code {result.returncode}"
-        except subprocess.TimeoutExpired:
-            reason = f"timed out after {timeout}s"
         except OSError as exc:
             # e.g. the executable itself couldn't be found/launched - still a
             # real failure worth logging, not a reason to crash silently.
             reason = f"could not launch {cmd[0]!r}: {exc}"
+        else:
+            try:
+                # Output goes straight to the file, so there are no pipes to
+                # drain: this only waits.
+                proc.communicate(timeout=timeout)
+                reason = None if proc.returncode == 0 else f"exit code {proc.returncode}"
+            except subprocess.TimeoutExpired:
+                kill_tree(proc)
+                reason = f"timed out after {timeout}s"
     entry: dict[str, Any] = {
         "step": name,
         "ok": reason is None,
@@ -153,6 +181,33 @@ def run_step(
     else:
         log.error("   FAIL: %s (%ss), output in %s", reason, entry["seconds"], log_path)
     return entry
+
+
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Kill a timed-out step and everything it started.
+
+    proc.kill() alone would end only the direct child - on Windows often a
+    launcher (dbt.exe, the venv's python.exe) whose real worker could live on
+    holding the copy open, so the copy could not be deleted and the next
+    run's copy would fail.
+    """
+    log.warning("   killing pid %s and its children", proc.pid)
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                capture_output=True,
+                timeout=60,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("   could not kill the process tree (%s); killing the step only", exc)
+    try:
+        proc.kill()  # a no-op if taskkill/killpg already ended it
+        proc.wait(timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("   pid %s did not exit after being killed: %s", proc.pid, exc)
 
 
 def run_steps(run: dict, steps: list[tuple], *, warehouse: Path, log_dir: Path) -> bool:
@@ -312,10 +367,34 @@ def wal_path(db: Path) -> Path:
     return db.with_name(db.name + ".wal")
 
 
+def retry_while_locked(action: Callable[[], object], what: str) -> None:
+    """Run a rename/delete, retrying while Windows says the file is in use.
+
+    Raises the last PermissionError if it never goes through.
+    """
+    for attempt in range(1, FILE_LOCK_ATTEMPTS + 1):
+        try:
+            action()
+            return
+        except PermissionError as exc:
+            if attempt == FILE_LOCK_ATTEMPTS:
+                raise
+            delay = FILE_LOCK_RETRY_DELAYS_SECONDS[attempt - 1]
+            log.warning(
+                "   %s: file in use (%s); retry %d/%d in %ss",
+                what,
+                exc,
+                attempt,
+                FILE_LOCK_ATTEMPTS - 1,
+                delay,
+            )
+            time.sleep(delay)
+
+
 def discard(copy: Path) -> None:
     """Delete the copy, its WAL and its folder, if there are any."""
     for path in (copy, wal_path(copy)):
-        path.unlink(missing_ok=True)
+        retry_while_locked(partial(path.unlink, missing_ok=True), f"delete {path}")
     # Only if empty: never take anything else that ended up in there with it.
     if copy.parent.exists() and not any(copy.parent.iterdir()):
         copy.parent.rmdir()
@@ -335,7 +414,11 @@ def prepare_copy(warehouse: Path, copy: Path) -> str | None:
             if wal_path(warehouse).exists():
                 shutil.copyfile(wal_path(warehouse), wal_path(copy))
     except OSError as exc:
-        return f"could not copy {warehouse} to {copy}: {exc}"
+        return (
+            f"could not copy {warehouse} to {copy}: {exc}. If a killed run left "
+            "python or dbt processes holding the copy, end them (Task Manager) "
+            "or reboot, then rerun."
+        )
     return None
 
 
@@ -346,9 +429,13 @@ def swap(copy: Path, warehouse: Path) -> str | None:
     into the file. Every step has exited by now and a clean close normally
     checkpoints, but if a WAL is still beside the copy it is folded in here,
     so the file that gets renamed - and uploaded - is complete on its own.
-    A WAL left beside the *real* warehouse belongs to the old file: replayed
-    onto the new one it would corrupt it, so it is removed - but only after
-    the replace succeeded, since until then it is still the old file's.
+
+    A WAL left beside the *real* warehouse belongs to the old file, and
+    DuckDB replays whatever <file>.wal it finds: next to the new file it
+    would corrupt it. So it is renamed aside (.wal.stale) before the
+    replace - never for a moment beside the new file - put back if the
+    replace fails, since then it is still the old file's, and deleted once
+    the replace went through.
     """
     try:
         if wal_path(copy).exists():
@@ -359,8 +446,26 @@ def swap(copy: Path, warehouse: Path) -> str | None:
                 con.close()
         if wal_path(copy).exists():
             return f"{wal_path(copy)} survived a checkpoint; not swapping in a partial file"
-        copy.replace(warehouse)  # os.replace: atomic, same folder
     except (OSError, duckdb.Error) as exc:
+        return f"could not checkpoint {copy}: {exc}; the warehouse was left as it was"
+
+    stale = wal_path(warehouse)
+    aside = stale.with_name(stale.name + ".stale")
+    moved_aside = False
+    try:
+        if stale.exists():
+            retry_while_locked(lambda: stale.replace(aside), f"move {stale} aside")
+            moved_aside = True
+        # os.replace: atomic, same filesystem
+        retry_while_locked(lambda: copy.replace(warehouse), f"replace {warehouse}")
+    except OSError as exc:
+        # Only a WAL this call moved: an older .wal.stale left by a previous
+        # run belongs to a file that is gone.
+        if moved_aside:
+            try:
+                aside.replace(stale)
+            except OSError as restore_exc:
+                log.error("Could not put %s back as %s: %s", aside, stale, restore_exc)
         # On Windows the usual cause is a process holding the warehouse open
         # (a local `streamlit run` of the dashboard, a DuckDB shell).
         return (
@@ -369,13 +474,10 @@ def swap(copy: Path, warehouse: Path) -> str | None:
             "open and rerun; the warehouse was left as it was."
         )
     try:
-        wal_path(warehouse).unlink(missing_ok=True)
+        # Named .stale, DuckDB never reads it, so failing here is only clutter.
+        retry_while_locked(lambda: aside.unlink(missing_ok=True), f"delete {aside}")
     except OSError as exc:
-        return (
-            f"swapped in the new warehouse but could not remove the old "
-            f"{wal_path(warehouse)} ({exc}); delete it by hand before opening "
-            "the warehouse"
-        )
+        log.warning("Could not delete %s (%s); it is safe to delete by hand", aside, exc)
     return None
 
 
@@ -513,31 +615,40 @@ def append_log(record: dict) -> None:
 def acquire_lock() -> bool:
     """Create LOCK_PATH, or say why not. A lock older than LOCK_STALE_SECONDS
     was left by a killed run and is taken over."""
-    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        try:
-            fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+    try:
+        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(2):
             try:
-                age = time.time() - LOCK_PATH.stat().st_mtime
-                holder = LOCK_PATH.read_text(errors="replace").strip()
-            except FileNotFoundError:
-                continue  # released between the two calls; try again
-            if age < LOCK_STALE_SECONDS:
-                log.error(
-                    "Another refresh is running (%s, lock %.0f min old); exiting. "
-                    "If it is not, delete %s.",
-                    holder,
-                    age / 60,
-                    LOCK_PATH,
-                )
-                return False
-            log.warning("Taking over a stale lock (%s, %.1f h old)", holder, age / 3600)
-            LOCK_PATH.unlink(missing_ok=True)
-            continue
-        with os.fdopen(fd, "w") as f:
-            json.dump({"pid": os.getpid(), "started_at": datetime.now(UTC).isoformat()}, f)
-        return True
+                fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    age = time.time() - LOCK_PATH.stat().st_mtime
+                    holder = LOCK_PATH.read_text(errors="replace").strip()
+                except FileNotFoundError:
+                    continue  # released between the two calls; try again
+                if age < LOCK_STALE_SECONDS:
+                    log.error(
+                        "Another refresh is running (%s, lock %.0f min old); exiting. "
+                        "If it is not, delete %s.",
+                        holder,
+                        age / 60,
+                        LOCK_PATH,
+                    )
+                    return False
+                # Two runs launched at the same moment against a 6-hour-old
+                # lock could both get here, and one could delete the other's
+                # fresh lock. Accepted: the only launcher is a weekly task.
+                log.warning("Taking over a stale lock (%s, %.1f h old)", holder, age / 3600)
+                LOCK_PATH.unlink(missing_ok=True)
+                continue
+            with os.fdopen(fd, "w") as f:
+                json.dump({"pid": os.getpid(), "started_at": datetime.now(UTC).isoformat()}, f)
+            return True
+    except OSError as exc:
+        # Not "someone else has it" but "it can't be made at all": a
+        # read-only or missing logs folder, a permissions problem. No run.
+        log.error("Could not create the lock %s (%s); exiting.", LOCK_PATH, exc)
+        return False
     log.error("Could not take %s; exiting.", LOCK_PATH)
     return False
 
@@ -555,58 +666,86 @@ def release_lock() -> None:
 # -- main -------------------------------------------------------------------------
 
 
+@contextmanager
+def logging_to(path: Path) -> Iterator[None]:
+    """Also append this script's log messages to `path` while inside.
+
+    Task Scheduler keeps none of stdout, so this file is the only record of
+    what the refresh itself said (swap retries, git errors, a held lock).
+    A file that can't be opened is not a reason to skip the refresh.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not open %s for logging: %s", path, exc)
+        yield
+        return
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATEFMT))
+    log.addHandler(handler)
+    try:
+        yield
+    finally:
+        log.removeHandler(handler)
+        handler.close()
+
+
 def refresh(publishing: bool) -> int:
     """One run, start to finish; returns the exit code."""
     started = datetime.now(UTC)
+    log_dir = RUNS_DIR / started.strftime("%Y%m%dT%H%M%SZ")
     run: dict[str, Any] = {"run_at": started.isoformat(timespec="seconds")}
     if not publishing:
         run["dry_run"] = True
+    run["log"] = _display(log_dir / "refresh.log")
     run.update({"steps": [], "payroll_ok": None, "player_impact_ok": None, "ok": False})
-    log_dir = RUNS_DIR / started.strftime("%Y%m%dT%H%M%SZ")
     warehouse = paths.warehouse_path()
     copy = next_path(warehouse)
-    log.info("Refresh %s%s: building %s", run["run_at"], "" if publishing else " (dry run)", copy)
 
-    ok = False
-    try:
-        ok = timed(run, "copy_warehouse", lambda: prepare_copy(warehouse, copy))
-        ok = ok and build(run, copy, log_dir)
-        if ok and publishing:
-            ok = timed(run, "swap", lambda: swap(copy, warehouse))
-            ok = ok and publish(run, warehouse, log_dir)
-    # Broad on purpose: a bug or a full disk here must still leave a run log
-    # line saying so, and be committed like any other failure.
-    except Exception:
-        log.exception("Refresh crashed")
-        run["steps"].append(
-            {
-                "step": "crashed",
-                "ok": False,
-                "seconds": 0.0,
-                "error": traceback.format_exc()[-ERROR_TAIL_CHARS:],
-            }
+    with logging_to(log_dir / "refresh.log"):
+        log.info(
+            "Refresh %s%s: building %s", run["run_at"], "" if publishing else " (dry run)", copy
         )
         ok = False
-    finally:
-        run["ok"] = ok
-        # After a swap there is nothing left to delete; after a failure or a
-        # dry run this is the whole cleanup - the real warehouse was never
-        # touched.
         try:
-            discard(copy)
-        except OSError as exc:
-            log.warning("Could not delete %s (%s); the next run replaces it", copy, exc)
-        append_log(run)
+            ok = timed(run, "copy_warehouse", lambda: prepare_copy(warehouse, copy))
+            ok = ok and build(run, copy, log_dir)
+            if ok and publishing:
+                ok = timed(run, "swap", lambda: swap(copy, warehouse))
+                ok = ok and publish(run, warehouse, log_dir)
+        # Broad on purpose: a bug or a full disk here must still leave a run
+        # log line saying so, and be committed like any other failure.
+        except Exception:
+            log.exception("Refresh crashed")
+            run["steps"].append(
+                {
+                    "step": "crashed",
+                    "ok": False,
+                    "seconds": 0.0,
+                    "error": traceback.format_exc()[-ERROR_TAIL_CHARS:],
+                }
+            )
+            ok = False
+        finally:
+            run["ok"] = ok
+            # After a swap there is nothing left to delete; after a failure or
+            # a dry run this is the whole cleanup - the real warehouse was
+            # never touched.
+            try:
+                discard(copy)
+            except OSError as exc:
+                log.warning("Could not delete %s (%s); the next run replaces it", copy, exc)
+            append_log(run)
 
-    failed = [s["step"] for s in run["steps"] if not s["ok"]]
-    log.info(
-        "Refresh %s%s; step logs in %s",
-        commit_status(ok, run["payroll_ok"], run["player_impact_ok"]),
-        f" (failed: {', '.join(failed)})" if failed else "",
-        log_dir,
-    )
-    if publishing:
-        append_log(commit_and_push(run))
+        failed = [s["step"] for s in run["steps"] if not s["ok"]]
+        log.info(
+            "Refresh %s%s; step logs in %s",
+            commit_status(ok, run["payroll_ok"], run["player_impact_ok"]),
+            f" (failed: {', '.join(failed)})" if failed else "",
+            log_dir,
+        )
+        if publishing:
+            append_log(commit_and_push(run))
     return 0 if ok else 1
 
 
@@ -619,14 +758,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
+        level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATEFMT, stream=sys.stdout
     )
+    log.setLevel(logging.INFO)  # whatever the root logger says, the files get INFO
     # A --no-publish run takes the lock too: it rewrites the same copy and
     # raw files a scheduled run would be using.
-    if not acquire_lock():
+    with logging_to(LAUNCH_LOG_PATH):
+        log.info(
+            "weekly_refresh starting (pid %s%s)",
+            os.getpid(),
+            ", --no-publish" if args.no_publish else "",
+        )
+        locked = acquire_lock()
+    if not locked:
         sys.exit(2)
     try:
         code = refresh(publishing=not args.no_publish)

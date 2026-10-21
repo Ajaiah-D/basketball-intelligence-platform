@@ -120,6 +120,12 @@ def check_freshness() -> None:
         ok(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
 
 
+def scheduled_runs(lines: list[str]) -> list[dict]:
+    """The run lines of refresh_runs.jsonl, minus git_push lines and dry runs."""
+    records = [json.loads(line) for line in lines if line.strip()]
+    return [r for r in records if "steps" in r and not r.get("dry_run")]
+
+
 def last_scheduled_run(lines: list[str]) -> tuple[dict | None, dict | None]:
     """(the last real run, its git_push line or None) from refresh_runs.jsonl.
 
@@ -128,7 +134,7 @@ def last_scheduled_run(lines: list[str]) -> tuple[dict | None, dict | None]:
     "dry_run"; neither is the run this check is about.
     """
     records = [json.loads(line) for line in lines if line.strip()]
-    runs = [r for r in records if "steps" in r and not r.get("dry_run")]
+    runs = scheduled_runs(lines)
     if not runs:
         return None, None
     last = runs[-1]
@@ -188,8 +194,8 @@ def check_last_run() -> None:
     # copy of this log is behind until the next run pushes it.
     if push is not None and not push.get("ok"):
         print(f"  NOTE git push after that run failed: {push.get('error', '')[-200:]}")
-    runs = sum(1 for line in lines if "steps" in json.loads(line))
-    print(f"  ({runs} run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
+    runs = len(scheduled_runs(lines))
+    print(f"  ({runs} scheduled run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
 
 
 def check_api(skip: bool) -> None:

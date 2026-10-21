@@ -101,9 +101,11 @@ keep working against an older warehouse in the meantime.
   The warehouse is built in a copy (`warehouse/next/basketball.duckdb`) and
   only swapped onto `basketball.duckdb` once every required step passed, so
   a failed run leaves the real file and the release untouched. The swap
-  fails if something holds the warehouse open (a local dashboard): close it
-  and rerun. Each step's full output goes to `logs/runs/<run time>/`, and
-  `logs/refresh.lock` stops two runs overlapping. Before a scheduled run,
+  retries for about 20 seconds, then fails if something still holds the
+  warehouse open (a local dashboard): close it and rerun. The refresh's own
+  messages and each step's full output go to `logs/runs/<run time>/`,
+  `logs/refresh.log` records every launch, and `logs/refresh.lock` stops
+  two runs overlapping. Before a scheduled run,
   `python scripts/weekly_refresh.py --no-publish` does a dry run: every step
   against the copy, then the copy is deleted - no swap, upload or commit.
   It does still update the raw parquet files and `data/last_updated.json`,
