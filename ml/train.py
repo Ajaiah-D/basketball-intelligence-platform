@@ -32,8 +32,12 @@ MARGIN_SD = 13.5
 # Columns every result frame carries, including the empty one, so a caller
 # can select on them without special-casing "no seasons qualified".
 RESULT_COLUMNS = [
-    "game_id", "season", "predicted_margin", "win_probability",
-    "margin", "home_won",
+    "game_id",
+    "season",
+    "predicted_margin",
+    "win_probability",
+    "margin",
+    "home_won",
 ]
 
 
@@ -64,14 +68,18 @@ def walk_forward(
         model = model_factory().fit(X_train, train["margin"].astype(float))
         predicted = np.asarray(model.predict(X_test), dtype=float)
 
-        results.append(pd.DataFrame({
-            "game_id": test["game_id"].to_numpy(),
-            "season": season,
-            "predicted_margin": predicted,
-            "win_probability": margin_to_win_probability(predicted),
-            "margin": test["margin"].to_numpy(),
-            "home_won": test["home_won"].to_numpy(),
-        }))
+        results.append(
+            pd.DataFrame(
+                {
+                    "game_id": test["game_id"].to_numpy(),
+                    "season": season,
+                    "predicted_margin": predicted,
+                    "win_probability": margin_to_win_probability(predicted),
+                    "margin": test["margin"].to_numpy(),
+                    "home_won": test["home_won"].to_numpy(),
+                }
+            )
+        )
 
     if not results:
         return pd.DataFrame(columns=RESULT_COLUMNS)
@@ -117,8 +125,10 @@ def evaluate(predictions: pd.DataFrame) -> dict:
         "accuracy": float(((probability >= 0.5) == actual).mean()),
         "log_loss": float(log_loss(actual, clipped, labels=[False, True])),
         "brier": float(brier_score_loss(actual, clipped)),
-        "margin_mae": float(np.abs(
-            predictions["predicted_margin"].astype(float)
-            - predictions["margin"].astype(float)).mean()),
+        "margin_mae": float(
+            np.abs(
+                predictions["predicted_margin"].astype(float) - predictions["margin"].astype(float)
+            ).mean()
+        ),
         "n": int(len(predictions)),
     }

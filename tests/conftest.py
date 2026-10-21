@@ -48,6 +48,7 @@ def con():
 # test's warehouse can't leak into the next test's assertions against a
 # different one.
 
+
 def _reset_finances_cache() -> None:
     db.q.clear()
     db.team_finances_available.clear()
@@ -140,10 +141,13 @@ def warehouse_with_finances_mart(tmp_path, monkeypatch):
              1.026, false, NULL, true, NULL, NULL, NULL)
     """)
     # Rows scraped after fetch dates were recorded carry one.
-    con.execute("alter table main_marts.mart_team_finances "
-                "add column payroll_fetched_at_utc timestamp")
-    con.execute("update main_marts.mart_team_finances "
-                "set payroll_fetched_at_utc = timestamp '2026-09-23 20:58:40'")
+    con.execute(
+        "alter table main_marts.mart_team_finances add column payroll_fetched_at_utc timestamp"
+    )
+    con.execute(
+        "update main_marts.mart_team_finances "
+        "set payroll_fetched_at_utc = timestamp '2026-09-23 20:58:40'"
+    )
     con.execute("""
         create table main_marts.mart_team_contracts as
         select * from (values
@@ -196,15 +200,23 @@ def warehouse_with_player_impact(tmp_path, monkeypatch):
     rows = []
     for season, shift in (("2023-24", 0.0), ("2024-25", 0.25)):
         for pid in range(1, 11):
-            rows.append((
-                season, pid, f"Player {pid}", "BOS" if pid % 2 else "CHI → BOS",
-                60 + pid, 36.0 - pid, 30.0 - pid, 8.0 - pid / 2, 6.0 - pid / 3,
-                round(6.0 - pid * 0.5 - shift, 2), round(1.5 - pid * 0.08, 2),
-                max(1, 11 - pid),
-            ))
-    con.executemany(
-        "insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", rows
-    )
+            rows.append(
+                (
+                    season,
+                    pid,
+                    f"Player {pid}",
+                    "BOS" if pid % 2 else "CHI → BOS",
+                    60 + pid,
+                    36.0 - pid,
+                    30.0 - pid,
+                    8.0 - pid / 2,
+                    6.0 - pid / 3,
+                    round(6.0 - pid * 0.5 - shift, 2),
+                    round(1.5 - pid * 0.08, 2),
+                    max(1, 11 - pid),
+                )
+            )
+    con.executemany("insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     con.execute("""
         create table main.player_impact_meta (
             fitted_at timestamp, n_train integer, holdout_corr double,
@@ -248,21 +260,39 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
             net_rating double
         )
     """)
-    teams = [("BOS", 1, 8.0), ("CHI", 2, 3.5), ("NYK", 3, 1.0),
-             ("MIA", 4, -2.5), ("DET", 5, -7.0), ("LAL", 6, None)]
-    rows = [(s, abbr, tid, None if net is None else net + shift)
-            for s, shift in (("2023-24", 0.0), ("2024-25", 0.5))
-            for abbr, tid, net in teams]
+    teams = [
+        ("BOS", 1, 8.0),
+        ("CHI", 2, 3.5),
+        ("NYK", 3, 1.0),
+        ("MIA", 4, -2.5),
+        ("DET", 5, -7.0),
+        ("LAL", 6, None),
+    ]
+    rows = [
+        (s, abbr, tid, None if net is None else net + shift)
+        for s, shift in (("2023-24", 0.0), ("2024-25", 0.5))
+        for abbr, tid, net in teams
+    ]
     rows.append(("1984-85", "BOS", 1, 9.9))
     con.executemany("insert into main_marts.mart_team_season values (?,?,?,?)", rows)
     extra = [
-        ("2024-25", pid, f"Player {pid}", "NYK", 50, 20.0, 8.0, 3.0, 1.5,
-         round(-1.0 - pid * 0.01, 2), 0.9, 1)
+        (
+            "2024-25",
+            pid,
+            f"Player {pid}",
+            "NYK",
+            50,
+            20.0,
+            8.0,
+            3.0,
+            1.5,
+            round(-1.0 - pid * 0.01, 2),
+            0.9,
+            1,
+        )
         for pid in range(11, 61)
     ]
-    con.executemany(
-        "insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", extra
-    )
+    con.executemany("insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", extra)
     con.execute("update main.player_impact_meta set team_scale = 0.5, team_offset = -6.0")
     con.close()
     _reset_finances_cache()

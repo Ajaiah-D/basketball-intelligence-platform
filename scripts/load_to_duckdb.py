@@ -24,8 +24,12 @@ log = logging.getLogger("load_to_duckdb")
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        datefmt="%H:%M:%S", stream=sys.stdout)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
 
     # Single-file tables plus per-season directories (one parquet per season).
     sources: dict[str, str] = {}
@@ -45,8 +49,7 @@ def main() -> None:
         table = f"raw.{name}"
         # union_by_name: older seasons can differ in column order/presence
         con.execute(
-            f"CREATE OR REPLACE TABLE {table} AS "
-            f"SELECT * FROM read_parquet(?, union_by_name=true)",
+            f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM read_parquet(?, union_by_name=true)",
             [source],
         )
         rows = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]

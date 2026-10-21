@@ -131,14 +131,17 @@ def check_last_run() -> None:
         failed_step = next((s["step"] for s in last["steps"] if not s["ok"]), "unknown")
         fail(f"last run ({last['run_at']}, {age_days}d ago) FAILED at step '{failed_step}'")
     elif in_offseason():
-        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded; the weekly job "
-           "is idle until the season starts")
+        ok(
+            f"last run {last['run_at']} ({age_days}d ago) succeeded; the weekly job "
+            "is idle until the season starts"
+        )
     elif age_days > 10:
-        fail(f"last successful run was {last['run_at']} ({age_days}d ago) - "
-             "the scheduled job may have stopped running")
+        fail(
+            f"last successful run was {last['run_at']} ({age_days}d ago) - "
+            "the scheduled job may have stopped running"
+        )
     else:
-        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded, "
-           f"{len(last['steps'])} steps")
+        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded, {len(last['steps'])} steps")
     # A run can be "ok" overall and still have a failed step in it: the
     # payroll scrape and the player_impact refit are non-fatal by design
     # (see weekly_refresh.main), so their failures no longer show up in
@@ -148,8 +151,10 @@ def check_last_run() -> None:
     if last.get("ok"):
         for step in last["steps"]:
             if not step["ok"]:
-                print(f"  NOTE step '{step['step']}' failed but did not block the "
-                      f"run; the warehouse is carrying last week's data for it")
+                print(
+                    f"  NOTE step '{step['step']}' failed but did not block the "
+                    f"run; the warehouse is carrying last week's data for it"
+                )
     print(f"  ({len(lines)} run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
 
 
@@ -163,6 +168,7 @@ def check_api(skip: bool) -> None:
         from nba_api.stats.endpoints import leaguegamelog
 
         from ingestion.nba_ingest import current_season
+
         df = leaguegamelog.LeagueGameLog(
             season=current_season(),
             player_or_team_abbreviation="T",
@@ -180,8 +186,7 @@ def check_api(skip: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--skip-api", action="store_true",
-                        help="Skip the live nba_api smoke test")
+    parser.add_argument("--skip-api", action="store_true", help="Skip the live nba_api smoke test")
     args = parser.parse_args()
 
     print(f"Health check @ {datetime.now(timezone.utc).isoformat(timespec='seconds')}")

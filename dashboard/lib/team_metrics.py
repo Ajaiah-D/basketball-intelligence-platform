@@ -23,8 +23,9 @@ FOUR_FACTORS = [
 ]
 
 
-def league_rank(adv: pd.DataFrame, team: str, col: str,
-                higher_is_better: bool) -> tuple[int, int] | None:
+def league_rank(
+    adv: pd.DataFrame, team: str, col: str, higher_is_better: bool
+) -> tuple[int, int] | None:
     """(rank, out of) among teams with a value, 1 = best; None if this team
     has no value (a column added after an older warehouse was published, or
     an incomplete season)."""

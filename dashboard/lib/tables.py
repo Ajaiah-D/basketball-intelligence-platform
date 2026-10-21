@@ -29,6 +29,7 @@ def _text(v) -> str:
 class Col:
     """One column. `fmt` turns a cell value into the cell's HTML (escape any
     text you return); `css` gives a cell its class, e.g. "pos"/"neg"."""
+
     key: str
     label: str
     fmt: Callable[[object], str] = _text
@@ -50,26 +51,38 @@ def pos_neg(v) -> str:
     return "pos" if v > 0 else "neg"
 
 
-def html_table(rows: pd.DataFrame, cols: list[Col], foot: dict | None = None,
-               row_css: Callable[[object], str] | None = None) -> str:
+def html_table(
+    rows: pd.DataFrame,
+    cols: list[Col],
+    foot: dict | None = None,
+    row_css: Callable[[object], str] | None = None,
+) -> str:
     """The table's HTML. `foot` maps column keys to ready-made HTML for a
     totals row (missing keys stay blank); `row_css` gives a row its class."""
+
     def cls(*names: str) -> str:
         joined = " ".join(n for n in names if n)
         return f' class="{joined}"' if joined else ""
 
     head = "".join(
-        f'<th{cls("lft" if c.left else "")}>{html.escape(c.label)}'
-        f'{T.tip(c.help) if c.help else ""}</th>' for c in cols)
+        f"<th{cls('lft' if c.left else '')}>{html.escape(c.label)}"
+        f"{T.tip(c.help) if c.help else ''}</th>"
+        for c in cols
+    )
     body = []
     for r in rows.itertuples(index=False):
         cells = "".join(
-            f'<td{cls("lft" if c.left else "", c.css(getattr(r, c.key)) if c.css else "")}>'
-            f'{c.fmt(getattr(r, c.key))}</td>' for c in cols)
-        body.append(f'<tr{cls(row_css(r) if row_css else "")}>{cells}</tr>')
+            f"<td{cls('lft' if c.left else '', c.css(getattr(r, c.key)) if c.css else '')}>"
+            f"{c.fmt(getattr(r, c.key))}</td>"
+            for c in cols
+        )
+        body.append(f"<tr{cls(row_css(r) if row_css else '')}>{cells}</tr>")
     if foot is not None:
-        cells = "".join(f'<td{cls("lft" if c.left else "")}>{foot.get(c.key, "")}</td>'
-                        for c in cols)
+        cells = "".join(
+            f"<td{cls('lft' if c.left else '')}>{foot.get(c.key, '')}</td>" for c in cols
+        )
         body.append(f'<tr class="bip-foot">{cells}</tr>')
-    return (f'<div class="bip-table-wrap"><table class="bip-table">'
-            f'<tr>{head}</tr>{"".join(body)}</table></div>')
+    return (
+        f'<div class="bip-table-wrap"><table class="bip-table">'
+        f"<tr>{head}</tr>{''.join(body)}</table></div>"
+    )

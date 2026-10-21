@@ -21,17 +21,35 @@ from dataclasses import dataclass
 import pandas as pd
 
 FRANCHISE_NAMES = {
-    "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
-    "CHA": "Charlotte Hornets", "CHI": "Chicago Bulls", "CLE": "Cleveland Cavaliers",
-    "DAL": "Dallas Mavericks", "DEN": "Denver Nuggets", "DET": "Detroit Pistons",
-    "GSW": "Golden State Warriors", "HOU": "Houston Rockets", "IND": "Indiana Pacers",
-    "LAC": "LA Clippers", "LAL": "Los Angeles Lakers", "MEM": "Memphis Grizzlies",
-    "MIA": "Miami Heat", "MIL": "Milwaukee Bucks", "MIN": "Minnesota Timberwolves",
-    "NOP": "New Orleans Pelicans", "NYK": "New York Knicks",
-    "OKC": "Oklahoma City Thunder", "ORL": "Orlando Magic",
-    "PHI": "Philadelphia 76ers", "PHX": "Phoenix Suns",
-    "POR": "Portland Trail Blazers", "SAC": "Sacramento Kings",
-    "SAS": "San Antonio Spurs", "TOR": "Toronto Raptors", "UTA": "Utah Jazz",
+    "ATL": "Atlanta Hawks",
+    "BOS": "Boston Celtics",
+    "BKN": "Brooklyn Nets",
+    "CHA": "Charlotte Hornets",
+    "CHI": "Chicago Bulls",
+    "CLE": "Cleveland Cavaliers",
+    "DAL": "Dallas Mavericks",
+    "DEN": "Denver Nuggets",
+    "DET": "Detroit Pistons",
+    "GSW": "Golden State Warriors",
+    "HOU": "Houston Rockets",
+    "IND": "Indiana Pacers",
+    "LAC": "LA Clippers",
+    "LAL": "Los Angeles Lakers",
+    "MEM": "Memphis Grizzlies",
+    "MIA": "Miami Heat",
+    "MIL": "Milwaukee Bucks",
+    "MIN": "Minnesota Timberwolves",
+    "NOP": "New Orleans Pelicans",
+    "NYK": "New York Knicks",
+    "OKC": "Oklahoma City Thunder",
+    "ORL": "Orlando Magic",
+    "PHI": "Philadelphia 76ers",
+    "PHX": "Phoenix Suns",
+    "POR": "Portland Trail Blazers",
+    "SAC": "Sacramento Kings",
+    "SAS": "San Antonio Spurs",
+    "TOR": "Toronto Raptors",
+    "UTA": "Utah Jazz",
     "WAS": "Washington Wizards",
 }
 
@@ -65,18 +83,24 @@ ERAS = [
 ]
 
 FRANCHISE_NOTES = {
-    "OKC": ("Includes the Seattle SuperSonics years in this data (1984-85 to "
-            "2007-08). Seattle kept the SuperSonics name and history, but the "
-            "team's contracts and roster moved to Oklahoma City in 2008, so that "
-            "payroll is shown here."),
-    "NOP": ("Includes the original Charlotte Hornets (1988-89 to 2001-02). The "
-            "NBA credits those seasons' records to today's Charlotte Hornets, but "
-            "the contracts and roster moved to New Orleans in 2002, so that "
-            "payroll is shown here."),
-    "CHA": ("Starts with the Charlotte Bobcats in 2004-05. The NBA credits the "
-            "1988-2002 Hornets' records to Charlotte, but those contracts moved "
-            "to New Orleans in 2002, so that payroll is shown under the New "
-            "Orleans Pelicans."),
+    "OKC": (
+        "Includes the Seattle SuperSonics years in this data (1984-85 to "
+        "2007-08). Seattle kept the SuperSonics name and history, but the "
+        "team's contracts and roster moved to Oklahoma City in 2008, so that "
+        "payroll is shown here."
+    ),
+    "NOP": (
+        "Includes the original Charlotte Hornets (1988-89 to 2001-02). The "
+        "NBA credits those seasons' records to today's Charlotte Hornets, but "
+        "the contracts and roster moved to New Orleans in 2002, so that "
+        "payroll is shown here."
+    ),
+    "CHA": (
+        "Starts with the Charlotte Bobcats in 2004-05. The NBA credits the "
+        "1988-2002 Hornets' records to Charlotte, but those contracts moved "
+        "to New Orleans in 2002, so that payroll is shown under the New "
+        "Orleans Pelicans."
+    ),
 }
 
 

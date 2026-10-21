@@ -83,11 +83,20 @@ def write_predictions(con, rows: pd.DataFrame) -> int:
     stamped["prediction_id"] = [str(uuid.uuid4()) for _ in range(len(stamped))]
     stamped["model_version"] = MODEL_VERSION
     stamped["predicted_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
-    stamped = stamped[[
-        "prediction_id", "model_version", "predicted_at", "game_id", "season",
-        "game_date", "home_team_id", "away_team_id", "predicted_margin",
-        "win_probability",
-    ]]
+    stamped = stamped[
+        [
+            "prediction_id",
+            "model_version",
+            "predicted_at",
+            "game_id",
+            "season",
+            "game_date",
+            "home_team_id",
+            "away_team_id",
+            "predicted_margin",
+            "win_probability",
+        ]
+    ]
     con.register("_incoming", stamped)
     con.execute("insert into predictions select * from _incoming")
     con.unregister("_incoming")
@@ -170,9 +179,7 @@ if __name__ == "__main__":
             # games against the wrong target season's regression.
             target_seasons = slate["season"].unique()
             if len(target_seasons) != 1:
-                raise ValueError(
-                    f"expected one season in the slate window, got {target_seasons!r}"
-                )
+                raise ValueError(f"expected one season in the slate window, got {target_seasons!r}")
             target_season = target_seasons[0]
             latest_elo = current_ratings(games, target_season)
 

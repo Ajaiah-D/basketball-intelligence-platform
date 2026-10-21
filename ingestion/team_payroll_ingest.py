@@ -49,10 +49,15 @@ RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payrol
 # can show which contracts a payroll is made of, not just its total.
 PLAYERS_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payroll_players"
 
-TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count",
-                 "fetched_at_utc"]
-PLAYER_COLUMNS = ["season", "team_abbreviation", "bbref_player_id", "player",
-                  "salary_usd", "fetched_at_utc"]
+TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count", "fetched_at_utc"]
+PLAYER_COLUMNS = [
+    "season",
+    "team_abbreviation",
+    "bbref_player_id",
+    "player",
+    "salary_usd",
+    "fetched_at_utc",
+]
 
 MIN_SECONDS_BETWEEN_REQUESTS = 3.5
 REQUEST_TIMEOUT = 30
@@ -144,8 +149,11 @@ def parse_salary_table(html: str) -> list[dict]:
     if end != -1:
         table_html = table_html[:end]
     return [
-        {"bbref_player_id": player_id, "player": html_lib.unescape(player),
-         "salary_usd": int(salary)}
+        {
+            "bbref_player_id": player_id,
+            "player": html_lib.unescape(player),
+            "salary_usd": int(salary),
+        }
         for player_id, player, salary in _SALARY_ROW_RE.findall(table_html)
     ]
 
@@ -173,8 +181,14 @@ def fetch_team_season_html(team_code: str, season: str) -> str:
             if attempt == MAX_RETRIES:
                 raise
             backoff = 2**attempt * 3
-            log.warning("%s failed (attempt %d/%d): %s -- retrying in %ds",
-                       url, attempt, MAX_RETRIES, exc, backoff)
+            log.warning(
+                "%s failed (attempt %d/%d): %s -- retrying in %ds",
+                url,
+                attempt,
+                MAX_RETRIES,
+                exc,
+                backoff,
+            )
             time.sleep(backoff)
     raise RuntimeError("unreachable")
 
@@ -202,8 +216,11 @@ def team_season_payroll(nba_code: str, season: str) -> dict:
     rows = parse_salary_table(html)
     if not rows:
         return {"team_payroll": None, "player_count": 0, "players": []}
-    return {"team_payroll": sum(r["salary_usd"] for r in rows),
-            "player_count": len(rows), "players": rows}
+    return {
+        "team_payroll": sum(r["salary_usd"] for r in rows),
+        "player_count": len(rows),
+        "players": rows,
+    }
 
 
 def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -223,16 +240,19 @@ def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.
         fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if result["player_count"] == 0:
             log.warning("No salary data for %s %s - writing a null-payroll row", code, season)
-        records.append({
-            "season": season,
-            "team_abbreviation": code,
-            "team_payroll": result["team_payroll"],
-            "player_count": result["player_count"],
-            "fetched_at_utc": fetched_at,
-        })
+        records.append(
+            {
+                "season": season,
+                "team_abbreviation": code,
+                "team_payroll": result["team_payroll"],
+                "player_count": result["player_count"],
+                "fetched_at_utc": fetched_at,
+            }
+        )
         for row in result["players"]:
-            player_records.append({"season": season, "team_abbreviation": code,
-                                   **row, "fetched_at_utc": fetched_at})
+            player_records.append(
+                {"season": season, "team_abbreviation": code, **row, "fetched_at_utc": fetched_at}
+            )
     df = pd.DataFrame.from_records(records, columns=TOTAL_COLUMNS)
     # Nullable Int64, not the float64 pandas would infer from the None rows -
     # payroll stays an exact integer in the parquet instead of picking up a
@@ -261,20 +281,36 @@ def write_season(season: str, team_codes: list[str], force: bool = False) -> Non
     df.to_parquet(out_path, index=False)
     players.to_parquet(players_path, index=False)
     empty = int((df["player_count"] == 0).sum())
-    log.info("Wrote %s (%d teams, %d salary lines, %d teams with no salary data)",
-             season, len(df), len(players), empty)
+    log.info(
+        "Wrote %s (%d teams, %d salary lines, %d teams with no salary data)",
+        season,
+        len(df),
+        len(players),
+        empty,
+    )
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        datefmt="%H:%M:%S", stream=sys.stdout)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--season", help="Single season, e.g. 2026-27")
-    parser.add_argument("--backfill", metavar="START_SEASON",
-                        help="Ingest every season from START_SEASON to the current season")
+    parser.add_argument(
+        "--backfill",
+        metavar="START_SEASON",
+        help="Ingest every season from START_SEASON to the current season",
+    )
     parser.add_argument("--force", action="store_true", help="Re-fetch even if already ingested")
-    parser.add_argument("--teams", nargs="+", required=True,
-                        help="Team codes active this season (this project's nba_api codes)")
+    parser.add_argument(
+        "--teams",
+        nargs="+",
+        required=True,
+        help="Team codes active this season (this project's nba_api codes)",
+    )
     args = parser.parse_args()
 
     if args.season:

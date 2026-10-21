@@ -88,13 +88,18 @@ def call_endpoint(endpoint_cls, **kwargs) -> pd.DataFrame:
             backoff = 2**attempt * 2  # 4s, 8s, 16s
             log.warning(
                 "%s failed (attempt %d/%d): %s -- retrying in %ds",
-                endpoint_cls.__name__, attempt, MAX_RETRIES, exc, backoff,
+                endpoint_cls.__name__,
+                attempt,
+                MAX_RETRIES,
+                exc,
+                backoff,
             )
             time.sleep(backoff)
     raise RuntimeError("unreachable")
 
 
 # --- Season helpers ----------------------------------------------------------
+
 
 def current_season(today: date | None = None) -> str:
     """NBA season string like '2025-26'. Seasons start in October; before
@@ -112,6 +117,7 @@ def season_range(start: str, end: str) -> list[str]:
 
 
 # --- Extractors ---------------------------------------------------------------
+
 
 def fetch_player_game_logs(season: str) -> pd.DataFrame:
     log.info("Fetching player game logs for %s ...", season)
@@ -140,8 +146,11 @@ def fetch_team_game_logs(season: str) -> pd.DataFrame:
 
 
 def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
-    log.info("Fetching play-by-play for %d games (rate limited, ~%.0fs minimum) ...",
-             len(game_ids), len(game_ids) * MIN_SECONDS_BETWEEN_REQUESTS)
+    log.info(
+        "Fetching play-by-play for %d games (rate limited, ~%.0fs minimum) ...",
+        len(game_ids),
+        len(game_ids) * MIN_SECONDS_BETWEEN_REQUESTS,
+    )
     frames = []
     for i, game_id in enumerate(game_ids, 1):
         try:
@@ -229,6 +238,7 @@ def fetch_teams() -> pd.DataFrame:
 
 # --- Main ---------------------------------------------------------------------
 
+
 def write_parquet(df: pd.DataFrame, name: str, season: str | None = None) -> Path:
     """Write to data/raw/{name}.parquet, or data/raw/{name}/{season}.parquet
     when a season is given (per-season partitioning for game logs)."""
@@ -238,8 +248,12 @@ def write_parquet(df: pd.DataFrame, name: str, season: str | None = None) -> Pat
         path = RAW_DIR / f"{name}.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
-    log.info("Wrote %s (%d rows, %.1f KB)",
-             path.relative_to(RAW_DIR), len(df), path.stat().st_size / 1024)
+    log.info(
+        "Wrote %s (%d rows, %.1f KB)",
+        path.relative_to(RAW_DIR),
+        len(df),
+        path.stat().st_size / 1024,
+    )
     return path
 
 
@@ -247,16 +261,19 @@ def season_done(name: str, season: str) -> bool:
     return (RAW_DIR / name / f"{season}.parquet").exists()
 
 
-def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
-        force: bool = False) -> None:
+def run(
+    seasons: list[str], pbp_games: int | None, smoke_test: bool = False, force: bool = False
+) -> None:
     latest = seasons[-1]
     if smoke_test:
         log.info("Smoke test: pulling team game logs for %s only", latest)
         df = fetch_team_game_logs(latest)
         if df.empty:
             raise SystemExit(f"Smoke test FAILED: no rows returned for {latest}")
-        log.info("Smoke test OK. Sample:\n%s",
-                 df[["GAME_DATE", "MATCHUP", "TEAM_ABBREVIATION", "PTS"]].head())
+        log.info(
+            "Smoke test OK. Sample:\n%s",
+            df[["GAME_DATE", "MATCHUP", "TEAM_ABBREVIATION", "PTS"]].head(),
+        )
         return
 
     log.info("Ingesting %d season(s): %s .. %s", len(seasons), seasons[0], latest)
@@ -278,8 +295,12 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
         # not special-case it into always-fetch outside of needed() - that
         # would just duplicate the guarantee `stale` already gives.
         wants_schedule = needed("schedule")
-        if not (needed("player_game_logs") or needed("team_game_logs") or wants_advanced
-                or wants_schedule):
+        if not (
+            needed("player_game_logs")
+            or needed("team_game_logs")
+            or wants_advanced
+            or wants_schedule
+        ):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
         log.info("[%d/%d] %s", i, len(seasons), season)
@@ -294,8 +315,10 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
             write_parquet(fetch_player_advanced(season), "player_advanced", season)
             write_parquet(fetch_team_advanced(season), "team_advanced", season)
         elif not has_advanced_stats(season):
-            log.info("  no official advanced stats before %s - dbt derives them "
-                     "from box scores instead", ADVANCED_FIRST_SEASON)
+            log.info(
+                "  no official advanced stats before %s - dbt derives them from box scores instead",
+                ADVANCED_FIRST_SEASON,
+            )
         if wants_schedule:
             write_parquet(fetch_schedule(season), "schedule", season)
         if season == latest and team_logs is not None:
@@ -304,8 +327,7 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
     # Play-by-play only for the latest requested season (1 API call per game).
     if pbp_games != 0:
         if team_logs_latest is None:
-            team_logs_latest = pd.read_parquet(
-                RAW_DIR / "team_game_logs" / f"{latest}.parquet")
+            team_logs_latest = pd.read_parquet(RAW_DIR / "team_game_logs" / f"{latest}.parquet")
         game_ids = (
             team_logs_latest.sort_values("GAME_DATE", ascending=False)["GAME_ID"]
             .drop_duplicates()
@@ -330,28 +352,52 @@ def run(seasons: list[str], pbp_games: int | None, smoke_test: bool = False,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--season", default=current_season(),
-                        help="Season string like 2025-26 (default: current season)")
-    parser.add_argument("--backfill", metavar="START_SEASON",
-                        help="Ingest every season from START_SEASON (e.g. 1979-80) "
-                             "through --season. Existing seasons are skipped.")
-    parser.add_argument("--force", action="store_true",
-                        help="Re-fetch seasons even if their files already exist")
-    parser.add_argument("--pbp-games", type=int, default=20,
-                        help="Play-by-play: number of most recent games in the latest "
-                             "season (default: 20; 0 to skip)")
-    parser.add_argument("--all-pbp", action="store_true",
-                        help="Pull play-by-play for every game in the latest season (slow)")
-    parser.add_argument("--smoke-test", action="store_true",
-                        help="Single small API call to verify connectivity, no files written")
+    parser.add_argument(
+        "--season",
+        default=current_season(),
+        help="Season string like 2025-26 (default: current season)",
+    )
+    parser.add_argument(
+        "--backfill",
+        metavar="START_SEASON",
+        help="Ingest every season from START_SEASON (e.g. 1979-80) "
+        "through --season. Existing seasons are skipped.",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Re-fetch seasons even if their files already exist"
+    )
+    parser.add_argument(
+        "--pbp-games",
+        type=int,
+        default=20,
+        help="Play-by-play: number of most recent games in the latest "
+        "season (default: 20; 0 to skip)",
+    )
+    parser.add_argument(
+        "--all-pbp",
+        action="store_true",
+        help="Pull play-by-play for every game in the latest season (slow)",
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Single small API call to verify connectivity, no files written",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        datefmt="%H:%M:%S", stream=sys.stdout)
-    seasons = (season_range(args.backfill, args.season) if args.backfill
-               else [args.season])
-    run(seasons, None if args.all_pbp else args.pbp_games,
-        smoke_test=args.smoke_test, force=args.force)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
+    seasons = season_range(args.backfill, args.season) if args.backfill else [args.season]
+    run(
+        seasons,
+        None if args.all_pbp else args.pbp_games,
+        smoke_test=args.smoke_test,
+        force=args.force,
+    )
 
 
 if __name__ == "__main__":

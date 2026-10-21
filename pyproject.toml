@@ -4,3 +4,25 @@
 name = "basketball-intelligence-platform"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["dbt/**/target", ".venv", ".superpowers"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "N", "C4"]
+# RUF001-003: the code intentionally uses arrows, middle dots and accented
+# player names. E501: the formatter owns line length.
+ignore = ["RUF001", "RUF002", "RUF003", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "PTH"]
+# sys.path must be set before the imports.
+"dashboard/app.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+# ruff 0.17 also reformats python code blocks inside markdown; keep the docs
+# and plans as written.
+exclude = ["*.md"]

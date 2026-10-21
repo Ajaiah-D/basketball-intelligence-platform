@@ -95,8 +95,19 @@ def payroll_steps() -> list[tuple]:
     """
     season, teams = current_season_and_teams()
     return [
-        ("payroll", [PYTHON, "ingestion/team_payroll_ingest.py", "--force",
-                     "--season", season, "--teams", *teams], None),
+        (
+            "payroll",
+            [
+                PYTHON,
+                "ingestion/team_payroll_ingest.py",
+                "--force",
+                "--season",
+                season,
+                "--teams",
+                *teams,
+            ],
+            None,
+        ),
         # load_to_duckdb again: the payroll parquet was written after the first
         # load, and dbt runs next - without this it would query a warehouse a
         # week behind the file on disk.
@@ -104,8 +115,7 @@ def payroll_steps() -> list[tuple]:
     ]
 
 
-def commit_status(run_ok: bool, payroll_ok: bool | None,
-                  player_impact_ok: bool | None) -> str:
+def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool | None) -> str:
     """The status word for the refresh commit message.
 
     A non-fatal step that failed (False, not None = never attempted) is
@@ -114,9 +124,11 @@ def commit_status(run_ok: bool, payroll_ok: bool | None,
     """
     if not run_ok:
         return "FAILED"
-    failed = [name for name, step_ok in (("payroll", payroll_ok),
-                                         ("player_impact", player_impact_ok))
-              if step_ok is False]
+    failed = [
+        name
+        for name, step_ok in (("payroll", payroll_ok), ("player_impact", player_impact_ok))
+        if step_ok is False
+    ]
     if not failed:
         return "ok"
     noun = "step" if len(failed) == 1 else "steps"
@@ -127,10 +139,13 @@ def main() -> None:
     dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
     run = {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "steps": []}
 
-    ok = run_steps(run, [
-        ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
-        ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
-    ])
+    ok = run_steps(
+        run,
+        [
+            ("ingest", [PYTHON, "ingestion/nba_ingest.py", "--force", "--pbp-games", "20"], None),
+            ("load_duckdb", [PYTHON, "scripts/load_to_duckdb.py"], None),
+        ],
+    )
 
     # Payroll is deliberately NON-FATAL. It is the one step that scrapes a
     # third party (Basketball-Reference), so it is also the one most likely
@@ -148,18 +163,27 @@ def main() -> None:
         try:
             steps = payroll_steps()
         except Exception as exc:  # noqa: BLE001 - record it rather than crash the run
-            run["steps"].append({"step": "payroll", "ok": False, "seconds": 0.0,
-                                 "error": f"could not derive the current season/teams: {exc}"})
+            run["steps"].append(
+                {
+                    "step": "payroll",
+                    "ok": False,
+                    "seconds": 0.0,
+                    "error": f"could not derive the current season/teams: {exc}",
+                }
+            )
             payroll_ok = False
         else:
             payroll_ok = run_steps(run, steps)
 
     if ok:
-        ok = run_steps(run, [
-            ("dbt_seed", [DBT, "seed", "--profiles-dir", "."], dbt_dir),
-            ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
-            ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
-        ])
+        ok = run_steps(
+            run,
+            [
+                ("dbt_seed", [DBT, "seed", "--profiles-dir", "."], dbt_dir),
+                ("dbt_run", [DBT, "run", "--profiles-dir", "."], dbt_dir),
+                ("dbt_test", [DBT, "test", "--profiles-dir", "."], dbt_dir),
+            ],
+        )
 
     # The player-impact refit is NON-FATAL too, for the same reason as
     # payroll. It only feeds the Arcade team builder; the predictions and
@@ -170,16 +194,22 @@ def main() -> None:
     # a game's player ratings would be the worse outage.
     player_impact_ok: bool | None = None  # None = never attempted
     if ok:
-        player_impact_ok = run_steps(run, [
-            ("player_impact", [PYTHON, "-m", "ml.player_impact"], None),
-        ])
+        player_impact_ok = run_steps(
+            run,
+            [
+                ("player_impact", [PYTHON, "-m", "ml.player_impact"], None),
+            ],
+        )
 
     if ok:
-        ok = run_steps(run, [
-            ("predict", [PYTHON, "-m", "ml.predict"], None),
-            ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
-            ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
-        ])
+        ok = run_steps(
+            run,
+            [
+                ("predict", [PYTHON, "-m", "ml.predict"], None),
+                ("score_predictions", [PYTHON, "-m", "ml.evaluate"], None),
+                ("write_metadata", [PYTHON, "scripts/write_metadata.py"], None),
+            ],
+        )
 
     # Not folded into run["ok"]: that flag gates the release publish below
     # and the job's exit code, and a failed payroll fetch or impact refit
@@ -194,8 +224,15 @@ def main() -> None:
         version_path.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         entry = run_step(
             "publish_release",
-            ["gh", "release", "upload", RELEASE_TAG,
-             "warehouse/basketball.duckdb", "warehouse/version.txt", "--clobber"],
+            [
+                "gh",
+                "release",
+                "upload",
+                RELEASE_TAG,
+                "warehouse/basketball.duckdb",
+                "warehouse/version.txt",
+                "--clobber",
+            ],
         )
         run["steps"].append(entry)
         run["ok"] = entry["ok"]

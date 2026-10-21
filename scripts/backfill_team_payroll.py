@@ -26,15 +26,18 @@ log = logging.getLogger("backfill_team_payroll")
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        datefmt="%H:%M:%S", stream=sys.stdout)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
     by_season = seasons_and_teams()
-    log.info("Backfilling %d seasons (%s -> %s)",
-              len(by_season), min(by_season), max(by_season))
+    log.info("Backfilling %d seasons (%s -> %s)", len(by_season), min(by_season), max(by_season))
     for season, teams in by_season.items():
         write_season(season, teams, force=args.force)
     log.info("Backfill complete.")

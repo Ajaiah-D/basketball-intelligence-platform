@@ -69,8 +69,7 @@ def spot_target(budget_left: float, spot: int) -> float:
     return float(budget_left * w[spot] / w[spot:].sum())
 
 
-def offer_options(pool: pd.DataFrame, picks, budget_left: int, spot: int,
-                  rng) -> list:
+def offer_options(pool: pd.DataFrame, picks, budget_left: int, spot: int, rng) -> list:
     """Index labels of up to OPTIONS players to choose from for `spot`.
 
     Their costs sit around spot_target: one pricier, one about fair, one

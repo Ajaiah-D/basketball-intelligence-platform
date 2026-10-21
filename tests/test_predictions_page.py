@@ -248,9 +248,16 @@ def test_calibration_bins_empty_below_fifty_settled_games(with_predictions_db):
 
 def test_recent_settled_predictions_shape(with_predictions_db):
     out = db.recent_settled_predictions()
-    assert list(out.columns) == ["game_date", "home", "away", "home_pts",
-                                 "away_pts", "win_probability",
-                                 "predicted_margin", "correct"]
+    assert list(out.columns) == [
+        "game_date",
+        "home",
+        "away",
+        "home_pts",
+        "away_pts",
+        "win_probability",
+        "predicted_margin",
+        "correct",
+    ]
     assert len(out) == 1
     assert bool(out.iloc[0]["correct"]) is True
 
@@ -287,10 +294,12 @@ def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path, monkeypatch):
         con.execute(
             "insert into predictions values (?, 'ridge-v1', '2026-01-01 00:00:00', "
             "?, '2025-26', '2026-01-02', 1, 2, ?, ?)",
-            [f"p{i}", f"g{i}", float((p - 0.5) * 20), float(p)])
+            [f"p{i}", f"g{i}", float((p - 0.5) * 20), float(p)],
+        )
         con.execute(
             "insert into main_marts.fct_team_game values (?, ?, ?, 110, 100)",
-            [f"g{i}", 10.0 if won else -10.0, won])
+            [f"g{i}", 10.0 if won else -10.0, won],
+        )
     con.close()
     _point_db_at(path, monkeypatch)
     try:
@@ -314,14 +323,16 @@ def _add_settled_games(path, probs, home_won) -> None:
         con.execute(
             "insert into predictions values (?, 'ridge-v1', '2026-07-01 12:00:00', "
             "?, '2025-26', ?, 1610612738, 1610612747, ?, ?)",
-            [f"px{i}", gid, day, float((p - 0.5) * 20), float(p)])
+            [f"px{i}", gid, day, float((p - 0.5) * 20), float(p)],
+        )
         con.execute(
-            "insert into main_staging.stg_schedule values "
-            "(?, ?, ?, 'BOS', 'NYK', 3)", [gid, day, f"{day} 23:00:00"])
+            "insert into main_staging.stg_schedule values (?, ?, ?, 'BOS', 'NYK', 3)",
+            [gid, day, f"{day} 23:00:00"],
+        )
         con.execute(
             "insert into main_marts.fct_team_game values (?, ?, ?, ?, ?)",
-            [gid, 6.0 if won else -6.0, bool(won), 106 if won else 100,
-             100 if won else 106])
+            [gid, 6.0 if won else -6.0, bool(won), 106 if won else 100, 100 if won else 106],
+        )
     con.close()
 
 
@@ -363,16 +374,18 @@ def test_calibration_chart_renders_in_the_track_record_section(sixty_settled_db)
     assert len(charts) == 1
 
     def heading(prefix):
-        return next(i for i, (t, v) in enumerate(els)
-                    if t == "markdown" and v.startswith(prefix))
+        return next(i for i, (t, v) in enumerate(els) if t == "markdown" and v.startswith(prefix))
 
     # Track record > Calibration heading > the chart > Recent results heading
-    assert (heading("#### Track record") < heading("#### Calibration")
-            < charts[0] < heading("#### Recent results"))
+    assert (
+        heading("#### Track record")
+        < heading("#### Calibration")
+        < charts[0]
+        < heading("#### Recent results")
+    )
 
 
-def test_recent_results_grid_shows_every_row_without_scrolling(sixty_settled_db,
-                                                               monkeypatch):
+def test_recent_results_grid_shows_every_row_without_scrolling(sixty_settled_db, monkeypatch):
     import streamlit
 
     calls = []
@@ -410,13 +423,18 @@ def test_a_coin_flip_counts_as_a_home_pick_everywhere(coin_flip_db):
 def test_a_tipoff_after_midnight_utc_groups_under_the_eastern_date():
     from dashboard.views import predictions
 
-    frame = pd.DataFrame({
-        "game_id": ["late"], "game_date": ["2026-10-22"],
-        # 02:00 UTC on the 22nd is 10:00 PM Eastern on the 21st
-        "tipoff_utc": [pd.Timestamp("2026-10-22 02:00:00")],
-        "win_probability": [0.55], "predicted_margin": [1.5],
-        "home_team_abbreviation": ["BOS"], "away_team_abbreviation": ["NYK"],
-    })
+    frame = pd.DataFrame(
+        {
+            "game_id": ["late"],
+            "game_date": ["2026-10-22"],
+            # 02:00 UTC on the 22nd is 10:00 PM Eastern on the 21st
+            "tipoff_utc": [pd.Timestamp("2026-10-22 02:00:00")],
+            "win_probability": [0.55],
+            "predicted_margin": [1.5],
+            "home_team_abbreviation": ["BOS"],
+            "away_team_abbreviation": ["NYK"],
+        }
+    )
     out = predictions._upcoming(frame)
     assert out.iloc[0]["day_et"] == date(2026, 10, 21)
     assert out.iloc[0]["tip_label"] == "10:00 PM ET"

@@ -25,8 +25,9 @@ def test_a_season_with_no_games_yet_skips_play_by_play(monkeypatch):
     monkeypatch.setattr(nba_ingest, "fetch_players", lambda s: pd.DataFrame())
     monkeypatch.setattr(nba_ingest, "fetch_teams", lambda: pd.DataFrame())
     monkeypatch.setattr(nba_ingest, "fetch_play_by_play", no_call)
-    monkeypatch.setattr(nba_ingest, "write_parquet",
-                        lambda df, name, season=None: written.append((name, season)))
+    monkeypatch.setattr(
+        nba_ingest, "write_parquet", lambda df, name, season=None: written.append((name, season))
+    )
 
     nba_ingest.run(["2026-27"], 20, force=True)
 

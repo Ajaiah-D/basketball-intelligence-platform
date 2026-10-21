@@ -49,9 +49,7 @@ def test_usage_penalty_lowers_net_for_ball_dominant_rosters():
 
 def test_usage_penalty_is_zero_without_positive_impacts_or_excess():
     negative = [-1.0] * 8
-    assert sim.team_net_rating(negative, [2.0] * 8, 2.0, 0.0) == pytest.approx(
-        2.0 * -5.0
-    )
+    assert sim.team_net_rating(negative, [2.0] * 8, 2.0, 0.0) == pytest.approx(2.0 * -5.0)
     positive = [1.0] * 8
     assert sim.team_net_rating(positive, [0.5] * 8, 2.0, 0.0) == pytest.approx(10.0)
 
@@ -101,16 +99,12 @@ def test_higher_net_means_more_median_wins():
 
 
 def test_average_team_wins_about_forty_one():
-    out = sim.simulate_vs_league(
-        0.0, [0.0] * 29, np.random.default_rng(11), n_sims=2000
-    )
+    out = sim.simulate_vs_league(0.0, [0.0] * 29, np.random.default_rng(11), n_sims=2000)
     assert out["wins"].mean() == pytest.approx(41, abs=1.5)
 
 
 def test_plus_five_team_wins_over_fifty():
-    out = sim.simulate_vs_league(
-        5.0, [0.0] * 29, np.random.default_rng(11), n_sims=2000
-    )
+    out = sim.simulate_vs_league(5.0, [0.0] * 29, np.random.default_rng(11), n_sims=2000)
     assert out["wins"].mean() > 50
 
 
@@ -136,8 +130,7 @@ def test_simulate_season_once_records_every_game():
 @pytest.mark.parametrize("n_opps", [29, 30])
 def test_vs_league_schedule_balances_venues_per_opponent(n_opps):
     for seed in range(5):
-        games = sim.simulate_season_once(0.0, [0.0] * n_opps,
-                                         np.random.default_rng(seed))["games"]
+        games = sim.simulate_season_once(0.0, [0.0] * n_opps, np.random.default_rng(seed))["games"]
         venues = {}
         for opp, is_home, _, _ in games:
             venues.setdefault(opp, []).append(is_home)
@@ -152,8 +145,7 @@ def test_vs_league_schedule_balances_venues_per_opponent(n_opps):
 def test_vs_league_extra_games_are_not_handed_out_alphabetically():
     extra_sets = set()
     for seed in range(6):
-        games = sim.simulate_season_once(0.0, [0.0] * 30,
-                                         np.random.default_rng(seed))["games"]
+        games = sim.simulate_season_once(0.0, [0.0] * 30, np.random.default_rng(seed))["games"]
         counts = np.bincount([g[0] for g in games], minlength=30)
         extra_sets.add(tuple(np.flatnonzero(counts == 3)))
     assert tuple(range(22)) not in extra_sets

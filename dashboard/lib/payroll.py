@@ -27,8 +27,12 @@ LINES = [
     ("first_apron", "First apron", T.SERIES[1]),
     ("second_apron", "Second apron", T.CRITICAL),
 ]
-_LINE_PHRASES = {"salary_cap": "salary cap", "luxury_tax": "luxury tax line",
-                 "first_apron": "first apron", "second_apron": "second apron"}
+_LINE_PHRASES = {
+    "salary_cap": "salary cap",
+    "luxury_tax": "luxury tax line",
+    "first_apron": "first apron",
+    "second_apron": "second apron",
+}
 
 # Highest first: over the second apron is also over everything below it.
 _TIERS = [
@@ -93,7 +97,7 @@ def league_rank(league_df: pd.DataFrame, team_abbreviation: str) -> tuple[int, i
 
 def _next_line_up(row, col: str) -> str | None:
     cols = [c for c, _, _ in LINES]
-    for higher in cols[cols.index(col) + 1:]:
+    for higher in cols[cols.index(col) + 1 :]:
         if pd.notna(row[higher]):
             return higher
     return None
@@ -116,21 +120,26 @@ def league_summary(league_df: pd.DataFrame, season: str) -> str:
     ok = reliable(league_df)
     n = len(ok)
     parts = [f"{int(ok['over_cap'].map(_true).sum())} of {n} teams were over the salary cap"]
-    for flag, col, phrase in [("over_tax", "luxury_tax", "luxury tax line"),
-                              ("over_first_apron", "first_apron", "first apron"),
-                              ("over_second_apron", "second_apron", "second apron")]:
+    for flag, col, phrase in [
+        ("over_tax", "luxury_tax", "luxury tax line"),
+        ("over_first_apron", "first_apron", "first apron"),
+        ("over_second_apron", "second_apron", "second apron"),
+    ]:
         if ok[col].notna().any():
             parts.append(f"{int(ok[flag].map(_true).sum())} over the {phrase}")
     text = f"In {season}, {_join(parts)}."
     missing = len(league_df) - n
     if missing:
-        text += (f" {missing} team{'s have' if missing > 1 else ' has'} no reliable "
-                 "figure for this season.")
+        text += (
+            f" {missing} team{'s have' if missing > 1 else ' has'} no reliable "
+            "figure for this season."
+        )
     return text
 
 
-def team_summary(row, team_name: str, rank: tuple[int, int] | None,
-                 contracts: pd.DataFrame | None) -> str:
+def team_summary(
+    row, team_name: str, rank: tuple[int, int] | None, contracts: pd.DataFrame | None
+) -> str:
     if _unreliable(row):
         return f"There's no reliable payroll figure for the {team_name} in {row['season']}."
     text = f"In {row['season']} the {team_name} spent {money(row['team_payroll'])}"
@@ -140,19 +149,25 @@ def team_summary(row, team_name: str, rank: tuple[int, int] | None,
     text += f". That's {position_phrase(row)}."
     if contracts is not None and len(contracts) >= 3:
         top = contracts.nsmallest(3, "salary_rank")
-        text += (f" Their three biggest contracts ({_join(top['player'].tolist())}) "
-                 f"made up {top['share_of_payroll'].sum():.0%} of the payroll.")
+        text += (
+            f" Their three biggest contracts ({_join(top['player'].tolist())}) "
+            f"made up {top['share_of_payroll'].sum():.0%} of the payroll."
+        )
     return text
 
 
 def freshness_text(fetched_at, latest_payroll_season: str, latest_cap_season: str) -> str:
     if fetched_at is None or pd.isna(fetched_at):
-        text = (f"Salary data covers through {latest_payroll_season} "
-                "(update date not recorded in this copy).")
+        text = (
+            f"Salary data covers through {latest_payroll_season} "
+            "(update date not recorded in this copy)."
+        )
     else:
         ts = pd.Timestamp(fetched_at)
-        text = (f"Salary data updated {ts:%b} {ts.day}, {ts.year} · covers through "
-                f"{latest_payroll_season}.")
+        text = (
+            f"Salary data updated {ts:%b} {ts.day}, {ts.year} · covers through "
+            f"{latest_payroll_season}."
+        )
     if latest_cap_season > latest_payroll_season:
         text += f" {latest_cap_season} payrolls aren't loaded yet."
     return text

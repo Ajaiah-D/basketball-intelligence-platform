@@ -18,6 +18,7 @@ from scripts import weekly_refresh as wr  # noqa: E402
 @pytest.fixture
 def fake_run(tmp_path, monkeypatch):
     """Run main() with the named steps failing; returns what happened."""
+
     def go(*failing: str) -> dict:
         ran: list[str] = []
         commits: list[str] = []
@@ -40,15 +41,18 @@ def fake_run(tmp_path, monkeypatch):
         log = tmp_path / "logs" / "refresh_runs.jsonl"
         monkeypatch.setattr(wr, "run_step", run_step)
         monkeypatch.setattr(wr, "git", git)
-        monkeypatch.setattr(wr, "payroll_steps", lambda: [
-            ("payroll", ["payroll"], None), ("load_payroll", ["load"], None)])
+        monkeypatch.setattr(
+            wr,
+            "payroll_steps",
+            lambda: [("payroll", ["payroll"], None), ("load_payroll", ["load"], None)],
+        )
         monkeypatch.setattr(wr, "PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(wr, "LOG_PATH", log)
         with pytest.raises(SystemExit) as exit_info:
             wr.main()
         run = json.loads(log.read_text().splitlines()[-1])
-        return {"ran": ran, "commits": commits, "run": run,
-                "exit": exit_info.value.code}
+        return {"ran": ran, "commits": commits, "run": run, "exit": exit_info.value.code}
+
     return go
 
 
@@ -83,7 +87,8 @@ def test_payroll_and_player_impact_failures_are_both_named(fake_run):
     assert out["run"]["payroll_ok"] is False
     assert out["run"]["player_impact_ok"] is False
     assert out["commits"][0].startswith(
-        "Weekly refresh: ok (payroll and player_impact steps failed) ")
+        "Weekly refresh: ok (payroll and player_impact steps failed) "
+    )
 
 
 def test_a_dbt_failure_is_still_fatal_and_skips_player_impact(fake_run):

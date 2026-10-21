@@ -49,11 +49,15 @@ def calibration_table(con, bins: int = 10) -> pd.DataFrame:
     if settled.empty:
         return pd.DataFrame(columns=["bucket", "predicted", "observed", "n"])
     settled["bucket"] = (settled["win_probability"] * bins).astype(int).clip(0, bins - 1)
-    return settled.groupby("bucket").agg(
-        predicted=("win_probability", "mean"),
-        observed=("home_won", "mean"),
-        n=("game_id", "size"),
-    ).reset_index()
+    return (
+        settled.groupby("bucket")
+        .agg(
+            predicted=("win_probability", "mean"),
+            observed=("home_won", "mean"),
+            n=("game_id", "size"),
+        )
+        .reset_index()
+    )
 
 
 if __name__ == "__main__":

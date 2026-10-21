@@ -96,8 +96,11 @@ def test_true_shooting_is_correct_for_players_with_no_null_ratio_input(con, seas
             [season, player_id],
         ).fetchdf()
         expected = round(
-            100 * raw["points"].sum()
-            / (2 * (raw["field_goals_attempted"].sum() + 0.44 * raw["free_throws_attempted"].sum())),
+            100
+            * raw["points"].sum()
+            / (
+                2 * (raw["field_goals_attempted"].sum() + 0.44 * raw["free_throws_attempted"].sum())
+            ),
             1,
         )
         got = computed.get(player_id)
@@ -131,6 +134,7 @@ def test_true_shooting_matches_mart_when_box_score_complete(con):
 # these use live in conftest.py, because tests/test_finances_page.py drives
 # the same page end-to-end against the same warehouse shape and the two
 # definitions would otherwise drift apart.
+
 
 def test_team_finances_available_false_before_mart_exists(tmp_warehouse_without_marts):
     assert db.team_finances_available() is False

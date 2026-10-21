@@ -22,11 +22,13 @@ def standings_table(df) -> str:
     def th(label: str, term: str) -> str:
         return f"{label}{T.tip(glossary.TERMS[term])}"
 
-    head = ('<table class="bip-table"><tr><th class="lft">#</th><th class="lft">Team</th>'
-            f"<th>W</th><th>L</th><th>{th('PCT', 'PCT')}</th><th>PTS</th>"
-            f"<th>{th('OPP', 'OPP')}</th><th>{th('+/-', 'Team +/-')}</th>"
-            '<th style="text-align:left;padding-left:.8rem">'
-            f'{th("Form", "Form")}</th></tr>')
+    head = (
+        '<table class="bip-table"><tr><th class="lft">#</th><th class="lft">Team</th>'
+        f"<th>W</th><th>L</th><th>{th('PCT', 'PCT')}</th><th>PTS</th>"
+        f"<th>{th('OPP', 'OPP')}</th><th>{th('+/-', 'Team +/-')}</th>"
+        '<th style="text-align:left;padding-left:.8rem">'
+        f"{th('Form', 'Form')}</th></tr>"
+    )
     rows = []
     for i, r in enumerate(df.itertuples(), 1):
         diff_cls = "pos" if r.net > 0 else ("neg" if r.net < 0 else "")
@@ -84,19 +86,27 @@ def _cards(items: list[tuple]) -> None:
 
 def render() -> None:
     season = st.session_state.get("season") or db.latest_season()
-    st.markdown(f'## Teams &nbsp;{T.chip(season)}', unsafe_allow_html=True)
+    st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     standings = db.standings(season)
 
     tab_team, tab_standings = st.tabs(["Team", "Standings"])
     with tab_standings:
-        conf = st.segmented_control("Conference", ["Eastern", "Western", "League"],
-                                    default="Eastern", label_visibility="collapsed",
-                                    key="standings_conf") or "Eastern"
-        shown = {"Eastern": standings[standings.conf == "East"],
-                 "Western": standings[standings.conf == "West"],
-                 "League": standings}[conf]
-        st.markdown(f'<div class="bip-card">{standings_table(shown)}</div>',
-                    unsafe_allow_html=True)
+        conf = (
+            st.segmented_control(
+                "Conference",
+                ["Eastern", "Western", "League"],
+                default="Eastern",
+                label_visibility="collapsed",
+                key="standings_conf",
+            )
+            or "Eastern"
+        )
+        shown = {
+            "Eastern": standings[standings.conf == "East"],
+            "Western": standings[standings.conf == "West"],
+            "League": standings,
+        }[conf]
+        st.markdown(f'<div class="bip-card">{standings_table(shown)}</div>', unsafe_allow_html=True)
         st.caption("Form shows the last five games, most recent on the right.")
     with tab_team:
         _render_team(season, standings)
@@ -116,8 +126,11 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     # to per-game scoring, which every published warehouse has.
     adv = db.team_advanced(season) if db.marts_available() else pd.DataFrame()
     match = adv[adv.team_id == row.team_id] if not adv.empty else adv
-    a = match.iloc[0] if len(match) and match.iloc[0].offensive_rating == \
-        match.iloc[0].offensive_rating else None
+    a = (
+        match.iloc[0]
+        if len(match) and match.iloc[0].offensive_rating == match.iloc[0].offensive_rating
+        else None
+    )
 
     cards = [("Record", f"{row.w}-{row.l}", f"{payroll.ordinal(seed)} in the {row.conf}", "", "")]
     if a is not None:
@@ -128,12 +141,13 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
             ("Pace", "pace", True, "{:.1f}"),
         ]:
             rank = tm.league_rank(adv, row.team, field, high)
-            cards.append((label, fmt.format(a[field]), _rank_sub(rank), "",
-                          glossary.TERMS[label]))
+            cards.append((label, fmt.format(a[field]), _rank_sub(rank), "", glossary.TERMS[label]))
     else:
-        cards += [("Points / game", f"{row.ppg:.1f}", "", "", ""),
-                  ("Opp points / game", f"{row.opp_ppg:.1f}", "", "", ""),
-                  ("Net / game", f"{row.net:+.1f}", "", "", glossary.TERMS["Net / game"])]
+        cards += [
+            ("Points / game", f"{row.ppg:.1f}", "", "", ""),
+            ("Opp points / game", f"{row.opp_ppg:.1f}", "", "", ""),
+            ("Net / game", f"{row.net:+.1f}", "", "", glossary.TERMS["Net / game"]),
+        ]
     pay = _payroll_card(season, row.team)
     if pay:
         cards.append(("Payroll", pay[0], pay[1], "", ""))
@@ -143,14 +157,16 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     if len(games):
         sp = tm.splits(games, standings)
         section("Splits and form")
-        _cards([
-            ("Home", sp["home"], "", "", ""),
-            ("Away", sp["away"], "", "", ""),
-            ("Last 10", sp["last10"], "", "", ""),
-            ("Streak", sp["streak"], "", "", ""),
-            ("Close games", sp["close"], "", "&le;5 pts", ""),
-            ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
-        ])
+        _cards(
+            [
+                ("Home", sp["home"], "", "", ""),
+                ("Away", sp["away"], "", "", ""),
+                ("Last 10", sp["last10"], "", "", ""),
+                ("Streak", sp["streak"], "", "", ""),
+                ("Close games", sp["close"], "", "&le;5 pts", ""),
+                ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
+            ]
+        )
 
     # --- Four Factors --------------------------------------------------------------------
     if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
@@ -158,21 +174,35 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
         ff = tm.four_factors(adv, row.team)
         pct = {"format": "%.1f"}
         st.dataframe(
-            ff, hide_index=True, width="stretch", row_height=ROW_HEIGHT,
-            column_order=["factor", "offense", "league_offense", "offense_rank",
-                          "defense", "league_defense", "defense_rank"],
+            ff,
+            hide_index=True,
+            width="stretch",
+            row_height=ROW_HEIGHT,
+            column_order=[
+                "factor",
+                "offense",
+                "league_offense",
+                "offense_rank",
+                "defense",
+                "league_defense",
+                "defense_rank",
+            ],
             column_config={
                 "factor": st.column_config.TextColumn("Factor"),
                 "offense": st.column_config.NumberColumn(
-                    "Offense", help="This team's own value", **pct),
+                    "Offense", help="This team's own value", **pct
+                ),
                 "league_offense": st.column_config.NumberColumn("League avg", **pct),
                 "offense_rank": st.column_config.TextColumn(
-                    "Off. rank", help="1st is the best offense in the league"),
+                    "Off. rank", help="1st is the best offense in the league"
+                ),
                 "defense": st.column_config.NumberColumn(
-                    "Defense", help="What opponents managed against this team", **pct),
+                    "Defense", help="What opponents managed against this team", **pct
+                ),
                 "league_defense": st.column_config.NumberColumn("League avg", **pct),
                 "defense_rank": st.column_config.TextColumn(
-                    "Def. rank", help="1st is the best defense in the league"),
+                    "Def. rank", help="1st is the best defense in the league"
+                ),
             },
         )
 
@@ -200,13 +230,16 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     roster = roster.sort_values("ppg", ascending=False).head(10)
     st.dataframe(
         roster[["player", "note", "gp", "mpg", "ppg", "rpg", "apg", "fg_pct", "plus_minus"]],
-        hide_index=True, width="stretch", row_height=ROW_HEIGHT,
+        hide_index=True,
+        width="stretch",
+        row_height=ROW_HEIGHT,
         # Tall enough for every row plus the header, so nothing scrolls.
         height=(len(roster) + 1) * ROW_HEIGHT + 3,
         column_config={
             "player": st.column_config.TextColumn("Player", width="medium"),
             "note": st.column_config.TextColumn(
-                "Moved", help="Traded or signed mid-season: where he came from or went"),
+                "Moved", help="Traded or signed mid-season: where he came from or went"
+            ),
             "gp": st.column_config.NumberColumn(**glossary.described("GP")),
             "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
             "ppg": st.column_config.NumberColumn("PTS", format="%.1f"),
@@ -218,11 +251,15 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     )
 
     # One footnote for the whole tab instead of a caption under every block.
-    notes = ["Ranks are out of every team that season, 1st = best (fewest points "
-             "allowed for defensive rating, fastest for pace)."]
+    notes = [
+        "Ranks are out of every team that season, 1st = best (fewest points "
+        "allowed for defensive rating, fastest for pace)."
+    ]
     if a is not None:
         notes.append(f"Ratings are {a.ratings_source}.")
-    notes.append("The roster counts only games played for this team, so a player traded "
-                 "mid-season shows each stint on its own team (minimum 5 games). "
-                 "Payroll detail is on the Finances page.")
+    notes.append(
+        "The roster counts only games played for this team, so a player traded "
+        "mid-season shows each stint on its own team (minimum 5 games). "
+        "Payroll detail is on the Finances page."
+    )
     st.caption(" ".join(notes))

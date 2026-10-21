@@ -28,8 +28,10 @@ limit 10
 def _gate() -> bool:
     expected = config.dev_password()
     if not expected:
-        st.error("Dev Lab is locked: set `DEV_PASSWORD` in `.env` (local) or the "
-                 "app's secrets (cloud), then restart.")
+        st.error(
+            "Dev Lab is locked: set `DEV_PASSWORD` in `.env` (local) or the "
+            "app's secrets (cloud), then restart."
+        )
         return False
     if st.session_state.get("dev_ok"):
         return True
@@ -74,14 +76,23 @@ def _run_query(sql: str) -> None:
 
 def _exports(df: pd.DataFrame) -> None:
     c1, c2, c3, _ = st.columns([1, 1, 1, 3])
-    c1.download_button("Export CSV", df.to_csv(index=False).encode(),
-                       "query_result.csv", "text/csv", width="stretch")
-    c2.download_button("Export JSON", df.to_json(orient="records", date_format="iso").encode(),
-                       "query_result.json", "application/json", width="stretch")
+    c1.download_button(
+        "Export CSV",
+        df.to_csv(index=False).encode(),
+        "query_result.csv",
+        "text/csv",
+        width="stretch",
+    )
+    c2.download_button(
+        "Export JSON",
+        df.to_json(orient="records", date_format="iso").encode(),
+        "query_result.json",
+        "application/json",
+        width="stretch",
+    )
     buf = io.BytesIO()
     df.to_parquet(buf, index=False)
-    c3.download_button("Export Parquet", buf.getvalue(), "query_result.parquet",
-                       width="stretch")
+    c3.download_button("Export Parquet", buf.getvalue(), "query_result.parquet", width="stretch")
 
 
 def _chart_builder(df: pd.DataFrame) -> None:
@@ -108,12 +119,18 @@ def render() -> None:
     if not _gate():
         return
 
-    st.caption("Read-only SQL over the warehouse. Schemas: `raw` (API mirrors) "
-               "and `main_staging` (cleaned dbt views).")
+    st.caption(
+        "Read-only SQL over the warehouse. Schemas: `raw` (API mirrors) "
+        "and `main_staging` (cleaned dbt views)."
+    )
     _schema_browser()
 
-    sql = st.text_area("SQL", value=st.session_state.get("dev_sql", EXAMPLE_QUERY),
-                       height=180, label_visibility="collapsed")
+    sql = st.text_area(
+        "SQL",
+        value=st.session_state.get("dev_sql", EXAMPLE_QUERY),
+        height=180,
+        label_visibility="collapsed",
+    )
     if st.button("Run query", type="primary"):
         st.session_state["dev_sql"] = sql
         _run_query(sql)
@@ -121,8 +138,10 @@ def render() -> None:
     result = st.session_state.get("dev_result")
     if result is None:
         return
-    st.caption(f"{len(result):,} rows x {len(result.columns)} cols - "
-               f"{st.session_state.get('dev_elapsed', 0) * 1000:.0f} ms")
+    st.caption(
+        f"{len(result):,} rows x {len(result.columns)} cols - "
+        f"{st.session_state.get('dev_elapsed', 0) * 1000:.0f} ms"
+    )
     st.dataframe(result, hide_index=True, height=min(420, 40 + 35 * len(result)))
     _exports(result)
     st.divider()

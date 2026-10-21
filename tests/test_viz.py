@@ -32,11 +32,13 @@ def _cap_df(seasons: list[str]) -> pd.DataFrame:
 
 
 def test_flagged_season_is_masked_to_a_gap_not_a_low_value():
-    team_df = _team_df([
-        {"season": "1985-86", "team_payroll": 5_000_000, "payroll_likely_incomplete": False},
-        {"season": "1986-87", "team_payroll": 75_000, "payroll_likely_incomplete": True},
-        {"season": "1987-88", "team_payroll": 5_500_000, "payroll_likely_incomplete": False},
-    ])
+    team_df = _team_df(
+        [
+            {"season": "1985-86", "team_payroll": 5_000_000, "payroll_likely_incomplete": False},
+            {"season": "1986-87", "team_payroll": 75_000, "payroll_likely_incomplete": True},
+            {"season": "1987-88", "team_payroll": 5_500_000, "payroll_likely_incomplete": False},
+        ]
+    )
     fig = viz.team_finances_trend(team_df, _cap_df(team_df["season"].tolist()))
 
     payroll_trace = fig.data[0]
@@ -50,9 +52,11 @@ def test_flagged_season_is_masked_to_a_gap_not_a_low_value():
 
 
 def test_fully_flagged_team_renders_a_placeholder_not_an_empty_chart():
-    team_df = _team_df([
-        {"season": "1984-85", "team_payroll": 3_500_000, "payroll_likely_incomplete": True},
-    ])
+    team_df = _team_df(
+        [
+            {"season": "1984-85", "team_payroll": 3_500_000, "payroll_likely_incomplete": True},
+        ]
+    )
     fig = viz.team_finances_trend(team_df, _cap_df(team_df["season"].tolist()))
 
     # _empty() draws one annotation and no data traces - a franchise whose
@@ -64,12 +68,16 @@ def test_fully_flagged_team_renders_a_placeholder_not_an_empty_chart():
 
 
 def test_trend_labels_each_era_and_marks_the_boundary():
-    team_df = _team_df([
-        {"season": s, "team_payroll": 50_000_000, "payroll_likely_incomplete": False}
-        for s in ["2006-07", "2007-08", "2008-09"]
-    ])
-    eras = [("2006-07", "2007-08", "Seattle SuperSonics"),
-            ("2008-09", "2008-09", "Oklahoma City Thunder")]
+    team_df = _team_df(
+        [
+            {"season": s, "team_payroll": 50_000_000, "payroll_likely_incomplete": False}
+            for s in ["2006-07", "2007-08", "2008-09"]
+        ]
+    )
+    eras = [
+        ("2006-07", "2007-08", "Seattle SuperSonics"),
+        ("2008-09", "2008-09", "Oklahoma City Thunder"),
+    ]
     fig = viz.team_finances_trend(team_df, _cap_df(team_df["season"].tolist()), eras=eras)
     texts = [a.text for a in fig.layout.annotations]
     assert texts == ["Seattle SuperSonics", "Oklahoma City Thunder"]
@@ -77,21 +85,30 @@ def test_trend_labels_each_era_and_marks_the_boundary():
 
 
 def test_trend_with_one_era_draws_no_labels():
-    team_df = _team_df([
-        {"season": "2008-09", "team_payroll": 50_000_000, "payroll_likely_incomplete": False},
-    ])
-    fig = viz.team_finances_trend(team_df, _cap_df(["2008-09"]),
-                                  eras=[("2008-09", "2008-09", "Oklahoma City Thunder")])
+    team_df = _team_df(
+        [
+            {"season": "2008-09", "team_payroll": 50_000_000, "payroll_likely_incomplete": False},
+        ]
+    )
+    fig = viz.team_finances_trend(
+        team_df, _cap_df(["2008-09"]), eras=[("2008-09", "2008-09", "Oklahoma City Thunder")]
+    )
     assert len(fig.layout.annotations) == 0
     assert len(fig.layout.shapes) == 0
 
 
 def test_league_snapshot_puts_the_highest_payroll_on_top():
-    df = pd.DataFrame({
-        "team_name": ["A", "B", "C"], "team_payroll": [150e6, 200e6, 120e6],
-        "bar_color": ["#111111"] * 3, "salary_cap": [140e6] * 3,
-        "luxury_tax": [170e6] * 3, "first_apron": [None] * 3, "second_apron": [None] * 3,
-    })
+    df = pd.DataFrame(
+        {
+            "team_name": ["A", "B", "C"],
+            "team_payroll": [150e6, 200e6, 120e6],
+            "bar_color": ["#111111"] * 3,
+            "salary_cap": [140e6] * 3,
+            "luxury_tax": [170e6] * 3,
+            "first_apron": [None] * 3,
+            "second_apron": [None] * 3,
+        }
+    )
     fig = viz.league_payroll_snapshot(df, highlight="B")
     bars = fig.data[0]
     # Plotly draws the last category at the top of a horizontal bar chart.
@@ -101,8 +118,17 @@ def test_league_snapshot_puts_the_highest_payroll_on_top():
 
 
 def test_league_snapshot_with_no_rows_says_so():
-    empty = pd.DataFrame(columns=["team_name", "team_payroll", "bar_color", "salary_cap",
-                                  "luxury_tax", "first_apron", "second_apron"])
+    empty = pd.DataFrame(
+        columns=[
+            "team_name",
+            "team_payroll",
+            "bar_color",
+            "salary_cap",
+            "luxury_tax",
+            "first_apron",
+            "second_apron",
+        ]
+    )
     fig = viz.league_payroll_snapshot(empty)
     assert len(fig.data) == 0
     assert "No reliable payroll" in fig.layout.annotations[0].text
@@ -112,24 +138,32 @@ def test_era_labels_alternate_heights_so_short_eras_do_not_overlap():
     """New Orleans changes name three times in eleven seasons (2002-13); at
     one shared height those labels printed on top of each other."""
     seasons = ["2001-02", "2002-03", "2005-06", "2007-08"]
-    team_df = _team_df([{"season": s, "team_payroll": 50_000_000,
-                         "payroll_likely_incomplete": False} for s in seasons])
-    eras = [("2001-02", "2001-02", "Charlotte Hornets"),
-            ("2002-03", "2002-03", "New Orleans Hornets"),
-            ("2005-06", "2005-06", "New Orleans/Oklahoma City Hornets"),
-            ("2007-08", "2007-08", "New Orleans Hornets")]
+    team_df = _team_df(
+        [
+            {"season": s, "team_payroll": 50_000_000, "payroll_likely_incomplete": False}
+            for s in seasons
+        ]
+    )
+    eras = [
+        ("2001-02", "2001-02", "Charlotte Hornets"),
+        ("2002-03", "2002-03", "New Orleans Hornets"),
+        ("2005-06", "2005-06", "New Orleans/Oklahoma City Hornets"),
+        ("2007-08", "2007-08", "New Orleans Hornets"),
+    ]
     fig = viz.team_finances_trend(team_df, _cap_df(seasons), eras=eras)
     ys = [a.y for a in fig.layout.annotations]
     assert ys[0] != ys[1] and ys[1] != ys[2] and ys[2] != ys[3]
 
 
 def test_calibration_chart_draws_the_bins_and_the_y_equals_x_reference():
-    bins = pd.DataFrame({
-        "bin_mid": [0.25, 0.55, 0.85],
-        "predicted_mean": [0.27, 0.56, 0.83],
-        "actual_rate": [0.30, 0.50, 0.90],
-        "n": [12, 40, 9],
-    })
+    bins = pd.DataFrame(
+        {
+            "bin_mid": [0.25, 0.55, 0.85],
+            "predicted_mean": [0.27, 0.56, 0.83],
+            "actual_rate": [0.30, 0.50, 0.90],
+            "n": [12, 40, 9],
+        }
+    )
     fig = viz.calibration_chart(bins)
 
     assert len(fig.data) == 2

@@ -52,8 +52,9 @@ def _record_kpi(at: AppTest) -> str:
 def test_old_warehouse_shows_the_info_line(tmp_warehouse_without_marts):
     at = _app()
     infos = [i.value for i in at.info]
-    assert ("Team building needs a newer copy of the data - check back after "
-            "the next refresh.") in infos
+    assert (
+        "Team building needs a newer copy of the data - check back after the next refresh."
+    ) in infos
     assert len(at.dataframe) == 0
 
 
@@ -68,7 +69,8 @@ def test_build_mode_renders_the_pool_table(warehouse_for_team_builder, monkeypat
 
 
 def test_pool_choices_are_all_time_then_seasons_newest_first(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     at = _app(monkeypatch)
     assert list(at.selectbox(key="tb_pool").options) == ["All-time", "2024-25", "2023-24"]
 
@@ -84,9 +86,9 @@ def test_search_filters_the_pool(warehouse_for_team_builder, monkeypatch):
 
 
 def test_a_full_roster_shows_results_and_the_projection_is_stable(
-        warehouse_for_team_builder, monkeypatch):
-    first = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON,
-                 tb_build_slots=list(VALID_PICKS))
+    warehouse_for_team_builder, monkeypatch
+):
+    first = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     text = _markdown(first)
     assert "Projected record" in text
     assert "Team rating" in text
@@ -96,16 +98,14 @@ def test_a_full_roster_shows_results_and_the_projection_is_stable(
     # Same starters and bench, each shuffled within its row, in a fresh
     # session: identical (order inside a row doesn't change minutes).
     shuffled = VALID_PICKS[4::-1] + VALID_PICKS[:4:-1]
-    second = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON,
-                  tb_build_slots=shuffled)
+    second = _app(monkeypatch, tb_mode="Build", tb_pool=SEASON, tb_build_slots=shuffled)
     assert _record_kpi(second) == record
     # And a plain rerun of the first session keeps it too.
     first.run()
     assert _record_kpi(first) == record
 
 
-def test_over_budget_roster_shows_the_validation_message(
-        warehouse_for_team_builder, monkeypatch):
+def test_over_budget_roster_shows_the_validation_message(warehouse_for_team_builder, monkeypatch):
     # Ids 1..8 cost 10+9+...+3 = 52 credits.
     picks = [(pid, SEASON) for pid in range(1, 9)]
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=picks)
@@ -122,7 +122,8 @@ def test_all_time_build_with_the_same_player_twice(warehouse_for_team_builder, m
 
 
 def test_simulate_a_season_shows_a_record_and_the_game_strip(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     at.button(key="tb_build_sim").click().run()
     assert not at.exception, at.exception
@@ -135,8 +136,7 @@ def _filled(at: AppTest) -> list:
     return [None if s is None else tuple(s) for s in at.session_state["tb_build_slots"]]
 
 
-def test_remove_button_empties_that_spot_and_targets_it(
-        warehouse_for_team_builder, monkeypatch):
+def test_remove_button_empties_that_spot_and_targets_it(warehouse_for_team_builder, monkeypatch):
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     at.button(key="tb_rm_2").click().run()
     assert not at.exception, at.exception
@@ -149,7 +149,8 @@ def test_remove_button_empties_that_spot_and_targets_it(
 
 
 def test_the_bench_counts_benching_a_star_lowers_the_rating(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     # VALID_PICKS is ordered best impact first, so the best five start.
     best = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     benched = list(VALID_PICKS)
@@ -176,8 +177,7 @@ def _pick_round(at: AppTest, k: int = 0) -> None:
     assert not at.exception, at.exception
 
 
-def test_draft_offers_three_players_for_the_first_spot(
-        warehouse_for_team_builder, monkeypatch):
+def test_draft_offers_three_players_for_the_first_spot(warehouse_for_team_builder, monkeypatch):
     at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
     state = at.session_state["tb_pick"]
     assert draft.DRAFT_BUDGET_MIN <= state["budget"] <= draft.DRAFT_BUDGET_MAX
@@ -192,7 +192,8 @@ def test_draft_offers_three_players_for_the_first_spot(
 
 
 def test_a_pick_fills_the_next_spot_and_offers_three_new_players(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
     first = at.session_state["tb_pick"]["offer"][1]
     _pick_round(at, 1)
@@ -204,7 +205,8 @@ def test_a_pick_fills_the_next_spot_and_offers_three_new_players(
 
 
 def test_a_full_draft_reveals_the_budget_and_projects_like_build(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
     for _ in range(8):
         _pick_round(at, 0)
@@ -245,6 +247,7 @@ def test_all_team_net_ratings(warehouse_for_team_builder):
 
 # --- Team rating realism, callbacks, opponent sources ------------------------
 
+
 def _kpi_value(at: AppTest, label: str) -> str:
     hits = [m.value for m in at.markdown if f"<span>{label}" in m.value]
     assert hits, f"no {label} KPI on the page"
@@ -257,8 +260,7 @@ def test_determinism_roster_projects_mid_range(warehouse_for_team_builder, monke
     assert 25 <= wins <= 60, wins
 
 
-def test_build_superteam_rating_stays_under_the_ceiling(
-        warehouse_for_team_builder, monkeypatch):
+def test_build_superteam_rating_stays_under_the_ceiling(warehouse_for_team_builder, monkeypatch):
     # Make the top 8 affordable and the calibration steep: the raw linear
     # rating is far past +16 (about +60); the one shown must not be.
     con = duckdb.connect(str(warehouse_for_team_builder))
@@ -304,8 +306,7 @@ def _nonce(at: AppTest) -> int:
     return at.session_state["tb_nonce"] if "tb_nonce" in at.session_state else 0
 
 
-def test_add_callback_adds_once_and_clears_the_selection(
-        warehouse_for_team_builder, monkeypatch):
+def test_add_callback_adds_once_and_clears_the_selection(warehouse_for_team_builder, monkeypatch):
     at = _harness(monkeypatch, tb_pool=SEASON)
     nonce = _nonce(at)
     _call(at, "_tb_add", (4, SEASON))
@@ -344,7 +345,8 @@ def test_a_stale_pick_is_ignored(warehouse_for_team_builder, monkeypatch):
 
 
 def test_season_without_team_ratings_falls_back_and_says_so(
-        warehouse_for_team_builder, monkeypatch):
+    warehouse_for_team_builder, monkeypatch
+):
     con = duckdb.connect(str(warehouse_for_team_builder))
     con.execute("delete from main_marts.mart_team_season where season = '2024-25'")
     con.close()

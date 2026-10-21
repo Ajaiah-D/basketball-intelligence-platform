@@ -46,15 +46,15 @@ from sklearn.linear_model import Ridge
 STATS = ["pts", "orb", "drb", "ast", "stl", "blk", "tov", "fga", "fta", "tpm", "pf"]
 FEATURES = [f"{s}_r" for s in STATS]
 
-FIRST_SEASON = "1985-86"      # complete box scores start here
-FIRST_PM_SEASON = "1996-97"   # plus-minus starts here
+FIRST_SEASON = "1985-86"  # complete box scores start here
+FIRST_PM_SEASON = "1996-97"  # plus-minus starts here
 MIN_TRAIN_MINUTES = 500
-TEAM_NET_WEIGHT = 0.7         # how much of the team's net rating is "not him"
+TEAM_NET_WEIGHT = 0.7  # how much of the team's net rating is "not him"
 RIDGE_ALPHA = 5.0
 HOLDOUT_SEASONS = 5
 MIN_GP = 40
 MIN_MPG = 15.0
-USAGE_LEAGUE_TOTAL = 5.0      # five average players on the floor
+USAGE_LEAGUE_TOTAL = 5.0  # five average players on the floor
 
 # Build-mode prices (1..12). A player-season costs 1 plus the number of these
 # impact quantiles (over the whole eligible pool, every season together) it
@@ -69,8 +69,7 @@ USAGE_LEAGUE_TOTAL = 5.0      # five average players on the floor
 # With those, the best 36-credit build in the all-time, 2024-25 and 2015-16
 # pools rates about +12 to +14 (not pinned at the +16 ceiling), eight
 # cost-4 players about +4 to +5, and eight cost-1 players below -10.
-COST_QUANTILES = [0.15, 0.32, 0.53, 0.72, 0.85, 0.925, 0.965, 0.985, 0.991,
-                  0.995, 0.999]
+COST_QUANTILES = [0.15, 0.32, 0.53, 0.72, 0.85, 0.925, 0.965, 0.985, 0.991, 0.995, 0.999]
 
 # One row per player per team per season. plus-minus is summed only when
 # every game has it: sum() skips nulls, so a partly-missing season would
@@ -108,8 +107,20 @@ from main_marts.mart_team_season
 where net_rating is not null and season >= ?
 """
 
-IMPACT_COLUMNS = ["season", "player_id", "player", "team", "gp", "mpg", "ppg",
-                  "rpg", "apg", "impact", "usage", "cost"]
+IMPACT_COLUMNS = [
+    "season",
+    "player_id",
+    "player",
+    "team",
+    "gp",
+    "mpg",
+    "ppg",
+    "rpg",
+    "apg",
+    "impact",
+    "usage",
+    "cost",
+]
 
 
 def relative_rates(df: pd.DataFrame) -> pd.DataFrame:
@@ -156,11 +167,14 @@ def _predict(df: pd.DataFrame, coef: np.ndarray, intercept: float) -> np.ndarray
 
 def _training_rows(team_rows: pd.DataFrame, net: pd.DataFrame) -> pd.DataFrame:
     train = team_rows.merge(net, on=["season", "team_abbreviation"], how="inner")
-    train = train[(train["season"] >= FIRST_PM_SEASON)
-                  & train["pm"].notna()
-                  & (train["mins"] >= MIN_TRAIN_MINUTES)].copy()
-    train["rel_pm"] = (train["pm"].astype(float) / train["mins"] * 36.0
-                       - TEAM_NET_WEIGHT * train["net_rating"])
+    train = train[
+        (train["season"] >= FIRST_PM_SEASON)
+        & train["pm"].notna()
+        & (train["mins"] >= MIN_TRAIN_MINUTES)
+    ].copy()
+    train["rel_pm"] = (
+        train["pm"].astype(float) / train["mins"] * 36.0 - TEAM_NET_WEIGHT * train["net_rating"]
+    )
     return train
 
 
@@ -184,7 +198,8 @@ def _player_seasons(team_rows: pd.DataFrame) -> pd.DataFrame:
     team path in order of each stint's first game."""
     ordered = team_rows.sort_values(["season", "player_id", "first_game"])
     sums = ordered.groupby(["season", "player_id"], as_index=False)[
-        STATS + ["trb", "mins", "gp"]].sum()
+        STATS + ["trb", "mins", "gp"]
+    ].sum()
     meta = ordered.groupby(["season", "player_id"], as_index=False).agg(
         team=("team_abbreviation", lambda t: " → ".join(t)),
         player=("player_name", "last"),
@@ -192,13 +207,13 @@ def _player_seasons(team_rows: pd.DataFrame) -> pd.DataFrame:
     return sums.merge(meta, on=["season", "player_id"])
 
 
-def _calibrate(team_rows: pd.DataFrame, seasons: pd.DataFrame,
-               net: pd.DataFrame) -> dict:
+def _calibrate(team_rows: pd.DataFrame, seasons: pd.DataFrame, net: pd.DataFrame) -> dict:
     """Fit team net rating = offset + scale x S, where S is the team's
     minutes-share-weighted sum of its players' season impact (x5 so the
     shares sum to five players on the floor)."""
     rows = team_rows[["season", "team_abbreviation", "player_id", "mins"]].merge(
-        seasons[["season", "player_id", "impact"]], on=["season", "player_id"])
+        seasons[["season", "player_id", "impact"]], on=["season", "player_id"]
+    )
     team_total = rows.groupby(["season", "team_abbreviation"])["mins"].transform("sum")
     rows["contrib"] = (rows["mins"] / team_total * 5.0 * rows["impact"]).fillna(0.0)
     s = rows.groupby(["season", "team_abbreviation"], as_index=False)["contrib"].sum()
@@ -208,8 +223,12 @@ def _calibrate(team_rows: pd.DataFrame, seasons: pd.DataFrame,
     scale, offset = np.polyfit(x, y, 1)
     fitted = offset + scale * x
     r2 = 1.0 - np.sum((y - fitted) ** 2) / np.sum((y - y.mean()) ** 2)
-    return {"team_scale": float(scale), "team_offset": float(offset),
-            "team_r2": float(r2), "team_mae": float(np.mean(np.abs(y - fitted)))}
+    return {
+        "team_scale": float(scale),
+        "team_offset": float(offset),
+        "team_r2": float(r2),
+        "team_mae": float(np.mean(np.abs(y - fitted))),
+    }
 
 
 def build(con) -> tuple[pd.DataFrame, dict]:
@@ -232,8 +251,11 @@ def build(con) -> tuple[pd.DataFrame, dict]:
     usage_num = seasons["fga"] + 0.44 * seasons["fta"] + seasons["tov"]
     mins = seasons["mins"].astype(float)
     usage_raw = usage_num / mins.where(mins > 0) * 36.0
-    league = (usage_num.groupby(seasons["season"]).transform("sum")
-              / mins.groupby(seasons["season"]).transform("sum") * 36.0)
+    league = (
+        usage_num.groupby(seasons["season"]).transform("sum")
+        / mins.groupby(seasons["season"]).transform("sum")
+        * 36.0
+    )
     seasons["usage"] = usage_raw / league
 
     seasons["mpg"] = mins / seasons["gp"]
@@ -244,17 +266,20 @@ def build(con) -> tuple[pd.DataFrame, dict]:
     pool = seasons[(seasons["gp"] >= MIN_GP) & (seasons["mpg"] >= MIN_MPG)].copy()
     pool["cost"] = costs_from_impact(pool["impact"])
 
-    impact_df = (pool[IMPACT_COLUMNS]
-                 .sort_values(["season", "impact"], ascending=[True, False])
-                 .reset_index(drop=True))
+    impact_df = (
+        pool[IMPACT_COLUMNS]
+        .sort_values(["season", "impact"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
     meta = {
         "fitted_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "n_train": int(len(train)),
         "holdout_corr": holdout_corr,
         **calibration,
         "usage_league_total": USAGE_LEAGUE_TOTAL,
-        "coef_json": json.dumps({"intercept": intercept,
-                                 **{s: float(c) for s, c in zip(STATS, coef)}}),
+        "coef_json": json.dumps(
+            {"intercept": intercept, **{s: float(c) for s, c in zip(STATS, coef)}}
+        ),
     }
     return impact_df, meta
 
