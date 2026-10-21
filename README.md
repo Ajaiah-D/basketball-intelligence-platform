@@ -102,8 +102,9 @@ for the exact cutoffs.
 Because the API is unofficial and throttles aggressive clients, every request
 goes through a rate limiter (≥1.5s between calls) with exponential-backoff
 retries. Play-by-play is the expensive dataset (~1,300 calls for a full
-season), so by default only the 20 most recent games are pulled; increase with
-`--pbp-games N` or pull everything with `--all-pbp`.
+season), so each run adds only games the season's file doesn't hold yet (20 by
+default, newest first; the weekly refresh allows 120). Raise it with
+`--pbp-games N` or pull everything missing with `--all-pbp`.
 
 Salary data is not available from nba_api, so it is scraped separately from
 **Basketball-Reference** (`ingestion/team_payroll_ingest.py`, one request per
@@ -228,7 +229,7 @@ pip install --upgrade mashumaro
 # 1. Verify API connectivity (one small request, writes nothing)
 python ingestion\nba_ingest.py --smoke-test
 
-# 2. Ingest a season (defaults to the current season, 20 games of play-by-play)
+# 2. Ingest a season (defaults to the current season, up to 20 new games of play-by-play)
 python ingestion\nba_ingest.py --season 2025-26 --pbp-games 20
 
 # 2b. Or backfill history (resumable; skips seasons already on disk).

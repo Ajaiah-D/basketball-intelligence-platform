@@ -20,16 +20,20 @@ Game logs are written one parquet per season (data/raw/player_game_logs/
 files already exist (and read as valid parquet) are skipped unless --force
 is passed. Every write is atomic, so a killed run never leaves half a file.
 
+Play-by-play accumulates: each run fetches only the played games the season's
+file doesn't hold yet (newest first, at most --pbp-games of them) and adds
+them. It runs last, and if it fails the rest of the run is already on disk.
+
 Replacing a season file with an empty frame, or one under 80% of its rows,
 is refused (the old file stays, the run exits 1): a broken or partial
 answer from the API should not quietly erase good data. A smaller drop is
 normal - the NBA corrects box scores. --allow-shrink overrides it.
 
 Usage:
-    python ingestion/nba_ingest.py                      # current season, 20 most recent games of PBP
+    python ingestion/nba_ingest.py                      # current season, up to 20 new games of PBP
     python ingestion/nba_ingest.py --season 2025-26 --pbp-games 50
     python ingestion/nba_ingest.py --backfill 1979-80   # everything from 1979-80 to now
-    python ingestion/nba_ingest.py --all-pbp            # every game (slow: ~1300 calls)
+    python ingestion/nba_ingest.py --all-pbp            # every missing game (slow: ~1300 calls)
     python ingestion/nba_ingest.py --smoke-test         # tiny pull to verify the API works
     python ingestion/nba_ingest.py --force --allow-shrink  # accept a smaller re-fetch
 """
@@ -97,7 +101,7 @@ TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
 
 # Season files a re-fetch may not replace with an empty frame or with less
 # than SHRINK_GUARD_MIN_RATIO of their rows (see core.io). Play-by-play is
-# left out: its size follows --pbp-games, so shrinking is the normal case.
+# left out: run() merges new games into the file, so it only ever grows.
 SHRINK_GUARDED = frozenset(
     {"player_game_logs", "team_game_logs", "player_advanced", "team_advanced", "schedule"}
 )
@@ -231,8 +235,58 @@ def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
         if i % 10 == 0 or i == len(game_ids):
             log.info("  %d/%d games done", i, len(game_ids))
     if not frames:
-        raise RuntimeError("No play-by-play data could be fetched")
+        # Not an error: play-by-play is the optional, flaky part of the run,
+        # and the games that failed are still missing, so the next run tries
+        # them again. The caller decides what an empty answer means.
+        log.warning("No play-by-play could be fetched for any of the %d games", len(game_ids))
+        return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
+
+
+# One event per (game, action number, action id). actionNumber alone repeats
+# within a game - a steal or block shares the number of the turnover or miss
+# it belongs to - but adding actionId makes it unique (checked against the
+# 2025-26 file: 0 repeats over 9,879 rows).
+PBP_KEY = ["gameId", "actionNumber", "actionId"]
+
+
+def play_by_play_game_ids(team_logs: pd.DataFrame) -> list[str]:
+    """The game ids in a team game log, most recent first."""
+    return team_logs.sort_values("GAME_DATE", ascending=False)["GAME_ID"].drop_duplicates().tolist()
+
+
+def accumulate_play_by_play(
+    season: str, played_game_ids: list[str], max_new_games: int | None
+) -> pd.DataFrame | None:
+    """The season's play-by-play file with its missing games added.
+
+    Fetches only the played games the file doesn't hold yet, newest first and
+    at most max_new_games of them (all of them when None); games whose fetch
+    fails are still missing next run, so they are retried then. Returns the
+    existing rows plus the new ones, or None when there is nothing new to
+    write. The file only grows, which is why it isn't shrink-guarded.
+    """
+    path = RAW_DIR / "play_by_play" / f"{season}.parquet"
+    # An unreadable file is started afresh rather than trusted.
+    existing = pd.read_parquet(path) if is_valid_parquet(path) else None
+    stored = set(existing["gameId"]) if existing is not None else set()
+    missing = [g for g in played_game_ids if g not in stored]
+    if not missing:
+        log.info("Play-by-play is up to date for %s (%d games)", season, len(stored))
+        return None
+    if max_new_games is not None:
+        if len(missing) > max_new_games:
+            log.info(
+                "Play-by-play: %d games missing, fetching the %d most recent this run",
+                len(missing),
+                max_new_games,
+            )
+        missing = missing[:max_new_games]
+    new = fetch_play_by_play(missing, season)
+    if new.empty:
+        return None
+    combined = new if existing is None else pd.concat([existing, new], ignore_index=True)
+    return combined.drop_duplicates(PBP_KEY, keep="first", ignore_index=True)
 
 
 def has_advanced_stats(season: str) -> bool:
@@ -440,28 +494,27 @@ def run(
         if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 
-    # Play-by-play only for the latest requested season (1 API call per game).
+    save(fetch_players(latest), "players")
+    save(fetch_teams(), "teams")
+
+    # Play-by-play comes last, and only for the latest requested season (one
+    # API call per game). It is the slow, flaky part of the run, so nothing
+    # that matters waits behind it: by now the game logs, advanced stats,
+    # schedule, players and teams are all on disk, and a play-by-play failure
+    # only costs the games that didn't arrive (retried next run).
     if pbp_games != 0:
         if team_logs_latest is None:
             team_logs_latest = pd.read_parquet(RAW_DIR / "team_game_logs" / f"{latest}.parquet")
-        game_ids = (
-            team_logs_latest.sort_values("GAME_DATE", ascending=False)["GAME_ID"]
-            .drop_duplicates()
-            .tolist()
-        )
-        if pbp_games is not None:
-            game_ids = game_ids[:pbp_games]
+        game_ids = play_by_play_game_ids(team_logs_latest)
         if not game_ids:
             # current_season() rolls over on October 1, about three weeks
             # before opening night. Until then the new season has no games,
             # and the last season's play-by-play already on disk stays put.
             log.info("No games played yet in %s - skipping play-by-play", latest)
         else:
-            pbp = fetch_play_by_play(game_ids, latest)
-            save(pbp, "play_by_play", latest)
-
-    save(fetch_players(latest), "players")
-    save(fetch_teams(), "teams")
+            pbp = accumulate_play_by_play(latest, game_ids, pbp_games)
+            if pbp is not None:
+                save(pbp, "play_by_play", latest)
 
     if refused:
         log.error("Ingestion finished, but kept the old file for: %s", ", ".join(refused))
@@ -495,13 +548,13 @@ def main() -> None:
         "--pbp-games",
         type=int,
         default=20,
-        help="Play-by-play: number of most recent games in the latest "
-        "season (default: 20; 0 to skip)",
+        help="Play-by-play: fetch at most this many games the latest season's "
+        "file doesn't have yet, newest first (default: 20; 0 to skip)",
     )
     parser.add_argument(
         "--all-pbp",
         action="store_true",
-        help="Pull play-by-play for every game in the latest season (slow)",
+        help="Pull play-by-play for every game in the latest season not yet stored (slow)",
     )
     parser.add_argument(
         "--smoke-test",
