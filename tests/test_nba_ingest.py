@@ -6,7 +6,6 @@ responses."""
 
 import json
 import logging
-from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -581,11 +580,37 @@ def test_fetch_play_by_play_returns_nothing_rather_than_raising(monkeypatch):
     assert nba_ingest.fetch_play_by_play(["G00", "G01"], SEASON).empty
 
 
-def test_the_refresh_asks_for_the_shared_cap():
+def test_the_cli_default_is_the_shared_cap():
     from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
-    from scripts import weekly_refresh
 
-    source = Path(weekly_refresh.__file__).read_text(encoding="utf-8")
-    assert "PBP_MAX_NEW_GAMES_PER_RUN" in source
-    assert '"--pbp-games", "20"' not in source
-    assert PBP_MAX_NEW_GAMES_PER_RUN == 120
+    args = nba_ingest.build_parser().parse_args([])
+    assert args.pbp_games == PBP_MAX_NEW_GAMES_PER_RUN == 120
+
+
+def test_a_file_without_a_game_id_column_is_started_afresh(tmp_path, monkeypatch, caplog):
+    ids = _game_ids(2)
+    (tmp_path / "play_by_play").mkdir()
+    core_io.atomic_write_parquet(
+        pd.DataFrame({"unrelated": [1, 2]}), tmp_path / "play_by_play" / f"{SEASON}.parquet"
+    )
+    with caplog.at_level(logging.WARNING, logger="nba_ingest"):
+        fetched = _pbp_run(tmp_path, monkeypatch, played=ids, pbp_games=20)
+    assert sorted(fetched) == ids
+    assert len(_stored_pbp(tmp_path)) == 6
+    assert "no gameId column" in caplog.text
+
+
+def test_games_that_fail_or_come_back_empty_are_counted(monkeypatch, caplog):
+    def endpoint(endpoint_cls, game_id):
+        if game_id == "G00":
+            raise ValueError("not JSON")
+        if game_id == "G01":
+            return pd.DataFrame()
+        return _pbp([game_id])
+
+    monkeypatch.setattr(nba_ingest, "call_endpoint", endpoint)
+    with caplog.at_level(logging.WARNING, logger="nba_ingest"):
+        out = nba_ingest.fetch_play_by_play(_game_ids(4), SEASON)
+
+    assert sorted(out["gameId"].unique()) == ["G02", "G03"]
+    assert "1 of 4 games failed and 1 returned no rows" in caplog.text

@@ -21,10 +21,12 @@ def fake_run(tmp_path, monkeypatch):
 
     def go(*failing: str) -> dict:
         ran: list[str] = []
+        cmds: dict[str, list[str]] = {}
         commits: list[str] = []
 
         def run_step(name, cmd, cwd=None):
             ran.append(name)
+            cmds[name] = cmd
             ok = name not in failing
             entry = {"step": name, "ok": ok, "seconds": 0.0}
             if not ok:
@@ -54,7 +56,13 @@ def fake_run(tmp_path, monkeypatch):
         with pytest.raises(SystemExit) as exit_info:
             wr.main()
         run = json.loads(log.read_text().splitlines()[-1])
-        return {"ran": ran, "commits": commits, "run": run, "exit": exit_info.value.code}
+        return {
+            "ran": ran,
+            "cmds": cmds,
+            "commits": commits,
+            "run": run,
+            "exit": exit_info.value.code,
+        }
 
     return go
 
@@ -67,6 +75,13 @@ def test_a_clean_run_publishes_and_commits_ok(fake_run):
     assert out["run"]["payroll_ok"] is True
     assert "publish_release" in out["ran"]
     assert out["commits"][0].startswith("Weekly refresh: ok ")
+
+
+def test_the_ingest_step_passes_the_shared_play_by_play_cap(fake_run):
+    from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
+
+    argv = fake_run()["cmds"]["ingest"]
+    assert argv[argv.index("--pbp-games") + 1] == str(PBP_MAX_NEW_GAMES_PER_RUN)
 
 
 def test_a_failed_player_impact_step_does_not_stop_the_run(fake_run):
