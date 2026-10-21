@@ -64,6 +64,23 @@ def is_valid_parquet(path: Path) -> bool:
     return parquet_row_count(path) is not None
 
 
+# The shrink guard is there to catch a broken, empty or partial answer, not
+# every smaller one. Real data does shrink a little between fetches: the NBA
+# corrects and removes box score rows, and a waived or traded player drops
+# off a team's Basketball-Reference salary table. Losing more than a fifth
+# of a file at once is not that.
+SHRINK_GUARD_MIN_RATIO = 0.8
+
+
+def suspicious_shrink(new_rows: int, existing_rows: int | None) -> bool:
+    """True when replacing a file of existing_rows with new_rows looks like a
+    broken fetch: the new frame is empty, or under SHRINK_GUARD_MIN_RATIO of
+    the existing rows. False when there is no readable file to protect."""
+    if not existing_rows:
+        return False
+    return new_rows == 0 or new_rows < existing_rows * SHRINK_GUARD_MIN_RATIO
+
+
 class TransientError(Exception):
     """An HTTP answer that says "try again later": a 5xx or a 429.
 
@@ -110,21 +127,36 @@ def retry_transient[T](
     delay: Callable[[BaseException, int], float],
     label: str,
     log: logging.Logger,
+    max_retry_after: float | None = None,
 ) -> T:
     """Run call(), retrying only the exception types in `transient`.
 
     Anything else - a TypeError, a KeyError, a 404 - propagates on the first
     attempt: retrying a bug or a missing page only delays the same failure.
     The wait before retry n is the error's retry_after when it carries one,
-    else delay(exc, n). The last attempt's error is re-raised as-is.
+    else delay(exc, n). A retry_after over max_retry_after is not waited
+    out: the error is re-raised at once, and the caller counts the request
+    as failed for this run. The last attempt's error is re-raised as-is.
     """
     for attempt in range(1, attempts + 1):
         try:
             return call()
         except transient as exc:
+            retry_after = getattr(exc, "retry_after", None)
+            if (
+                retry_after is not None
+                and max_retry_after is not None
+                and retry_after > max_retry_after
+            ):
+                log.warning(
+                    "%s: server asked for a %.0fs wait (over the %.0fs cap) - giving up",
+                    label,
+                    retry_after,
+                    max_retry_after,
+                )
+                raise
             if attempt == attempts:
                 raise
-            retry_after = getattr(exc, "retry_after", None)
             wait = retry_after if retry_after is not None else delay(exc, attempt)
             log.warning(
                 "%s failed (attempt %d/%d): %s -- retrying in %.0fs",

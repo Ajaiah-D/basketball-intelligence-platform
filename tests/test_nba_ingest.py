@@ -164,6 +164,22 @@ def test_type_error_is_not_retried(monkeypatch, sleeps):
     assert sleeps == []
 
 
+def test_a_response_without_a_readable_status_is_not_retried(monkeypatch, sleeps):
+    """The status comes from nba_api's private _status_code. If a future
+    nba_api drops it, a parse error must fail fast, not loop."""
+
+    class NoStatusEndpoint:
+        def __init__(self, timeout=None, get_request=True, **kwargs):
+            self.nba_response = SimpleNamespace()  # no _status_code
+
+        def get_request(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    with pytest.raises(ValueError):
+        nba_ingest.call_endpoint(NoStatusEndpoint, season="2025-26")
+    assert sleeps == []
+
+
 def test_an_empty_result_is_returned_not_retried(monkeypatch, sleeps):
     body = json.dumps(
         {"resultSets": [{"name": "LeagueGameLog", "headers": ["GAME_ID"], "rowSet": []}]}
@@ -249,6 +265,26 @@ def test_allow_shrink_replaces_the_file(tmp_path, monkeypatch):
 
     assert nba_ingest.run(["2025-26"], 0, force=True, allow_shrink=True) == []
     assert len(pd.read_parquet(tmp_path / "team_game_logs" / "2025-26.parquet")) == 4
+
+
+@pytest.mark.parametrize(
+    "existing,new,written",
+    [
+        (20, 19, True),  # a 5% drop: the NBA corrected some rows
+        (20, 15, False),  # a 25% drop
+        (20, 0, False),  # an empty answer
+    ],
+)
+def test_only_a_large_or_empty_shrink_is_refused(tmp_path, monkeypatch, existing, new, written):
+    monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
+    _seed(tmp_path, "team_game_logs", "2025-26", existing)
+    _stub_fetchers(monkeypatch, rows=new)
+
+    refused = nba_ingest.run(["2025-26"], 0, force=True)
+
+    rows = len(pd.read_parquet(tmp_path / "team_game_logs" / "2025-26.parquet"))
+    assert rows == (new if written else existing)
+    assert ("team_game_logs/2025-26" in refused) is not written
 
 
 def test_equal_or_larger_refetch_replaces_the_file(tmp_path, monkeypatch):

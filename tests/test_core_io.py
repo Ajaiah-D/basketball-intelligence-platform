@@ -195,3 +195,52 @@ def test_retry_after_on_a_transient_error_wins_over_the_backoff(sleeps):
     call = Flaky(core_io.TransientError("429", status=429, retry_after=42.0))
     assert _retry(call) == "ok"
     assert sleeps == [42.0]
+
+
+def _capped(call, cap):
+    return core_io.retry_transient(
+        call,
+        attempts=3,
+        transient=(core_io.TransientError,),
+        delay=lambda exc, attempt: 1.0,
+        label="thing",
+        log=log,
+        max_retry_after=cap,
+    )
+
+
+def test_retry_after_up_to_the_cap_is_honoured(sleeps):
+    call = Flaky(core_io.TransientError("429", status=429, retry_after=300.0))
+    assert _capped(call, cap=300) == "ok"
+    assert sleeps == [300.0]
+
+
+def test_retry_after_over_the_cap_gives_up_without_waiting(sleeps):
+    call = Flaky(core_io.TransientError("429", status=429, retry_after=301.0))
+    with pytest.raises(core_io.TransientError) as exc:
+        _capped(call, cap=300)
+    assert exc.value.retry_after == 301.0
+    assert call.calls == 1
+    assert sleeps == []
+
+
+# --- shrink guard rule ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "new,existing,refused",
+    [
+        (95, 100, False),  # a 5% drop: data corrections, a waived player
+        (80, 100, False),  # exactly the threshold
+        (79, 100, True),  # more than 20% gone
+        (75, 100, True),  # a 25% drop
+        (0, 100, True),  # an empty answer
+        (0, 1, True),
+        (120, 100, False),  # growth
+        (5, None, False),  # nothing readable on disk to protect
+        (0, None, False),
+        (0, 0, False),  # empty replacing empty is no loss
+    ],
+)
+def test_suspicious_shrink(new, existing, refused):
+    assert core_io.suspicious_shrink(new, existing) is refused

@@ -278,6 +278,38 @@ def test_429_retry_after_is_honoured(monkeypatch, sleeps):
     assert sleeps == [17.0]
 
 
+def test_retry_after_at_the_cap_is_honoured(monkeypatch, sleeps):
+    cap = team_payroll_ingest.MAX_RETRY_AFTER_SECONDS
+    html, get = _fetch(
+        monkeypatch, _response(429, headers={"Retry-After": str(cap)}), _response(200, "ok")
+    )
+    assert html == "ok"
+    assert get.calls == 2
+    assert sleeps == [float(cap)]
+
+
+def test_retry_after_over_the_cap_fails_without_waiting(monkeypatch, sleeps):
+    # An hour-long block is not worth sleeping through inside the weekly
+    # refresh; payroll is non-fatal and next week's run tries again.
+    too_long = str(team_payroll_ingest.MAX_RETRY_AFTER_SECONDS + 1)
+    with pytest.raises(core_io.TransientError):
+        _fetch(monkeypatch, _response(429, headers={"Retry-After": too_long}), _response(200))
+    assert sleeps == []
+
+
+def test_a_long_block_stops_the_remaining_teams(monkeypatch, sleeps):
+    """Asking for the next 29 pages right after being told to wait an hour
+    would only extend the block, so every team left counts as failed."""
+    get = FakeGet(_response(429, headers={"Retry-After": "3600"}))
+    monkeypatch.setattr(team_payroll_ingest.requests, "get", get)
+    df, players, failed = team_payroll_ingest.ingest_season("2009-10", ["BOS", "DAL", "MIA"])
+    assert get.calls == 1
+    assert failed == ["BOS", "DAL", "MIA"]
+    assert df.empty
+    assert players.empty
+    assert sleeps == []
+
+
 def test_429_without_retry_after_backs_off_a_minute_then_doubles(monkeypatch, sleeps):
     with pytest.raises(core_io.TransientError):
         _fetch(monkeypatch, *[_response(429)] * team_payroll_ingest.MAX_RETRIES)
@@ -501,3 +533,60 @@ def test_main_passes_allow_shrink(monkeypatch):
     )
     team_payroll_ingest.main()
     assert seen == {"force": True, "allow_shrink": True}
+
+
+def _salary_page(lines):
+    """A team page whose salary table has `lines` rows of $1,000 each."""
+    rows = "".join(
+        f'<tr><td class="left" data-append-csv="p{i:02d}" data-stat="player" >'
+        f'<a href="/players/p/p{i:02d}.html">Player {i}</a></td>'
+        f'<td class="right" data-stat="salary" csk="1000" >$1,000</td></tr>'
+        for i in range(lines)
+    )
+    return f'<table id="salaries2">{rows}</table>'
+
+
+TEAMS_20 = [f"T{i:02d}" for i in range(20)]
+
+
+@pytest.mark.parametrize(
+    "failing,written",
+    [
+        (1, True),  # 19 of 20 teams: a 5% drop is written
+        (5, False),  # 15 of 20: a 25% drop is refused
+    ],
+)
+def test_team_rows_only_a_large_shrink_is_refused(monkeypatch, raw, failing, written):
+    _pages_or_errors(monkeypatch, dict.fromkeys(TEAMS_20, _salary_page(1)))
+    assert team_payroll_ingest.write_season("2025-26", TEAMS_20) is True
+
+    pages = dict.fromkeys(TEAMS_20, _salary_page(1))
+    pages.update(dict.fromkeys(TEAMS_20[:failing], requests.ConnectionError("x")))
+    _pages_or_errors(monkeypatch, pages)
+    # False either way: a team failed, or the guard kept the old files.
+    assert team_payroll_ingest.write_season("2025-26", TEAMS_20, force=True) is False
+
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    assert len(totals) == (20 - failing if written else 20)
+
+
+@pytest.mark.parametrize(
+    "lines,written",
+    [
+        (19, True),  # a waived player off a 20-line table: 5%, written
+        (15, False),  # 25% of the salary lines gone: refused
+        (0, False),  # the table vanished: refused
+    ],
+)
+def test_salary_lines_only_a_large_or_empty_shrink_is_refused(monkeypatch, raw, lines, written):
+    _pages_or_errors(monkeypatch, {"BOS": _salary_page(20)})
+    team_payroll_ingest.write_season("2025-26", ["BOS"])
+
+    _pages_or_errors(monkeypatch, {"BOS": _salary_page(lines)})
+    assert team_payroll_ingest.write_season("2025-26", ["BOS"], force=True) is written
+
+    players = pd.read_parquet(raw / "team_payroll_players" / "2025-26.parquet")
+    totals = pd.read_parquet(raw / "team_payroll" / "2025-26.parquet")
+    assert len(players) == (lines if written else 20)
+    # The pair moves together: the totals still describe the players file.
+    assert int(totals["player_count"].iloc[0]) == len(players)
