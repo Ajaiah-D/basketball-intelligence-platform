@@ -191,6 +191,17 @@ def test_draft_offers_three_players_for_the_first_spot(warehouse_for_team_builde
     assert len(at.dataframe) == 0  # no pool table in Draft mode
 
 
+def test_a_short_offer_renders_only_the_options_it_has(warehouse_for_team_builder, monkeypatch):
+    """offer_options returns fewer than three players when the pool runs low;
+    the page must show just those, not fail pairing them with three columns."""
+    at = _app(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
+    state = at.session_state["tb_pick"]
+    state["offer"] = state["offer"][:2]
+    at.run()
+    assert not at.exception, at.exception
+    assert [b.label for b in at.button].count("Pick him") == 2
+
+
 def test_a_pick_fills_the_next_spot_and_offers_three_new_players(
     warehouse_for_team_builder, monkeypatch
 ):

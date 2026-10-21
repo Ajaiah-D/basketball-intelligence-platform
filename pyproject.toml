@@ -24,7 +24,8 @@ ignore = ["RUF001", "RUF002", "RUF003", "E501", "N812"]
 "dashboard/app.py" = ["E402"]
 # Same for the scripts and conftest, which put the repo root on sys.path
 # before importing from it.
-"scripts/*.py" = ["E402"]
+"scripts/backfill_team_payroll.py" = ["E402"]
+"scripts/weekly_refresh.py" = ["E402"]
 "tests/conftest.py" = ["E402"]
 # sklearn convention: X is the feature matrix, so N803/N806 do not apply.
 "ml/**" = ["N803", "N806"]
