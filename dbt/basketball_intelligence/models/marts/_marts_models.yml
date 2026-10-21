@@ -3,20 +3,183 @@ version: 2
 models:
   - name: mart_player_season
     description: >
-      One row per player per season with advanced rate metrics. Derived from
-      box scores for every complete season (1985-86 on); official NBA figures
-      are used where published (1996-97 on). Metrics that depend on columns
-      the source lacks before 1985-86 are null rather than estimated from a
-      partial season.
+      One row per player per season: the season line the dashboard shows
+      (per-game averages, shooting percentages, true shooting, team and age)
+      and advanced rate metrics. The season line covers every ingested
+      season. The advanced metrics are derived from box scores for every
+      complete season (1985-86 on); official NBA figures are used where
+      published (1996-97 on). Metrics that depend on columns the source lacks
+      before 1985-86 are null rather than estimated from a partial season.
+      Exactly one row per season-player in stg_player_game_logs, with every
+      game counted: assert_player_season_matches_game_logs warns on any gap
+      and fails the build past 50 rows.
     columns:
       - name: season
         tests: [not_null]
       - name: player_id
         tests: [not_null]
+      - name: team_abbreviation
+        description: Last team played for. The same value as team.
       - name: games_played
         tests: [not_null]
+      - name: minutes
+        description: Total minutes played.
+      - name: minutes_per_game
+        description: avg(minutes_played), 1 decimal.
+      - name: points_per_game
+        description: avg(points), 1 decimal.
+      - name: true_shooting_pct
+        description: >
+          points / (2 x (FGA + 0.44 x FTA)) x 100, 1 decimal. Null when any of
+          the player's games that season has a null FGA, FTA or points (sum()
+          would otherwise count that game's points with none of its attempts),
+          or with no attempts. Not gated on box_score_complete, so it exists
+          for most pre-1985-86 player-seasons too.
+      - name: plus_minus
+        description: avg(plus_minus), 1 decimal. The same value as plus_minus_per_game.
       - name: box_score_complete
         tests: [not_null]
+      - name: team
+        description: >
+          Last team played for, by game date. A date the source logs him for
+          two teams goes to the later team code, so it can't change between
+          builds.
+        tests: [not_null]
+      - name: team_label
+        description: >
+          Every team played for, in order of each stint's first game, joined
+          with ' → ' ("CHI → BOS"); a single code for one team. Same tie-break
+          as team. The dashboard's team_label; not named team_path because
+          the Advanced page merges a team_path of its own onto this mart.
+        tests: [not_null]
+      - name: rebounds_per_game
+        description: >
+          avg(total_rebounds), 1 decimal. Like every per-game average here, it
+          skips games where the stat is null rather than counting them as 0.
+      - name: assists_per_game
+        description: avg(assists), 1 decimal.
+      - name: steals_per_game
+        description: avg(steals), 1 decimal.
+      - name: blocks_per_game
+        description: avg(blocks), 1 decimal.
+      - name: threes_made_per_game
+        description: avg(three_pointers_made), 1 decimal.
+      - name: fga_per_game
+        description: avg(field_goals_attempted), 1 decimal.
+      - name: three_pa_per_game
+        description: avg(three_pointers_attempted), 1 decimal.
+      - name: fta_per_game
+        description: avg(free_throws_attempted), 1 decimal.
+      - name: plus_minus_per_game
+        description: avg(plus_minus), 1 decimal; null before 1996-97, when the source has none.
+      - name: fga_total
+        description: Total field goal attempts.
+      - name: tpa_total
+        description: Total three-point attempts.
+      - name: fta_total
+        description: Total free throw attempts.
+      - name: fg_pct
+        description: >
+          Made / attempted field goals x 100, 1 decimal, over the games that
+          record both (early seasons often have the makes without the
+          attempts, which once put a season over 1000%); null with no
+          attempts. fg3_pct and ft_pct are the same for threes and free
+          throws. All three are held to 0-100 by
+          assert_advanced_metrics_in_range.
+      - name: fg3_pct
+        description: Made / attempted threes x 100, as fg_pct.
+      - name: ft_pct
+        description: Made / attempted free throws x 100, as fg_pct.
+      - name: assist_to_turnover
+        description: Total assists / total turnovers, 2 decimals; null with no turnovers.
+      - name: shot_poss
+        description: >
+          Shooting possessions, FGA + 0.44 x FTA, unrounded. The weight for
+          averaging true shooting across seasons.
+      - name: age
+        description: >
+          The NBA's age for the season (stg_player_advanced, 1996-97 on);
+          otherwise the player's earliest known age plus the seasons between,
+          floored to a whole year. Null for a player with no known age (a
+          career that ended before 1996-97).
+
+  - name: mart_player_team_season
+    description: >
+      One row per player per team per season: the season line from
+      mart_player_season over only the games a player played for that team,
+      so a player traded mid-season appears on both rosters with his games
+      for each. The stints add back up to his mart_player_season row. Grain
+      checked by assert_mart_grain_is_unique.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: player_name
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: team_abbreviation
+        tests: [not_null]
+      - name: first_game
+        description: Date of the player's first game for this team that season.
+        tests: [not_null]
+      - name: games_played
+        tests: [not_null]
+      - name: minutes_per_game
+        description: >
+          This and every stat column after it are defined as in
+          mart_player_season, computed over this stint's games.
+
+  - name: mart_player_career
+    description: >
+      One row per player, pooled across every ingested season, from the
+      career's game rows directly rather than by averaging season lines. The
+      stat columns are defined as in mart_player_season, computed over the
+      whole career - true shooting's null rule included.
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: player_name
+        description: The most recent spelling (a few players changed theirs).
+        tests: [not_null]
+      - name: team
+        description: Team of the most recent game, same tie-break as mart_player_season.team.
+        tests: [not_null]
+      - name: seasons
+        description: Number of distinct seasons played.
+        tests: [not_null]
+      - name: first_season
+        tests: [not_null]
+      - name: last_season
+        tests: [not_null]
+      - name: games_played
+        tests: [not_null]
+      - name: career_high
+        description: Most points in a single game.
+      - name: pts_total
+        description: Career points.
+      - name: wins
+        description: Games played that his team won.
+        tests: [not_null]
+      - name: shot_poss
+        description: Career shooting possessions, FGA + 0.44 x FTA.
+
+  - name: mart_league_shooting
+    description: >
+      One row per season: league-wide FG%, 3P% and FT%, weighted by volume
+      (all makes over all attempts, 1 decimal, over the games that record
+      both, as in the player marts), null for a season with no attempts of
+      that kind. The benchmark for a player's percentages.
+    columns:
+      - name: season
+        tests: [not_null, unique]
+      - name: fg_pct
+        description: League field goal percentage.
+      - name: fg3_pct
+        description: League three-point percentage.
+      - name: ft_pct
+        description: League free throw percentage.
 
   - name: mart_team_season
     description: >
