@@ -18,3 +18,5 @@ dbt/**/.user.yml
 logs/runs/
 logs/refresh.lock
 warehouse/next/
+logs/refresh.log
+warehouse/*.wal.stale

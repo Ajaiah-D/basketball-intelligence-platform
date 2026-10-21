@@ -1,8 +1,8 @@
 """The weekly refresh: which failures stop the run, that the warehouse is
 built in a copy and only swapped in after every required step passed, the
 release/version ordering, the lock and the run log. No real subprocess,
-network or git runs here - subprocess.run is faked, and the warehouse, logs
-and version file all live in a temp folder."""
+network or git runs here - subprocess.Popen/run and sleeps are faked, and
+the warehouse, logs and version file all live in a temp folder."""
 
 import json
 import os
@@ -35,6 +35,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(wr, "LOG_PATH", logs / "refresh_runs.jsonl")
     monkeypatch.setattr(wr, "LOCK_PATH", logs / "refresh.lock")
     monkeypatch.setattr(wr, "RUNS_DIR", logs / "runs")
+    monkeypatch.setattr(wr, "LAUNCH_LOG_PATH", logs / "refresh.log")
+    sleeps: list[float] = []
+    monkeypatch.setattr(wr.time, "sleep", sleeps.append)
     monkeypatch.setattr(
         wr,
         "payroll_steps",
@@ -45,12 +48,13 @@ def env(tmp_path, monkeypatch):
         "copy": warehouse.parent / "next" / "basketball.duckdb",
         "version": warehouse.parent / "version.txt",
         "logs": logs,
+        "sleeps": sleeps,
     }
 
 
 @pytest.fixture
 def fake_run(env, monkeypatch):
-    """Run main() with a fake subprocess.run; returns what happened.
+    """Run main() with a fake subprocess.Popen/run; returns what happened.
 
     Each step is identified by the log file its output goes to. The fake
     "load_duckdb" writes NEW into whatever BIP_WAREHOUSE it was handed, the
@@ -70,41 +74,66 @@ def fake_run(env, monkeypatch):
         uploads: list[dict] = []
         git_calls: list[tuple[str, ...]] = []
         commits: list[str] = []
+        killed: list[list[str]] = []
+
+        class FakePopen:
+            pid = 4242
+
+            def __init__(self, cmd, **kwargs):
+                self.name = name = Path(kwargs["stdout"].name).stem
+                self.returncode: int | None = None
+                ran.append(name)
+                calls[name] = {"cmd": cmd, **kwargs}
+                out = kwargs["stdout"]
+                out.write(f"running {name}\n".encode())
+                if cmd[0] == "gh":
+                    uploads.append(
+                        {
+                            "step": name,
+                            "files": [Path(c) for c in cmd[4:-1]],
+                            "warehouse": env["warehouse"].read_bytes(),
+                            "version": env["version"].read_text()
+                            if env["version"].exists()
+                            else None,
+                        }
+                    )
+                if name in timeouts:
+                    return
+                if name == "load_duckdb":
+                    Path(kwargs["env"]["BIP_WAREHOUSE"]).write_bytes(NEW)
+                if output and name in output:
+                    out.write(output[name].encode())
+                if after and name in after:
+                    after[name](Path(kwargs["env"]["BIP_WAREHOUSE"]))
+                self.returncode = 1 if name in failing else 0
+
+            def communicate(self, timeout=None):
+                calls[self.name]["timeout"] = timeout
+                if self.returncode is None:
+                    raise subprocess.TimeoutExpired(calls[self.name]["cmd"], timeout)
+                return None, None
+
+            def kill(self):
+                self.returncode = -9
+
+            def wait(self, timeout=None):
+                return self.returncode
 
         def fake_subprocess_run(cmd, **kwargs):
-            if cmd[0] == "git":
-                args = tuple(cmd[1:])
-                git_calls.append(args)
-                if args[0] == "commit":
-                    commits.append(args[2])
-                if git_fails and args[0] in git_fails:
-                    return subprocess.CompletedProcess(cmd, 1, "", git_fails[args[0]])
-                # "diff --cached --quiet" exits 1 when something is staged
-                return subprocess.CompletedProcess(cmd, 1 if args[0] == "diff" else 0, "", "")
-            name = Path(kwargs["stdout"].name).stem
-            ran.append(name)
-            calls[name] = {"cmd": cmd, **kwargs}
-            out = kwargs["stdout"]
-            out.write(f"running {name}\n".encode())
-            if cmd[0] == "gh":
-                uploads.append(
-                    {
-                        "step": name,
-                        "files": [Path(c) for c in cmd[4:-1]],
-                        "warehouse": env["warehouse"].read_bytes(),
-                        "version": env["version"].read_text() if env["version"].exists() else None,
-                    }
-                )
-            if name in timeouts:
-                raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
-            if name == "load_duckdb":
-                Path(kwargs["env"]["BIP_WAREHOUSE"]).write_bytes(NEW)
-            if output and name in output:
-                out.write(output[name].encode())
-            if after and name in after:
-                after[name](Path(kwargs["env"]["BIP_WAREHOUSE"]))
-            return subprocess.CompletedProcess(cmd, 1 if name in failing else 0)
+            if cmd[0] == "taskkill":
+                killed.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            assert cmd[0] == "git", cmd
+            args = tuple(cmd[1:])
+            git_calls.append(args)
+            if args[0] == "commit":
+                commits.append(args[2])
+            if git_fails and args[0] in git_fails:
+                return subprocess.CompletedProcess(cmd, 1, "", git_fails[args[0]])
+            # "diff --cached --quiet" exits 1 when something is staged
+            return subprocess.CompletedProcess(cmd, 1 if args[0] == "diff" else 0, "", "")
 
+        monkeypatch.setattr(wr.subprocess, "Popen", FakePopen)
         monkeypatch.setattr(wr.subprocess, "run", fake_subprocess_run)
         with pytest.raises(SystemExit) as exit_info:
             wr.main(list(argv))
@@ -116,6 +145,7 @@ def fake_run(env, monkeypatch):
             "uploads": uploads,
             "git": git_calls,
             "commits": commits,
+            "killed": killed,
             "lines": lines,
             "run": lines[0],
             "exit": exit_info.value.code,
@@ -307,6 +337,8 @@ def test_a_timeout_is_recorded_as_a_failure(fake_run, env):
     assert ingest["ok"] is False
     assert "timed out after 3600s" in ingest["error"]
     assert env["warehouse"].read_bytes() == OLD
+    if sys.platform == "win32":
+        assert out["killed"] == [["taskkill", "/T", "/F", "/PID", "4242"]]
 
 
 def test_each_step_has_its_own_timeout(fake_run):
@@ -468,3 +500,196 @@ def test_payroll_steps_read_the_copy(monkeypatch, tmp_path):
     steps = wr.payroll_steps(tmp_path / "copy.duckdb")
     assert seen == [tmp_path / "copy.duckdb"]
     assert steps[0][1][-3:] == ["--teams", "bos", "lal"]
+
+
+# -- Windows file locks ------------------------------------------------------------
+
+
+def _replace_failing(monkeypatch, times: int | None, seen: list | None = None):
+    """os.replace raising PermissionError `times` times (None: always), then real."""
+    real_replace = os.replace
+    failures = {"left": times}
+
+    def replace(src, dst):
+        if seen is not None:
+            seen.append((Path(src), Path(dst)))
+        if failures["left"] is None or failures["left"] > 0:
+            if failures["left"] is not None:
+                failures["left"] -= 1
+            raise PermissionError(32, "The process cannot access the file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(wr.os, "replace", replace)
+
+
+def test_the_swap_retries_while_the_warehouse_is_briefly_locked(fake_run, env, monkeypatch):
+    _replace_failing(monkeypatch, 3)
+    out = fake_run()
+    assert out["exit"] == 0
+    assert env["warehouse"].read_bytes() == NEW
+    assert env["sleeps"] == [1, 2, 4]
+
+
+def test_the_swap_gives_up_after_its_retries(fake_run, env, monkeypatch):
+    _replace_failing(monkeypatch, None)
+    out = fake_run()
+    assert out["exit"] == 1
+    assert env["sleeps"] == list(wr.FILE_LOCK_RETRY_DELAYS_SECONDS)
+    (swap,) = [s for s in out["run"]["steps"] if s["step"] == "swap"]
+    assert "close the dashboard" in swap["error"].lower()
+    assert env["warehouse"].read_bytes() == OLD
+    assert not env["copy"].exists()
+    assert out["uploads"] == []
+
+
+def test_discarding_the_copy_retries_while_it_is_locked(fake_run, env, monkeypatch):
+    real_unlink = os.unlink
+    failures = {"left": 2}
+
+    def unlink(path, *a, **k):
+        if Path(path) == env["copy"] and failures["left"]:
+            failures["left"] -= 1
+            raise PermissionError(32, "The process cannot access the file")
+        return real_unlink(path, *a, **k)
+
+    monkeypatch.setattr(wr.os, "unlink", unlink)
+    out = fake_run(argv=("--no-publish",))
+    assert out["exit"] == 0
+    assert not env["copy"].exists()
+    assert env["sleeps"] == [1, 2]
+
+
+# prepare_copy copies the warehouse's WAL along with it; the steps' clean
+# close folds it into the copy, which these fakes stand in for.
+CLEAN_CLOSE = {"load_duckdb": lambda copy: wr.wal_path(copy).unlink(missing_ok=True)}
+
+
+def test_a_stale_wal_is_moved_aside_before_the_replace(fake_run, env, monkeypatch):
+    stale = wr.wal_path(env["warehouse"])
+    stale.write_bytes(b"old wal")
+    seen: list = []
+    _replace_failing(monkeypatch, 0, seen)
+    out = fake_run(after=CLEAN_CLOSE)
+    assert out["exit"] == 0
+    aside = stale.with_name(stale.name + ".stale")
+    # first the WAL goes aside, then the copy goes onto the warehouse
+    assert seen == [(stale, aside), (env["copy"], env["warehouse"])]
+    assert not stale.exists() and not aside.exists()
+    assert env["warehouse"].read_bytes() == NEW
+
+
+def test_a_stale_wal_is_put_back_when_the_replace_fails(fake_run, env, monkeypatch):
+    stale = wr.wal_path(env["warehouse"])
+    stale.write_bytes(b"old wal")
+    real_replace = os.replace
+
+    def replace(src, dst):
+        if Path(dst) == env["warehouse"]:
+            raise PermissionError(32, "The process cannot access the file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(wr.os, "replace", replace)
+    out = fake_run(after=CLEAN_CLOSE)
+    assert out["exit"] == 1
+    (swap,) = [s for s in out["run"]["steps"] if s["step"] == "swap"]
+    assert "close the dashboard" in swap["error"].lower()
+    assert stale.read_bytes() == b"old wal"  # still the old file's
+    assert not stale.with_name(stale.name + ".stale").exists()
+    assert env["warehouse"].read_bytes() == OLD
+
+
+# -- timeouts kill the whole tree ------------------------------------------------
+
+
+class _Proc:
+    pid = 4242
+
+    def __init__(self):
+        self.killed = False
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        return -9
+
+
+def test_kill_tree_uses_taskkill_on_windows(monkeypatch):
+    runs = []
+    monkeypatch.setattr(wr.sys, "platform", "win32")
+    monkeypatch.setattr(
+        wr.subprocess,
+        "run",
+        lambda cmd, **k: runs.append(cmd) or subprocess.CompletedProcess(cmd, 0),
+    )
+    proc = _Proc()
+    wr.kill_tree(proc)  # type: ignore[arg-type]
+    assert runs == [["taskkill", "/T", "/F", "/PID", "4242"]]
+    assert proc.killed
+
+
+def test_kill_tree_kills_the_process_group_elsewhere(monkeypatch):
+    groups = []
+    monkeypatch.setattr(wr.sys, "platform", "linux")
+    monkeypatch.setattr(wr.os, "killpg", lambda pid, sig: groups.append((pid, sig)), raising=False)
+    monkeypatch.setattr(wr.signal, "SIGKILL", 9, raising=False)
+    proc = _Proc()
+    wr.kill_tree(proc)  # type: ignore[arg-type]
+    assert groups == [(4242, 9)]
+
+
+# -- the refresh's own log -----------------------------------------------------------
+
+
+def test_every_run_keeps_its_own_log(fake_run, env):
+    out = fake_run()
+    log_file = env["logs"].parent / out["run"]["log"]
+    assert log_file.name == "refresh.log"
+    assert log_file.parent.parent == env["logs"] / "runs"
+    text = log_file.read_text(encoding="utf-8")
+    for line in ("-> copy_warehouse", "-> ingest", "-> swap", "Committed and pushed"):
+        assert line in text, line
+
+
+def test_a_skipped_run_leaves_a_note_in_the_launch_log(fake_run, env):
+    lock = env["logs"] / "refresh.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text(json.dumps({"pid": 99999, "started_at": "now"}))
+    with pytest.raises(SystemExit):
+        wr.main([])
+    text = (env["logs"] / "refresh.log").read_text(encoding="utf-8")
+    assert "Another refresh is running" in text
+
+
+def test_a_lock_that_cannot_be_created_exits_2(fake_run, env, monkeypatch, caplog):
+    not_a_folder = env["logs"].parent / "not_a_folder"
+    not_a_folder.write_text("a file where the logs folder should be")
+    monkeypatch.setattr(wr, "LOCK_PATH", not_a_folder / "refresh.lock")
+    with pytest.raises(SystemExit) as exit_info:
+        wr.main([])
+    assert exit_info.value.code == 2
+    assert "Could not create the lock" in caplog.text
+    assert env["warehouse"].read_bytes() == OLD
+
+
+def test_no_publish_with_a_failing_step(fake_run, env):
+    out = fake_run("dbt_build", argv=("--no-publish",))
+    assert out["exit"] == 1
+    assert out["run"]["dry_run"] is True
+    assert out["run"]["ok"] is False
+    assert "swap" not in [s["step"] for s in out["run"]["steps"]]
+    assert env["warehouse"].read_bytes() == OLD
+    assert not env["copy"].exists()
+    assert out["git"] == []
+    assert len(out["lines"]) == 1
+
+
+def test_an_old_stale_wal_is_never_put_beside_the_warehouse(fake_run, env, monkeypatch):
+    # a previous run moved a WAL aside but could not delete it
+    stale = wr.wal_path(env["warehouse"])
+    aside = stale.with_name(stale.name + ".stale")
+    aside.write_bytes(b"wal of a file that is gone")
+    _replace_failing(monkeypatch, None)
+    out = fake_run(after=CLEAN_CLOSE)
+    assert out["exit"] == 1
+    assert not stale.exists()

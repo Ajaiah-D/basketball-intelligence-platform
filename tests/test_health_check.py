@@ -33,3 +33,33 @@ def test_the_last_run_without_a_push_line():
 def test_no_scheduled_run_at_all():
     dry = json.dumps({**RUN, "dry_run": True})
     assert health_check.last_scheduled_run([dry]) == (None, None)
+
+
+def test_check_last_run_notes_a_failed_push_and_counts_only_scheduled_runs(
+    tmp_path, monkeypatch, capsys
+):
+    log = tmp_path / "logs" / "refresh_runs.jsonl"
+    log.parent.mkdir()
+    recent = health_check.datetime.now(health_check.UTC).isoformat(timespec="seconds")
+    run = {**RUN, "run_at": recent}
+    log.write_text(
+        "\n".join(
+            [
+                json.dumps({**RUN, "run_at": "2026-10-13T10:00:00+00:00"}),
+                json.dumps(run),
+                json.dumps(
+                    {"run_at": recent, "step": "git_push", "ok": False, "error": "rejected"}
+                ),
+                json.dumps({**run, "dry_run": True}),
+            ]
+        )
+        + "\n"
+    )
+    monkeypatch.setattr(health_check, "LOG_PATH", log)
+    monkeypatch.setattr(health_check, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(health_check, "CHECKS_FAILED", [])
+    health_check.check_last_run()
+    printed = capsys.readouterr().out
+    assert "NOTE git push after that run failed: rejected" in printed
+    assert "(2 scheduled run(s) recorded" in printed
+    assert health_check.CHECKS_FAILED == []
