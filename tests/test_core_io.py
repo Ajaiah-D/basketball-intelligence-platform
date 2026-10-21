@@ -2,6 +2,7 @@
 retry loop both ingesters share. Nothing here touches the network."""
 
 import logging
+from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
@@ -50,6 +51,21 @@ def test_a_crash_mid_write_keeps_the_original(tmp_path, monkeypatch):
 
     assert pd.read_parquet(path).equals(_frame(5))
     assert list(tmp_path.iterdir()) == [path], "the temp file must be cleaned up"
+
+
+def test_a_failed_cleanup_does_not_mask_the_write_error(tmp_path, monkeypatch):
+    path = tmp_path / "f.parquet"
+
+    def crash(*args, **kwargs):
+        raise OSError("disk full")
+
+    def locked(self, *args, **kwargs):
+        raise PermissionError("tmp is locked by a virus scanner")
+
+    monkeypatch.setattr(core_io.os, "replace", crash)
+    monkeypatch.setattr(Path, "unlink", locked)
+    with pytest.raises(OSError, match="disk full"):
+        core_io.atomic_write_parquet(_frame(1), path)
 
 
 def test_a_failed_serialisation_keeps_the_original(tmp_path):

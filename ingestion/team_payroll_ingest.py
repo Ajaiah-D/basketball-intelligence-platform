@@ -98,6 +98,8 @@ MAX_RETRY_AFTER_SECONDS = 300
 TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     requests.ConnectionError,
     requests.Timeout,
+    # The connection dropped partway through the body.
+    requests.exceptions.ChunkedEncodingError,
     TransientError,
 )
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -423,14 +425,15 @@ def write_season(
 
     Returns True when every team was fetched and the files were written (or
     were already complete), False when a team failed or the shrink guard
-    kept the old files. A season with failed teams is still written with
-    the teams that succeeded, unless nothing succeeded at all; a failed
-    team the existing files already cover keeps those rows (see
-    _carry_over), and is otherwise absent. The guard checks the merged
-    frames. Replacing
-    either file with an empty frame or one under SHRINK_GUARD_MIN_RATIO of
-    its rows is refused - both files are kept, so they stay a matching
-    pair - unless allow_shrink.
+    kept the old files.
+
+    A season with failed teams is still written with the teams that
+    succeeded, unless nothing succeeded at all. A failed team keeps its rows
+    from the existing files when both read (see _carry_over), and is
+    otherwise absent. The shrink guard then checks the merged frames:
+    replacing either file with an empty frame or one under
+    SHRINK_GUARD_MIN_RATIO of its rows is refused, and both files are kept
+    so they stay a matching pair - unless allow_shrink.
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PLAYERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -451,15 +454,21 @@ def write_season(
     if df.empty:
         log.error("%s: no team was fetched - nothing written", season)
         return False
-    if failed:
+    if failed and is_valid_parquet(out_path) and is_valid_parquet(players_path):
         df, carried = _carry_over(df, out_path, failed, team_codes)
-        players, carried_lines = _carry_over(players, players_path, failed, team_codes)
-        if carried or carried_lines:
-            log.warning(
-                "%s: carried over last fetch's rows for %s",
-                season,
-                ", ".join(sorted(set(carried) | set(carried_lines))),
-            )
+        # Lines only for the teams whose total was carried, so each carried
+        # player_count still matches its lines.
+        players, _ = _carry_over(players, players_path, carried, team_codes)
+        if carried:
+            log.warning("%s: carried over last fetch's rows for %s", season, ", ".join(carried))
+    elif failed and (out_path.exists() or players_path.exists()):
+        # Half a pair would leave a total without its lines (or the
+        # reverse), so a failed team stays out until both files read.
+        log.warning(
+            "%s: the existing payroll files don't both read - not carrying over %s",
+            season,
+            ", ".join(failed),
+        )
 
     if not allow_shrink:
         shrunk = [

@@ -100,6 +100,7 @@ def _call(monkeypatch, *outcomes):
         requests.ReadTimeout("read timed out"),
         requests.ConnectTimeout("connect timed out"),
         requests.ConnectionError("connection reset"),
+        requests.exceptions.ChunkedEncodingError("connection reset mid-body"),
     ],
 )
 def test_network_errors_are_retried(monkeypatch, sleeps, error):
@@ -332,3 +333,25 @@ def test_main_exits_non_zero_after_a_refused_write(monkeypatch):
     monkeypatch.setattr("sys.argv", ["nba_ingest.py", "--season", "2025-26", "--allow-shrink"])
     nba_ingest.main()
     assert seen["allow_shrink"] is True
+
+
+def test_refused_team_logs_are_not_used_for_play_by_play(tmp_path, monkeypatch):
+    """When the shrink guard keeps the old team logs, play-by-play must pick
+    its games from that file, not from the short answer it just refused."""
+    monkeypatch.setattr(nba_ingest, "RAW_DIR", tmp_path)
+    (tmp_path / "team_game_logs").mkdir()
+    on_disk = pd.DataFrame({"GAME_ID": [f"D{i:02d}" for i in range(10)], "GAME_DATE": "2025-11-01"})
+    core_io.atomic_write_parquet(on_disk, tmp_path / "team_game_logs" / "2025-26.parquet")
+    _stub_fetchers(monkeypatch, rows=4)  # GAME_IDs 000-003: a refused 60% drop
+    picked = []
+
+    def fake_pbp(game_ids, season):
+        picked.extend(game_ids)
+        return pd.DataFrame({"GAME_ID": game_ids})
+
+    monkeypatch.setattr(nba_ingest, "fetch_play_by_play", fake_pbp)
+
+    refused = nba_ingest.run(["2025-26"], 20, force=True)
+
+    assert "team_game_logs/2025-26" in refused
+    assert sorted(picked) == sorted(on_disk["GAME_ID"])
