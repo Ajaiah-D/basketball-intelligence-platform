@@ -36,7 +36,12 @@ What a run leaves behind (Task Scheduler keeps no output of its own):
                             the predictions ml.predict appended; committed
                             with the run log, and only by a run that
                             published - any other run puts it back as it
-                            found it, like the warehouse copy.
+                            found it, like the warehouse copy (see "the
+                            predictions history" below).
+  data/predictions/history.csv.pre-run
+                            the history as a publishing run found it; gone
+                            once the run publishes or rolls back (not
+                            committed).
 
 Usage:
     python scripts/weekly_refresh.py
@@ -537,13 +542,16 @@ def timed(run: dict, name: str, action: Callable[[], str | None]) -> bool:
 # -- publishing ---------------------------------------------------------------
 
 
-def publish(run: dict, warehouse: Path, log_dir: Path) -> bool:
+def publish(
+    run: dict, warehouse: Path, log_dir: Path, on_release: Callable[[], None] | None = None
+) -> bool:
     """Upload the swapped-in warehouse, then the version marker.
 
     In that order on purpose: the live app re-downloads when version.txt
     changes, so the marker must never move before the data it announces.
     version.txt is written only once the warehouse is up, and put back the
-    way it was if its own upload fails.
+    way it was if its own upload fails. on_release is called as soon as the
+    warehouse asset is up, whatever happens to the marker after.
     """
     where: dict[str, Any] = {"warehouse": warehouse, "log_dir": log_dir}
     # The real path, never the copy: gh names the asset after the file, and
@@ -553,6 +561,8 @@ def publish(run: dict, warehouse: Path, log_dir: Path) -> bool:
         run, [("publish_release", [*upload, str(warehouse), "--clobber"], None)], **where
     ):
         return False
+    if on_release is not None:
+        on_release()
 
     version_path = paths.release_version_path()
     previous = version_path.read_text() if version_path.exists() else None
@@ -598,9 +608,9 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
     return f"ok ({' and '.join(failed)} {noun} failed)"
 
 
-def commit_and_push(run: dict) -> dict:
-    """Commit this run's log line, data/last_updated.json and (when the run
-    published) the predictions history, and push.
+def commit_and_push(run: dict, *, with_history: bool = False) -> dict:
+    """Commit this run's log line, data/last_updated.json and (with_history:
+    the warehouse asset was uploaded) the predictions history, and push.
 
     Returns a "git_push" entry. It cannot go in the run's own line, which
     has to be written before the commit that carries it; the caller appends
@@ -613,10 +623,10 @@ def commit_and_push(run: dict) -> dict:
     try:
         status = commit_status(run["ok"], run["payroll_ok"], run["player_impact_ok"])
         files = ["data/last_updated.json", "logs/refresh_runs.jsonl"]
-        if run["ok"]:
+        if with_history:
             # The source of truth for the public track record. A run that
-            # did not publish has already put it back (restore_history), so
-            # it has nothing of its own to add.
+            # did not publish has already put it back (discard_predictions),
+            # so it has nothing of its own to add.
             files.append("data/predictions/history.csv")
         add = git("add", *files)
         if add.returncode != 0:
@@ -733,9 +743,28 @@ def logging_to(path: Path) -> Iterator[None]:
 
 
 # -- the predictions history --------------------------------------------------
+#
+# The history holds only predictions that went out with a published
+# warehouse - the same all-or-nothing rule as the copy. A publishing run
+# saves the CSV as it found it beside it (history.csv.pre-run) before any
+# step runs, and drops that snapshot the moment the warehouse asset is
+# uploaded. Any other ending - a failed step, a failed swap or upload, a
+# Ctrl+C - puts the CSV back from the snapshot. A run killed outright never
+# gets that far, so every run first restores from a snapshot it finds left
+# over.
+#
+# The snapshot file is one marker line, then the CSV's bytes: "present\n"
+# followed by them, or just "absent\n" when there was no CSV yet.
+
+_PRESENT, _ABSENT = b"present\n", b"absent\n"
 
 
-def snapshot_history() -> bytes | None:
+def snapshot_path() -> Path:
+    """Where a publishing run keeps the history as it found it."""
+    return HISTORY_PATH.with_name(HISTORY_PATH.name + ".pre-run")
+
+
+def read_history() -> bytes | None:
     """The history CSV's bytes, or None when there is none yet."""
     try:
         return HISTORY_PATH.read_bytes()
@@ -743,10 +772,18 @@ def snapshot_history() -> bytes | None:
         return None
 
 
+def save_snapshot() -> None:
+    """Write the history as it is now to snapshot_path(), atomically."""
+    current = read_history()
+    path = snapshot_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(_ABSENT if current is None else _PRESENT + current, path)
+
+
 def restore_history(snapshot: bytes | None) -> bool:
-    """Put the history back the way snapshot_history() found it (removing it
-    if there was none). Returns whether anything had to change."""
-    if snapshot_history() == snapshot:
+    """Put the history back to `snapshot` (removing it when that is None).
+    Returns whether anything had to change."""
+    if read_history() == snapshot:
         return False
     if snapshot is None:
         HISTORY_PATH.unlink()
@@ -755,17 +792,48 @@ def restore_history(snapshot: bytes | None) -> bool:
     return True
 
 
-def discard_predictions(run: dict, snapshot: bytes | None) -> None:
+def roll_back_history() -> bool | None:
+    """Restore the history from snapshot_path() and delete the snapshot.
+
+    Returns None when there is no snapshot, else whether the CSV changed. A
+    snapshot it can't read raises ValueError and is left in place.
+    """
+    path = snapshot_path()
+    try:
+        saved = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    if saved == _ABSENT:
+        snapshot = None
+    elif saved.startswith(_PRESENT):
+        snapshot = saved[len(_PRESENT) :]
+    else:
+        raise ValueError(f"{path} is not a history snapshot; fix or delete it by hand")
+    changed = restore_history(snapshot)
+    path.unlink()
+    return changed
+
+
+def drop_snapshot() -> None:
+    """The run published: its predictions stay, so the snapshot goes."""
+    try:
+        snapshot_path().unlink(missing_ok=True)
+    except OSError as exc:
+        # Left behind, the next run would roll back predictions that are
+        # already public. Say so where the owner will look.
+        log.error("Could not delete %s (%s); delete it by hand", snapshot_path(), exc)
+
+
+def discard_predictions(run: dict) -> None:
     """After a run that did not publish: drop the rows its predict step
-    appended. The history holds only predictions that went out with a
-    published warehouse - the same all-or-nothing rule as the copy."""
+    appended, and record a rollback that failed."""
     started = time.monotonic()
     try:
-        if restore_history(snapshot):
+        if roll_back_history():
             log.warning("Run not published: discarded its predictions from %s", HISTORY_PATH)
-    except OSError as exc:
-        # Not added to git by this run either way; the next published run
-        # would commit what is left, so say so loudly.
+    except (OSError, ValueError) as exc:
+        # This run doesn't add the CSV to git either way, and the snapshot
+        # is still there for the next run to try again.
         log.error("Could not restore %s: %s", HISTORY_PATH, exc)
         run["steps"].append(
             {
@@ -794,19 +862,36 @@ def refresh(publishing: bool) -> int:
             "Refresh %s%s: building %s", run["run_at"], "" if publishing else " (dry run)", copy
         )
         ok = False
-        # Taken before anything runs: a publishing run's predictions are kept
-        # only if it publishes. (A dry run never appends - see BIP_DRY_RUN.)
-        snapshot: bytes | None = None
+        # Whether the warehouse asset was uploaded. Not the same as ok: a
+        # failed version.txt upload fails the run, but the predictions are
+        # on the release by then and stay in the history.
+        published = False
         snapshot_taken = False
+
+        def release_uploaded() -> None:
+            nonlocal published
+            published = True
+            drop_snapshot()
+
         try:
+            # A run that was killed outright left its snapshot behind.
+            leftover = roll_back_history()
+            if leftover is not None:
+                log.warning(
+                    "The previous run was interrupted; %s",
+                    "discarded its unpublished predictions"
+                    if leftover
+                    else "it had not changed the predictions history",
+                )
+            # A dry run never appends (BIP_DRY_RUN), so it needs no snapshot.
             if publishing:
-                snapshot = snapshot_history()
+                save_snapshot()
                 snapshot_taken = True
             ok = timed(run, "copy_warehouse", lambda: prepare_copy(warehouse, copy))
             ok = ok and build(run, copy, log_dir, dry_run=not publishing)
             if ok and publishing:
                 ok = timed(run, "swap", lambda: swap(copy, warehouse))
-                ok = ok and publish(run, warehouse, log_dir)
+                ok = ok and publish(run, warehouse, log_dir, on_release=release_uploaded)
         # Broad on purpose: a bug or a full disk here must still leave a run
         # log line saying so, and be committed like any other failure.
         except Exception:
@@ -822,8 +907,10 @@ def refresh(publishing: bool) -> int:
             ok = False
         finally:
             run["ok"] = ok
-            if snapshot_taken and not ok:
-                discard_predictions(run, snapshot)
+            # Runs on Ctrl+C (KeyboardInterrupt) and SystemExit too, which
+            # the except above lets through.
+            if snapshot_taken and not published:
+                discard_predictions(run)
             # After a swap there is nothing left to delete; after a failure or
             # a dry run this is the whole cleanup - the real warehouse was
             # never touched.
@@ -841,7 +928,7 @@ def refresh(publishing: bool) -> int:
             log_dir,
         )
         if publishing:
-            append_log(commit_and_push(run))
+            append_log(commit_and_push(run, with_history=published))
     return 0 if ok else 1
 
 

@@ -155,7 +155,12 @@ def _format(value: object, kind: str) -> str:
     if value is None or pd.isna(value):  # type: ignore[call-overload]
         return ""
     if kind == "timestamp":
-        return pd.Timestamp(value).strftime(TIMESTAMP_FORMAT)  # type: ignore[arg-type]
+        stamp = pd.Timestamp(value)  # type: ignore[arg-type]
+        # The table stores naive UTC; an aware value must not be written in
+        # its own zone and then read back as if it were UTC.
+        if stamp.tzinfo is not None:
+            stamp = stamp.tz_convert("UTC").tz_localize(None)
+        return stamp.strftime(TIMESTAMP_FORMAT)
     if kind == "date":
         return pd.Timestamp(value).strftime("%Y-%m-%d")  # type: ignore[arg-type]
     if kind == "bigint":
@@ -226,7 +231,9 @@ def append_history(predictions: pd.DataFrame, path: Path) -> int:
     if last is not None and order(new[0]) < last:
         raise ValueError(
             f"predictions stamped {new[0][order_at[0]]} are older than the newest "
-            f"row in {path} ({last[0]}); appending them would break its order"
+            f"row in {path} ({last[0]}); appending them would break its order. "
+            "Check the system clock (predicted_at is UTC now), or if that last "
+            "row's time is wrong, fix it by hand and commit the fix"
         )
 
     out = io.StringIO()
@@ -366,7 +373,14 @@ def main() -> None:
         if is_dry_run():
             log.info("Dry run (%s set): not appending to %s", DRY_RUN_ENV, history)
         else:
-            added = append_history(predictions, history)
+            try:
+                added = append_history(predictions, history)
+            except ValueError as exc:
+                # The last line of the step's output is what the refresh
+                # records as the failure, so make it the reason, not a
+                # traceback's tail.
+                log.error("Not writing predictions: %s", exc)
+                raise SystemExit(1) from exc
             log.info("Appended %d predictions to %s", added, history)
         written = write_predictions(con, predictions)
         log.info("Wrote %d predictions for games through %s.", written, through)
