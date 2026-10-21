@@ -167,6 +167,11 @@ def run_step(
             except subprocess.TimeoutExpired:
                 kill_tree(proc)
                 reason = f"timed out after {timeout}s"
+            except BaseException:
+                # Ctrl+C on a manual run (or any other way out of here):
+                # don't leave the step running on its own, holding the copy.
+                kill_tree(proc)
+                raise
     entry: dict[str, Any] = {
         "step": name,
         "ok": reason is None,
@@ -184,7 +189,7 @@ def run_step(
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
-    """Kill a timed-out step and everything it started.
+    """Kill a step (timed out or interrupted) and everything it started.
 
     proc.kill() alone would end only the direct child - on Windows often a
     launcher (dbt.exe, the venv's python.exe) whose real worker could live on
@@ -194,11 +199,18 @@ def kill_tree(proc: subprocess.Popen) -> None:
     log.warning("   killing pid %s and its children", proc.pid)
     try:
         if sys.platform == "win32":
-            subprocess.run(
+            result = subprocess.run(
                 ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                 capture_output=True,
+                text=True,
                 timeout=60,
             )
+            if result.returncode != 0:
+                log.warning(
+                    "   taskkill exited %s: %s",
+                    result.returncode,
+                    f"{result.stdout}{result.stderr}".strip(),
+                )
         else:
             os.killpg(proc.pid, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError) as exc:

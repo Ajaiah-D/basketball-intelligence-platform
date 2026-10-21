@@ -135,6 +135,10 @@ def fake_run(env, monkeypatch):
 
         monkeypatch.setattr(wr.subprocess, "Popen", FakePopen)
         monkeypatch.setattr(wr.subprocess, "run", fake_subprocess_run)
+        # never a real SIGKILL to a real process group on POSIX
+        monkeypatch.setattr(
+            wr.os, "killpg", lambda pid, sig: killed.append(["killpg", str(pid)]), raising=False
+        )
         with pytest.raises(SystemExit) as exit_info:
             wr.main(list(argv))
         log_path = env["logs"] / "refresh_runs.jsonl"
@@ -339,6 +343,8 @@ def test_a_timeout_is_recorded_as_a_failure(fake_run, env):
     assert env["warehouse"].read_bytes() == OLD
     if sys.platform == "win32":
         assert out["killed"] == [["taskkill", "/T", "/F", "/PID", "4242"]]
+    else:
+        assert out["killed"] == [["killpg", "4242"]]
 
 
 def test_each_step_has_its_own_timeout(fake_run):
@@ -693,3 +699,31 @@ def test_an_old_stale_wal_is_never_put_beside_the_warehouse(fake_run, env, monke
     out = fake_run(after=CLEAN_CLOSE)
     assert out["exit"] == 1
     assert not stale.exists()
+
+
+def test_a_failed_taskkill_is_logged(monkeypatch, caplog):
+    monkeypatch.setattr(wr.sys, "platform", "win32")
+    monkeypatch.setattr(
+        wr.subprocess,
+        "run",
+        lambda cmd, **k: subprocess.CompletedProcess(cmd, 128, "", "ERROR: process not found"),
+    )
+    wr.kill_tree(_Proc())  # type: ignore[arg-type]
+    assert "taskkill exited 128: ERROR: process not found" in caplog.text
+
+
+def test_an_interrupted_step_is_killed_not_left_running(monkeypatch, tmp_path):
+    killed = []
+
+    class InterruptedPopen(_Proc):
+        def __init__(self, cmd, **kwargs):
+            super().__init__()
+
+        def communicate(self, timeout=None):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(wr.subprocess, "Popen", InterruptedPopen)
+    monkeypatch.setattr(wr, "kill_tree", lambda proc: killed.append(proc.pid))
+    with pytest.raises(KeyboardInterrupt):
+        wr.run_step("ingest", ["x"], warehouse=tmp_path / "w.duckdb", log_dir=tmp_path / "logs")
+    assert killed == [4242]
