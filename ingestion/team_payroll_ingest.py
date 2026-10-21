@@ -21,8 +21,9 @@ doubling) before trying again - unless the wait is over five minutes, in
 which case the run stops asking and the remaining teams count as failed.
 
 Teams are fetched one at a time and a team whose fetch fails is listed and
-left out; the season is still written with the rest, and the script exits
-1 so the caller knows. Replacing a season's files with an empty frame, or
+keeps its rows from the existing files (or is left out when there are
+none); the season is still written with the rest, and the script exits 1
+so the caller knows. Replacing a season's files with an empty frame, or
 one under 80% of their rows, is refused unless --allow-shrink.
 
 Eight team codes differ between this project's nba_api-derived codes and
@@ -360,6 +361,35 @@ def ingest_season(season: str, team_codes: list[str]) -> SeasonPayroll:
     return SeasonPayroll(df, players, failed)
 
 
+def _carry_over(
+    fresh: pd.DataFrame, path: Path, failed: list[str], team_codes: list[str]
+) -> tuple[pd.DataFrame, list[str]]:
+    """fresh plus the rows `path` already holds for the teams in `failed`.
+
+    A team whose fetch failed this run keeps its last fetch rather than
+    vanishing from the warehouse for a week; its fetched_at_utc stays the
+    old one, so the page can still tell how current it is. Rows come back in
+    team_codes order, each team's lines in their original order. Returns the
+    merged frame and the teams actually carried (a failed team the old file
+    doesn't have stays absent).
+    """
+    if not is_valid_parquet(path):
+        return fresh, []
+    old = pd.read_parquet(path)
+    if "team_abbreviation" not in old.columns:
+        return fresh, []
+    kept = old[old["team_abbreviation"].isin(failed)].reindex(columns=fresh.columns)
+    if kept.empty:
+        return fresh, []
+    # concat warns about (and mis-types) empty frames, so leave one out.
+    merged = pd.concat([f for f in (fresh, kept) if not f.empty], ignore_index=True)
+    order = {code: i for i, code in enumerate(team_codes)}
+    merged = merged.sort_values(
+        "team_abbreviation", key=lambda col: col.map(order), kind="stable"
+    ).reset_index(drop=True)
+    return merged, sorted(set(kept["team_abbreviation"]))
+
+
 def season_done(out_path: Path, players_path: Path, team_codes: list[str]) -> bool:
     """True when both of a season's files read as parquet and the totals
     have a row for every requested team.
@@ -394,7 +424,10 @@ def write_season(
     Returns True when every team was fetched and the files were written (or
     were already complete), False when a team failed or the shrink guard
     kept the old files. A season with failed teams is still written with
-    the teams that succeeded, unless nothing succeeded at all. Replacing
+    the teams that succeeded, unless nothing succeeded at all; a failed
+    team the existing files already cover keeps those rows (see
+    _carry_over), and is otherwise absent. The guard checks the merged
+    frames. Replacing
     either file with an empty frame or one under SHRINK_GUARD_MIN_RATIO of
     its rows is refused - both files are kept, so they stay a matching
     pair - unless allow_shrink.
@@ -409,7 +442,7 @@ def write_season(
     df, players, failed = ingest_season(season, team_codes)
     if failed:
         log.error(
-            "%s: %d of %d teams failed and are left out: %s",
+            "%s: %d of %d teams failed: %s",
             season,
             len(failed),
             len(team_codes),
@@ -418,6 +451,15 @@ def write_season(
     if df.empty:
         log.error("%s: no team was fetched - nothing written", season)
         return False
+    if failed:
+        df, carried = _carry_over(df, out_path, failed, team_codes)
+        players, carried_lines = _carry_over(players, players_path, failed, team_codes)
+        if carried or carried_lines:
+            log.warning(
+                "%s: carried over last fetch's rows for %s",
+                season,
+                ", ".join(sorted(set(carried) | set(carried_lines))),
+            )
 
     if not allow_shrink:
         shrunk = [
