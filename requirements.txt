@@ -60,7 +60,7 @@ dbt-protos==1.0.607
     #   dbt-core
 deepdiff==8.6.2
     # via dbt-common
-duckdb==2.0.0
+duckdb==1.5.6
     # via
     #   -r requirements.in
     #   dbt-duckdb
