@@ -1,0 +1,35 @@
+# Install once with `pre-commit install`. The ruff and mypy hooks run the
+# project's own pinned tools (requirements-dev.txt), so activate the venv
+# first: they are looked up on PATH, not installed by pre-commit.
+exclude: ^(data/fixtures/|docs/architecture\.excalidraw$|requirements.*\.txt$)|\.duckdb$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: mypy
+        name: mypy
+        # Checks the packages listed in pyproject.toml, not just the staged
+        # files: a change in one module can break its callers.
+        entry: mypy
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false

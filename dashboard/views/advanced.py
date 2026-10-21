@@ -215,13 +215,13 @@ def render() -> None:
     # --- Player profile --------------------------------------------------
     st.markdown("#### Player profile")
     options = view if len(view) else qualified
-    pick = st.selectbox("Player", options["player_name"], label_visibility="collapsed")
+    pick: str | None = st.selectbox("Player", options["player_name"], label_visibility="collapsed")
     if not pick:
         return
-    row = qualified[qualified.player_name == pick]
-    if row.empty:
-        row = stats[stats.player_name == pick]
-    row = row.iloc[0]
+    match = qualified[qualified.player_name == pick]
+    if match.empty:
+        match = stats[stats.player_name == pick]
+    row = match.iloc[0]
 
     tc = T.team_color(row.team_abbreviation)
     st.markdown(

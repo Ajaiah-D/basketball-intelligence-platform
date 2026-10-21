@@ -251,7 +251,9 @@ def render() -> None:
                 stats.assign(season=season, pick=stats.player).sort_values("ppg", ascending=False)
             )
         )
-    pick = st.selectbox("Player", options["pick"], label_visibility="collapsed", key="players_pick")
+    pick: str | None = st.selectbox(
+        "Player", options["pick"], label_visibility="collapsed", key="players_pick"
+    )
     if not pick:
         return
     row = options[options["pick"] == pick].iloc[0]

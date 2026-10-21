@@ -993,7 +993,8 @@ def arcade_pool(min_gp: int = 50, min_ppg: float = 14.0) -> pd.DataFrame:
     that season where known (null otherwise, or on an older warehouse)."""
     if player_ages_available():
         return q(_ARCADE_AGES_SQL.format(pool=_ARCADE_POOL_SQL), (min_gp, min_ppg))
-    return q(_ARCADE_POOL_SQL, (min_gp, min_ppg)).assign(age=pd.NA)
+    # pandas-stubs leave NAType out of assign()'s accepted scalars.
+    return q(_ARCADE_POOL_SQL, (min_gp, min_ppg)).assign(age=pd.NA)  # type: ignore[arg-type]
 
 
 @st.cache_data(ttl=600, show_spinner=False)

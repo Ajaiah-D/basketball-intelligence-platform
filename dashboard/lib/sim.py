@@ -48,8 +48,9 @@ def rotation_weights() -> np.ndarray:
     team calibration was fit with (ml/player_impact.py: minutes share x 5 x
     impact), which is what makes team_scale and team_offset valid here.
     """
-    minutes = [STARTER_MINUTES] * STARTERS + [BENCH_MINUTES] * (ROSTER_SIZE - STARTERS)
-    minutes = np.asarray(minutes, dtype=float)
+    minutes = np.asarray(
+        [STARTER_MINUTES] * STARTERS + [BENCH_MINUTES] * (ROSTER_SIZE - STARTERS), dtype=float
+    )
     return minutes / minutes.sum() * 5.0
 
 

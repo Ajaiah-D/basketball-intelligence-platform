@@ -110,7 +110,7 @@ def render() -> None:
         ),
         axis=1,
     )
-    pick = st.selectbox("Game", view["label"].head(200), label_visibility="collapsed")
+    pick: str | None = st.selectbox("Game", view["label"].head(200), label_visibility="collapsed")
     if not pick:
         return
     g = view[view.label == pick].iloc[0]

@@ -113,7 +113,7 @@ def render() -> None:
 
 
 def _render_team(season: str, standings: pd.DataFrame) -> None:
-    pick = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
+    pick: str | None = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
     row = standings[standings.team_name == pick].iloc[0]
     games = db.team_game_log(int(row.team_id), season)
 
@@ -172,7 +172,7 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
         section("Four Factors", glossary.TERMS["Four Factors"])
         ff = tm.four_factors(adv, row.team)
-        pct = {"format": "%.1f"}
+        pct = "%.1f"
         st.dataframe(
             ff,
             hide_index=True,
@@ -190,16 +190,16 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
             column_config={
                 "factor": st.column_config.TextColumn("Factor"),
                 "offense": st.column_config.NumberColumn(
-                    "Offense", help="This team's own value", **pct
+                    "Offense", help="This team's own value", format=pct
                 ),
-                "league_offense": st.column_config.NumberColumn("League avg", **pct),
+                "league_offense": st.column_config.NumberColumn("League avg", format=pct),
                 "offense_rank": st.column_config.TextColumn(
                     "Off. rank", help="1st is the best offense in the league"
                 ),
                 "defense": st.column_config.NumberColumn(
-                    "Defense", help="What opponents managed against this team", **pct
+                    "Defense", help="What opponents managed against this team", format=pct
                 ),
-                "league_defense": st.column_config.NumberColumn("League avg", **pct),
+                "league_defense": st.column_config.NumberColumn("League avg", format=pct),
                 "defense_rank": st.column_config.TextColumn(
                     "Def. rank", help="1st is the best defense in the league"
                 ),

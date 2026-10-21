@@ -43,7 +43,7 @@ def four_factors(adv: pd.DataFrame, team: str) -> pd.DataFrame:
     rows = []
     for label, off_col, def_col, off_high, def_high in FOUR_FACTORS:
         row = adv[adv["team_abbreviation"] == team]
-        out = {"factor": label}
+        out: dict[str, object] = {"factor": label}
         for side, col, high in (("offense", off_col, off_high), ("defense", def_col, def_high)):
             value = row[col].iloc[0] if col in adv and len(row) else None
             rank = league_rank(adv, team, col, high)

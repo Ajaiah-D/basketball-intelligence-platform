@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -112,12 +113,16 @@ def _upcoming_section(upcoming: pd.DataFrame) -> None:
     for day, group in df.groupby("day_et", sort=True):
         st.markdown(f"#### {_day(day)}", unsafe_allow_html=True)
         cols = st.columns(3)
+        r: Any  # see _recent_results
         for i, r in enumerate(group.itertuples()):
             cols[i % 3].markdown(prediction_card(r, r.tip_label), unsafe_allow_html=True)
 
 
 def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
     rows = []
+    # pandas-stubs type each itertuples field as any scalar; the columns are
+    # only known at runtime.
+    r: Any
     for r in recent.itertuples():
         # A coin flip is a home pick - the card's favorite and the accuracy
         # KPI (db.prediction_track_record) use the same >= 0.5 rule.

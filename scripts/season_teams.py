@@ -34,7 +34,7 @@ def seasons_and_teams(first_season: str = FIRST_PAYROLL_SEASON) -> dict[str, lis
     finally:
         con.close()
     return {
-        season: sorted(group["team_abbreviation"].tolist())
+        str(season): sorted(group["team_abbreviation"].tolist())
         for season, group in df.groupby("season")
     }
 

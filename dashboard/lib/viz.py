@@ -380,7 +380,7 @@ def _court_shapes() -> list[dict]:
     """Half-court in PBP legacy coordinates: tenths of feet, hoop at (0,0),
     baseline at y=-47.5, halfcourt at y=422.5."""
     line = {"color": T.BASELINE, "width": 1.5}
-    shapes = [
+    shapes: list[dict] = [
         # boundary
         {"type": "rect", "x0": -250, "y0": -47.5, "x1": 250, "y1": 422.5, "line": line},
         # paint (outer and inner)

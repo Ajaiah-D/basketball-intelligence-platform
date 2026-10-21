@@ -30,6 +30,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
@@ -137,7 +138,7 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
 
 def main() -> None:
     dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
-    run = {"run_at": datetime.now(UTC).isoformat(timespec="seconds"), "steps": []}
+    run: dict[str, Any] = {"run_at": datetime.now(UTC).isoformat(timespec="seconds"), "steps": []}
 
     ok = run_steps(
         run,

@@ -88,10 +88,10 @@ def _prose(text: str) -> str:
 
 def _contracts_card(contracts: pd.DataFrame) -> str:
     rows = [
-        f'<div class="bip-row">{T.rank_badge(int(r.salary_rank))}'
+        f'<div class="bip-row">{T.rank_badge(int(r.salary_rank))}'  # type: ignore[arg-type]  # stubs type an itertuples field as any scalar
         f'<span class="bip-name">{html.escape(str(r.player))}</span>'
         f'<span class="bip-team">{r.share_of_payroll:.0%}</span>'
-        f'<span class="bip-val">{payroll.money(r.salary_usd)}</span></div>'
+        f'<span class="bip-val">{payroll.money(r.salary_usd)}</span></div>'  # type: ignore[arg-type]  # stubs type an itertuples field as any scalar
         for r in contracts.head(5).itertuples()
     ]
     return f'<div class="bip-card"><h4>Biggest contracts</h4>{"".join(rows)}</div>'
