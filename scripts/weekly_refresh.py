@@ -32,11 +32,15 @@ What a run leaves behind (Task Scheduler keeps no output of its own):
   logs/refresh.log          one line per launch, and why a launch that
                             found the lock held did nothing (not committed).
   logs/refresh.lock         held while a run is going; stops a second one.
+  data/predictions/history.csv
+                            the predictions ml.predict appended; committed
+                            with the run log.
 
 Usage:
     python scripts/weekly_refresh.py
     python scripts/weekly_refresh.py --no-publish   # dry run: build the copy,
-        run every step, report, delete the copy. No swap, upload or commit.
+        run every step, report, delete the copy. No swap, upload or commit,
+        and (BIP_DRY_RUN=1) no rows added to the predictions history.
 """
 
 from __future__ import annotations
@@ -118,7 +122,13 @@ def _display(path: Path) -> str:
 
 
 def run_step(
-    name: str, cmd: list[str], *, warehouse: Path, log_dir: Path, cwd: Path | None = None
+    name: str,
+    cmd: list[str],
+    *,
+    warehouse: Path,
+    log_dir: Path,
+    cwd: Path | None = None,
+    dry_run: bool = False,
 ) -> dict:
     """Run one child process against `warehouse`; return its run-log entry.
 
@@ -140,6 +150,12 @@ def run_step(
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
     }
+    # ml.predict leaves the committed predictions history alone in a dry
+    # run. A publishing run drops a BIP_DRY_RUN left over in the shell, so
+    # what it publishes always reaches the history.
+    env.pop("BIP_DRY_RUN", None)
+    if dry_run:
+        env["BIP_DRY_RUN"] = "1"
     # Its own process group on POSIX, so a timeout can kill the whole tree.
     group: dict[str, Any] = {} if sys.platform == "win32" else {"start_new_session": True}
     reason: str | None
@@ -222,10 +238,12 @@ def kill_tree(proc: subprocess.Popen) -> None:
         log.warning("   pid %s did not exit after being killed: %s", proc.pid, exc)
 
 
-def run_steps(run: dict, steps: list[tuple], *, warehouse: Path, log_dir: Path) -> bool:
+def run_steps(
+    run: dict, steps: list[tuple], *, warehouse: Path, log_dir: Path, dry_run: bool = False
+) -> bool:
     """Run steps in order, recording each one; stop at the first failure."""
     for name, cmd, cwd in steps:
-        entry = run_step(name, cmd, warehouse=warehouse, log_dir=log_dir, cwd=cwd)
+        entry = run_step(name, cmd, warehouse=warehouse, log_dir=log_dir, cwd=cwd, dry_run=dry_run)
         run["steps"].append(entry)
         if not entry["ok"]:
             return False
@@ -267,14 +285,15 @@ def payroll_steps(warehouse: Path) -> list[tuple]:
     ]
 
 
-def build(run: dict, warehouse: Path, log_dir: Path) -> bool:
+def build(run: dict, warehouse: Path, log_dir: Path, *, dry_run: bool = False) -> bool:
     """Run every pipeline step against `warehouse` (the copy).
 
     Returns whether every required step passed; the two non-fatal steps'
-    results go in run["payroll_ok"] / run["player_impact_ok"].
+    results go in run["payroll_ok"] / run["player_impact_ok"]. dry_run tells
+    the steps (BIP_DRY_RUN=1) not to touch committed files.
     """
     dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
-    where = {"warehouse": warehouse, "log_dir": log_dir}
+    where: dict[str, Any] = {"warehouse": warehouse, "log_dir": log_dir, "dry_run": dry_run}
 
     ok = run_steps(
         run,
@@ -522,7 +541,7 @@ def publish(run: dict, warehouse: Path, log_dir: Path) -> bool:
     version.txt is written only once the warehouse is up, and put back the
     way it was if its own upload fails.
     """
-    where = {"warehouse": warehouse, "log_dir": log_dir}
+    where: dict[str, Any] = {"warehouse": warehouse, "log_dir": log_dir}
     # The real path, never the copy: gh names the asset after the file, and
     # the app downloads .../releases/download/data-v1/basketball.duckdb.
     upload = ["gh", "release", "upload", RELEASE_TAG]
@@ -576,7 +595,8 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
 
 
 def commit_and_push(run: dict) -> dict:
-    """Commit this run's log line and data/last_updated.json, and push.
+    """Commit this run's log line, data/last_updated.json and the predictions
+    history, and push.
 
     Returns a "git_push" entry. It cannot go in the run's own line, which
     has to be written before the commit that carries it; the caller appends
@@ -588,7 +608,14 @@ def commit_and_push(run: dict) -> dict:
     error = None
     try:
         status = commit_status(run["ok"], run["payroll_ok"], run["player_impact_ok"])
-        add = git("add", "data/last_updated.json", "logs/refresh_runs.jsonl")
+        add = git(
+            "add",
+            "data/last_updated.json",
+            "logs/refresh_runs.jsonl",
+            # The source of truth for the public track record: predictions
+            # only count once they are committed here.
+            "data/predictions/history.csv",
+        )
         if add.returncode != 0:
             error = f"git add failed: {add.stdout}{add.stderr}"
         elif git("diff", "--cached", "--quiet").returncode != 0:
@@ -721,7 +748,7 @@ def refresh(publishing: bool) -> int:
         ok = False
         try:
             ok = timed(run, "copy_warehouse", lambda: prepare_copy(warehouse, copy))
-            ok = ok and build(run, copy, log_dir)
+            ok = ok and build(run, copy, log_dir, dry_run=not publishing)
             if ok and publishing:
                 ok = timed(run, "swap", lambda: swap(copy, warehouse))
                 ok = ok and publish(run, warehouse, log_dir)

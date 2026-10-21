@@ -36,6 +36,8 @@ Run:
 from __future__ import annotations
 
 import json
+import logging
+import sys
 from datetime import UTC, datetime
 
 import numpy as np
@@ -43,6 +45,8 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from core import paths
+
+log = logging.getLogger(__name__)
 
 STATS = ["pts", "orb", "drb", "ast", "stl", "blk", "tov", "fga", "fta", "tpm", "pf"]
 FEATURES = [f"{s}_r" for s in STATS]
@@ -340,10 +344,16 @@ def main() -> None:
         write(con, impact_df, meta)
     finally:
         con.close()
-    print(f"Wrote {len(impact_df)} player-seasons to player_impact.")
+    log.info("Wrote %d player-seasons to player_impact.", len(impact_df))
     for key, value in meta.items():
-        print(f"  {key}: {value}")
+        log.info("  %s: %s", key, value)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
     main()

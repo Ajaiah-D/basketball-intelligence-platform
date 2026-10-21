@@ -4,6 +4,11 @@ Creates warehouse/basketball.duckdb with a `raw` schema, one table per
 parquet file. Tables are fully replaced on each run (raw layer is a
 mirror of the latest ingestion; history/modeling belongs to dbt).
 
+It also rebuilds main.predictions from the committed
+data/predictions/history.csv, the one record that is not re-derived from
+the API each week. Without that file an existing predictions table is left
+as it is.
+
 Usage:
     python scripts/load_to_duckdb.py
 """
@@ -19,9 +24,11 @@ import duckdb
 # Run as `python scripts/load_to_duckdb.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
+from ml.predict import load_history
 
 RAW_DIR = paths.raw_dir()
 DB_PATH = paths.warehouse_path()
+PREDICTIONS_CSV = paths.predictions_history_path()
 
 log = logging.getLogger("load_to_duckdb")
 
@@ -64,6 +71,12 @@ def main() -> None:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
                 assert row is not None  # count(*) always returns one row
                 log.info("Loaded %-28s %8d rows", table, row[0])
+            # In the same transaction: a bad history rolls back the raw
+            # layer with it, rather than publishing new games beside an
+            # empty track record.
+            if PREDICTIONS_CSV.is_file():
+                rows = load_history(con, PREDICTIONS_CSV)
+                log.info("Loaded %-28s %8d rows", "main.predictions", rows)
             con.execute("COMMIT")
         except BaseException:
             con.execute("ROLLBACK")

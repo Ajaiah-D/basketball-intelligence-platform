@@ -68,6 +68,22 @@ def test_a_failed_cleanup_does_not_mask_the_write_error(tmp_path, monkeypatch):
         core_io.atomic_write_parquet(_frame(1), path)
 
 
+def test_atomic_write_bytes_replaces_the_file_whole(tmp_path, monkeypatch):
+    path = tmp_path / "history.csv"
+    core_io.atomic_write_bytes(b"a\n", path)
+    core_io.atomic_write_bytes(b"a\nb\n", path)
+    assert path.read_bytes() == b"a\nb\n"
+
+    def crash(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(core_io.os, "replace", crash)
+    with pytest.raises(OSError, match="disk full"):
+        core_io.atomic_write_bytes(b"c\n", path)
+    assert path.read_bytes() == b"a\nb\n"
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_a_failed_serialisation_keeps_the_original(tmp_path):
     path = tmp_path / "f.parquet"
     core_io.atomic_write_parquet(_frame(3), path)
