@@ -77,3 +77,27 @@ def test_empty_env_values_count_as_unset(monkeypatch):
     monkeypatch.setenv("BIP_WAREHOUSE", "")
     assert paths.data_home() is None
     assert paths.warehouse_path() == ROOT / "warehouse" / "basketball.duckdb"
+
+
+def test_relative_data_home_resolves_against_the_project_root(monkeypatch, tmp_path):
+    # dbt runs with its cwd in dbt/basketball_intelligence, the scripts from
+    # the repo root: a relative value must mean the same folder to both.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BIP_DATA_HOME", "elsewhere/data")
+    assert paths.data_home() == ROOT / "elsewhere" / "data"
+    assert paths.raw_dir() == ROOT / "elsewhere" / "data" / "raw"
+    assert paths.warehouse_path() == ROOT / "elsewhere" / "data" / "warehouse" / "basketball.duckdb"
+
+
+def test_relative_warehouse_resolves_against_the_project_root(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BIP_WAREHOUSE", "build/copy.duckdb")
+    assert paths.warehouse_path() == ROOT / "build" / "copy.duckdb"
+
+
+def test_absolute_env_values_are_used_as_given(monkeypatch, tmp_path):
+    monkeypatch.chdir(ROOT / "dbt")
+    monkeypatch.setenv("BIP_DATA_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("BIP_WAREHOUSE", str(tmp_path / "wh.duckdb"))
+    assert paths.data_home() == tmp_path / "home"
+    assert paths.warehouse_path() == tmp_path / "wh.duckdb"

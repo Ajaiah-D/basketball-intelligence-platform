@@ -6,7 +6,8 @@ change of location is one environment variable instead of a dozen edits.
   BIP_WAREHOUSE   points at one warehouse file (wins over BIP_DATA_HOME for
                   the file; raw/ still follows BIP_DATA_HOME)
 
-With neither set, everything is under the repo, exactly as before.
+With neither set, everything is under the repo, exactly as before. A
+relative value is read relative to the repo root, whatever the cwd.
 Fixtures and run logs always stay in the repo: the refresh commits the logs.
 """
 
@@ -26,7 +27,13 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 def _env_path(name: str) -> Path | None:
     # An empty value (BIP_DATA_HOME=) counts as unset.
     value = os.environ.get(name)
-    return Path(value) if value else None
+    if not value:
+        return None
+    # Relative values are anchored at the repo, not the cwd: dbt runs from
+    # dbt/basketball_intelligence and the scripts from the root, and both
+    # must land on the same file.
+    path = Path(value)
+    return path if path.is_absolute() else PROJECT_ROOT / path
 
 
 def data_home() -> Path | None:
