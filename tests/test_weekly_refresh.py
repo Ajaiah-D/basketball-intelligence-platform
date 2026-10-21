@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import weekly_refresh as wr
 
 OLD, NEW = b"old warehouse", b"new warehouse"
+HISTORY = b"prediction_id,game_id\nold,0022600001\n"
+APPENDED = b"new,0022600002\n"
 
 
 @pytest.fixture
@@ -36,6 +38,10 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(wr, "LOCK_PATH", logs / "refresh.lock")
     monkeypatch.setattr(wr, "RUNS_DIR", logs / "runs")
     monkeypatch.setattr(wr, "LAUNCH_LOG_PATH", logs / "refresh.log")
+    history = tmp_path / "data" / "predictions" / "history.csv"
+    history.parent.mkdir(parents=True)
+    history.write_bytes(HISTORY)
+    monkeypatch.setattr(wr, "HISTORY_PATH", history)
     sleeps: list[float] = []
     monkeypatch.setattr(wr.time, "sleep", sleeps.append)
     monkeypatch.setattr(
@@ -49,6 +55,7 @@ def env(tmp_path, monkeypatch):
         "version": warehouse.parent / "version.txt",
         "logs": logs,
         "sleeps": sleeps,
+        "history": history,
     }
 
 
@@ -470,6 +477,69 @@ def test_no_publish_touches_nothing(fake_run, env):
     assert out["run"]["dry_run"] is True
     assert "swap" not in [s["step"] for s in out["run"]["steps"]]
     assert len(out["lines"]) == 1  # no git_push line
+
+
+def _predict_appends(env):
+    """An `after` hook: the predict step appending a row to the history."""
+
+    def append(_warehouse: Path) -> None:
+        with env["history"].open("ab") as f:
+            f.write(APPENDED)
+
+    return {"predict": append}
+
+
+def _added(out) -> tuple[str, ...]:
+    return next(args for args in out["git"] if args[0] == "add")
+
+
+def test_a_published_run_keeps_and_commits_its_predictions(fake_run, env):
+    out = fake_run(after=_predict_appends(env))
+    assert out["run"]["ok"] is True
+    assert env["history"].read_bytes() == HISTORY + APPENDED
+    assert "data/predictions/history.csv" in _added(out)
+
+
+# The history holds only predictions from runs that were published, the same
+# all-or-nothing rule as the warehouse copy.
+@pytest.mark.parametrize("failing", ["score_predictions", "write_metadata", "publish_release"])
+def test_a_run_that_is_not_published_discards_its_predictions(fake_run, env, failing):
+    out = fake_run(failing, after=_predict_appends(env))
+    assert out["run"]["ok"] is False
+    assert env["history"].read_bytes() == HISTORY
+    assert "data/predictions/history.csv" not in _added(out)
+    refresh_log = (env["logs"].parent / out["run"]["log"]).read_text()
+    assert "discarded" in refresh_log
+
+
+def test_a_failed_swap_discards_the_predictions_too(fake_run, env, monkeypatch):
+    monkeypatch.setattr(wr, "swap", lambda copy, warehouse: "warehouse is locked")
+    out = fake_run(after=_predict_appends(env))
+    assert out["run"]["ok"] is False
+    assert env["history"].read_bytes() == HISTORY
+    assert "data/predictions/history.csv" not in _added(out)
+
+
+def test_a_failed_restore_is_recorded(fake_run, env, monkeypatch):
+    def full_disk(data, path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(wr, "atomic_write_bytes", full_disk)
+    out = fake_run("score_predictions", after=_predict_appends(env))
+    (restore,) = [s for s in out["run"]["steps"] if s["step"] == "restore_history"]
+    assert restore["ok"] is False
+    assert "disk full" in restore["error"]
+    assert "data/predictions/history.csv" not in _added(out)
+
+
+def test_a_history_first_created_by_a_failed_run_is_removed(fake_run, env):
+    env["history"].unlink()
+
+    def create(_warehouse: Path) -> None:
+        env["history"].write_bytes(HISTORY)
+
+    fake_run("score_predictions", after={"predict": create})
+    assert not env["history"].exists()
 
 
 def test_no_publish_tells_every_step_it_is_a_dry_run(fake_run):

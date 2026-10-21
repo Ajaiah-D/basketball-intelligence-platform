@@ -34,7 +34,9 @@ What a run leaves behind (Task Scheduler keeps no output of its own):
   logs/refresh.lock         held while a run is going; stops a second one.
   data/predictions/history.csv
                             the predictions ml.predict appended; committed
-                            with the run log.
+                            with the run log, and only by a run that
+                            published - any other run puts it back as it
+                            found it, like the warehouse copy.
 
 Usage:
     python scripts/weekly_refresh.py
@@ -68,6 +70,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from core import paths
 from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
+from core.io import atomic_write_bytes
 from scripts.season_teams import current_season_and_teams
 
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
@@ -77,6 +80,7 @@ LOCK_PATH = paths.logs_dir() / "refresh.lock"
 # (a run that finds the lock held never gets one). Task Scheduler keeps no
 # output, so without this a skipped run would leave no trace at all.
 LAUNCH_LOG_PATH = paths.logs_dir() / "refresh.log"
+HISTORY_PATH = paths.predictions_history_path()
 # Far longer than a run ever takes (minutes), so a lock this old was left by
 # a run that was killed without reaching its finally block.
 LOCK_STALE_SECONDS = 6 * 3600
@@ -595,8 +599,8 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
 
 
 def commit_and_push(run: dict) -> dict:
-    """Commit this run's log line, data/last_updated.json and the predictions
-    history, and push.
+    """Commit this run's log line, data/last_updated.json and (when the run
+    published) the predictions history, and push.
 
     Returns a "git_push" entry. It cannot go in the run's own line, which
     has to be written before the commit that carries it; the caller appends
@@ -608,14 +612,13 @@ def commit_and_push(run: dict) -> dict:
     error = None
     try:
         status = commit_status(run["ok"], run["payroll_ok"], run["player_impact_ok"])
-        add = git(
-            "add",
-            "data/last_updated.json",
-            "logs/refresh_runs.jsonl",
-            # The source of truth for the public track record: predictions
-            # only count once they are committed here.
-            "data/predictions/history.csv",
-        )
+        files = ["data/last_updated.json", "logs/refresh_runs.jsonl"]
+        if run["ok"]:
+            # The source of truth for the public track record. A run that
+            # did not publish has already put it back (restore_history), so
+            # it has nothing of its own to add.
+            files.append("data/predictions/history.csv")
+        add = git("add", *files)
         if add.returncode != 0:
             error = f"git add failed: {add.stdout}{add.stderr}"
         elif git("diff", "--cached", "--quiet").returncode != 0:
@@ -729,6 +732,51 @@ def logging_to(path: Path) -> Iterator[None]:
         handler.close()
 
 
+# -- the predictions history --------------------------------------------------
+
+
+def snapshot_history() -> bytes | None:
+    """The history CSV's bytes, or None when there is none yet."""
+    try:
+        return HISTORY_PATH.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def restore_history(snapshot: bytes | None) -> bool:
+    """Put the history back the way snapshot_history() found it (removing it
+    if there was none). Returns whether anything had to change."""
+    if snapshot_history() == snapshot:
+        return False
+    if snapshot is None:
+        HISTORY_PATH.unlink()
+    else:
+        atomic_write_bytes(snapshot, HISTORY_PATH)
+    return True
+
+
+def discard_predictions(run: dict, snapshot: bytes | None) -> None:
+    """After a run that did not publish: drop the rows its predict step
+    appended. The history holds only predictions that went out with a
+    published warehouse - the same all-or-nothing rule as the copy."""
+    started = time.monotonic()
+    try:
+        if restore_history(snapshot):
+            log.warning("Run not published: discarded its predictions from %s", HISTORY_PATH)
+    except OSError as exc:
+        # Not added to git by this run either way; the next published run
+        # would commit what is left, so say so loudly.
+        log.error("Could not restore %s: %s", HISTORY_PATH, exc)
+        run["steps"].append(
+            {
+                "step": "restore_history",
+                "ok": False,
+                "seconds": _since(started),
+                "error": f"could not restore {_display(HISTORY_PATH)}: {exc}",
+            }
+        )
+
+
 def refresh(publishing: bool) -> int:
     """One run, start to finish; returns the exit code."""
     started = datetime.now(UTC)
@@ -746,7 +794,14 @@ def refresh(publishing: bool) -> int:
             "Refresh %s%s: building %s", run["run_at"], "" if publishing else " (dry run)", copy
         )
         ok = False
+        # Taken before anything runs: a publishing run's predictions are kept
+        # only if it publishes. (A dry run never appends - see BIP_DRY_RUN.)
+        snapshot: bytes | None = None
+        snapshot_taken = False
         try:
+            if publishing:
+                snapshot = snapshot_history()
+                snapshot_taken = True
             ok = timed(run, "copy_warehouse", lambda: prepare_copy(warehouse, copy))
             ok = ok and build(run, copy, log_dir, dry_run=not publishing)
             if ok and publishing:
@@ -767,6 +822,8 @@ def refresh(publishing: bool) -> int:
             ok = False
         finally:
             run["ok"] = ok
+            if snapshot_taken and not ok:
+                discard_predictions(run, snapshot)
             # After a swap there is nothing left to delete; after a failure or
             # a dry run this is the whole cleanup - the real warehouse was
             # never touched.
