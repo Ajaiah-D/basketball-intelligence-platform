@@ -47,7 +47,7 @@ def test_the_page_season_box_changes_the_shared_season(con):
 
 
 def test_the_sidebar_season_moves_the_page_box(con):
-    newest, older = _two_seasons()
+    _, older = _two_seasons()
     at = _app()
     at.selectbox(key="season").select(older).run()
     assert not at.exception, at.exception

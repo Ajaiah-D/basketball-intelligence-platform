@@ -6,7 +6,6 @@ deliberate, but it lets the two implementations drift - these tests pin
 them together.
 """
 
-import duckdb
 import pytest
 
 from dashboard.lib import db

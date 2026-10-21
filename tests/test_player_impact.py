@@ -71,7 +71,7 @@ def test_cost_tiers_run_one_to_twelve():
         0.995,
         0.999,
     ]
-    assert COST_QUANTILES == sorted(COST_QUANTILES)
+    assert sorted(COST_QUANTILES) == COST_QUANTILES
     impact = pd.Series(np.random.default_rng(1).normal(0, 1.5, 20_000))
     cost = costs_from_impact(impact)
     assert cost.dtype.kind == "i"

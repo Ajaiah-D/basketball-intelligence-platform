@@ -14,9 +14,8 @@ import html
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, franchises, payroll
+from dashboard.lib import db, franchises, payroll, viz
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
 # acknowledged by them to be partly extrapolated/minimum-filled

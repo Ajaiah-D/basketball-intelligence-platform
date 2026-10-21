@@ -159,9 +159,9 @@ def simulate_vs_league(
 
     return {
         "wins": wins,
-        "median": int(round(float(np.median(wins)))),
-        "p10": int(round(float(np.percentile(wins, 10)))),
-        "p90": int(round(float(np.percentile(wins, 90)))),
+        "median": round(float(np.median(wins))),
+        "p10": round(float(np.percentile(wins, 10))),
+        "p90": round(float(np.percentile(wins, 90))),
         "best_record_odds": best_record,
     }
 

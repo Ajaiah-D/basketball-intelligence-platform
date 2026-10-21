@@ -17,7 +17,6 @@ returns index labels of the pool DataFrame it is given.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from .sim import ROSTER_SIZE, rotation_weights
@@ -94,7 +93,7 @@ def offer_options(pool: pd.DataFrame, picks, budget_left: int, spot: int, rng) -
     targets = [min(max(1, round(t)), ceiling) for t in targets]
 
     taken = {(int(p), str(s)) for p, s in picks}
-    keys = list(zip(pool["player_id"].astype(int), pool["season"].astype(str)))
+    keys = list(zip(pool["player_id"].astype(int), pool["season"].astype(str), strict=True))
     avail = pool[[k not in taken for k in keys]]
     labels: list = []
     for t in targets:

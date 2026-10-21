@@ -5,10 +5,9 @@ so the table doesn't crowd out the team view."""
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, payroll
+from dashboard.lib import db, glossary, payroll, viz
 from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 
 
 def form_dots(form: str) -> str:
@@ -80,7 +79,8 @@ def _payroll_card(season: str, team: str) -> tuple[str, str] | None:
 def _cards(items: list[tuple]) -> None:
     """One row of six equal cards: (label, value, sub, note, help)."""
     cols = st.columns(6)
-    for col, (label, value, sub, note, help) in zip(cols, items):
+    # Fewer than six items leave the trailing columns empty, so not strict=True.
+    for col, (label, value, sub, note, help) in zip(cols, items, strict=False):
         col.markdown(T.kpi(label, value, sub, note=note, help=help), unsafe_allow_html=True)
 
 

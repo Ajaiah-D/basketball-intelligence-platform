@@ -288,7 +288,7 @@ def render_mystery() -> None:
         names = sorted(_pool()["player"].unique())
         st.selectbox(
             "Your guess",
-            [""] + names,
+            ["", *names],
             key="my_pick",
             label_visibility="collapsed",
             placeholder="Type to search players...",
@@ -370,7 +370,7 @@ def _record(wins: int) -> str:
 
 def _row_keys(rows: pd.DataFrame) -> list[str]:
     """'player_id:season' per row - the same player in two seasons differs."""
-    return [f"{int(p)}:{s}" for p, s in zip(rows["player_id"], rows["season"])]
+    return [f"{int(p)}:{s}" for p, s in zip(rows["player_id"], rows["season"], strict=True)]
 
 
 def _meta() -> tuple[float, float, float]:
@@ -640,7 +640,7 @@ def _slot_labels(pool: pd.DataFrame, slots: list) -> list:
     cand = pool[pool["player_id"].isin(ids)]
     found = {
         (int(p), str(s)): label
-        for label, p, s in zip(cand.index, cand["player_id"], cand["season"])
+        for label, p, s in zip(cand.index, cand["player_id"], cand["season"], strict=True)
     }
     return [None if s is None else found.get(s) for s in slots]
 
@@ -787,7 +787,10 @@ def _best_five_hint(rows: pd.DataFrame, net: float, meta, mode: str) -> None:
         key="tb_best_five",
         width="stretch",
         on_click=_tb_best_five,
-        args=([(int(p), str(s)) for p, s in zip(best["player_id"], best["season"])], mode),
+        args=(
+            [(int(p), str(s)) for p, s in zip(best["player_id"], best["season"], strict=True)],
+            mode,
+        ),
     )
     c2.caption(
         f"Some of your best players are on the bench. Starting the five "
@@ -798,7 +801,7 @@ def _best_five_hint(rows: pd.DataFrame, net: float, meta, mode: str) -> None:
 def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> None:
     slots = _slots()
     labels = _slot_labels(pool, slots)
-    target = _target([None if lb is None else s for lb, s in zip(labels, slots)])
+    target = _target([None if lb is None else s for lb, s in zip(labels, slots, strict=True)])
     rows = pool.loc[[lb for lb in labels if lb is not None]]
     problems = draft.validate_build(rows)
     full = len(rows) >= sim.ROSTER_SIZE
@@ -943,7 +946,7 @@ def _render_draft(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
             unsafe_allow_html=True,
         )
         cols = st.columns(draft.OPTIONS)
-        for k, (col, key, label) in enumerate(zip(cols, state["offer"], offer)):
+        for k, (col, key, label) in enumerate(zip(cols, state["offer"], offer, strict=True)):
             if label is None:
                 continue
             with col:
@@ -1033,7 +1036,7 @@ def render_build_team() -> None:
         st.info("Team building needs a newer copy of the data - check back after the next refresh.")
         return
     all_pool = db.player_impact_pool(None)
-    choices = [ALL_TIME] + sorted((str(s) for s in all_pool["season"].unique()), reverse=True)
+    choices = [ALL_TIME, *sorted((str(s) for s in all_pool["season"].unique()), reverse=True)]
     if st.session_state.get("tb_mode") not in MODES:
         st.session_state["tb_mode"] = MODES[0]
     if st.session_state.get("tb_pool") not in choices:

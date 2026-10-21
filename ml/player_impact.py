@@ -36,7 +36,7 @@ Run:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -133,7 +133,7 @@ def relative_rates(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     mins = out["mins"].astype(float)
     per36 = 36.0 / mins.where(mins > 0)
-    totals = out.groupby("season")[STATS + ["mins"]].transform("sum").astype(float)
+    totals = out.groupby("season")[[*STATS, "mins"]].transform("sum").astype(float)
     for s in STATS:
         league = totals[s] / totals["mins"] * 36.0
         out[f"{s}_r"] = out[s].astype(float) * per36 - league
@@ -198,7 +198,7 @@ def _player_seasons(team_rows: pd.DataFrame) -> pd.DataFrame:
     team path in order of each stint's first game."""
     ordered = team_rows.sort_values(["season", "player_id", "first_game"])
     sums = ordered.groupby(["season", "player_id"], as_index=False)[
-        STATS + ["trb", "mins", "gp"]
+        [*STATS, "trb", "mins", "gp"]
     ].sum()
     meta = ordered.groupby(["season", "player_id"], as_index=False).agg(
         team=("team_abbreviation", lambda t: " → ".join(t)),
@@ -272,13 +272,13 @@ def build(con) -> tuple[pd.DataFrame, dict]:
         .reset_index(drop=True)
     )
     meta = {
-        "fitted_at": datetime.now(timezone.utc).replace(tzinfo=None),
-        "n_train": int(len(train)),
+        "fitted_at": datetime.now(UTC).replace(tzinfo=None),
+        "n_train": len(train),
         "holdout_corr": holdout_corr,
         **calibration,
         "usage_league_total": USAGE_LEAGUE_TOTAL,
         "coef_json": json.dumps(
-            {"intercept": intercept, **{s: float(c) for s, c in zip(STATS, coef)}}
+            {"intercept": intercept, **{s: float(c) for s, c in zip(STATS, coef, strict=True)}}
         ),
     }
     return impact_df, meta

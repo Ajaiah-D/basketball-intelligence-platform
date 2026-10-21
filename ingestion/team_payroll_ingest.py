@@ -38,7 +38,7 @@ import logging
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -237,7 +237,7 @@ def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.
     records, player_records = [], []
     for code in team_codes:
         result = team_season_payroll(code, season)
-        fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        fetched_at = datetime.now(UTC).replace(tzinfo=None)
         if result["player_count"] == 0:
             log.warning("No salary data for %s %s - writing a null-payroll row", code, season)
         records.append(

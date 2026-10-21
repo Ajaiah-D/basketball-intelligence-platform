@@ -1,6 +1,8 @@
 """The harness must train only on the past. These tests are the reason the
 backtest can be believed, so they assert the split itself, not the score."""
 
+from typing import ClassVar
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -16,8 +18,8 @@ SEASON_BY_ROW = ["2000-01"] * 10 + ["2001-02"] * 10 + ["2002-03"] * 10
 class SpyModel:
     """Records the size and the season content of each training set."""
 
-    seen: list = []
-    seasons: list = []
+    seen: ClassVar[list] = []
+    seasons: ClassVar[list] = []
 
     def fit(self, X, y):
         SpyModel.seen.append(len(X))

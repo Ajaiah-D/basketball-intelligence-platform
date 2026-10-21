@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard.lib import sim  # noqa: E402
+from dashboard.lib import sim
 
 
 def test_rotation_weights_sum_to_five():

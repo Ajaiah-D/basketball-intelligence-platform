@@ -303,7 +303,7 @@ def _call(at: AppTest, name: str, *args) -> None:
 
 
 def _nonce(at: AppTest) -> int:
-    return at.session_state["tb_nonce"] if "tb_nonce" in at.session_state else 0
+    return at.session_state.get("tb_nonce", 0)
 
 
 def test_add_callback_adds_once_and_clears_the_selection(warehouse_for_team_builder, monkeypatch):

@@ -11,8 +11,8 @@ native.
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import pandas as pd
 

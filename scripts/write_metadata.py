@@ -11,7 +11,7 @@ Usage:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -39,7 +39,7 @@ def main() -> None:
     OUT_PATH.write_text(
         json.dumps(
             {
-                "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "season_range": f"{first_season} to {last_season}",
                 "latest_game_date": str(latest_game_date),
                 "player_game_rows": player_rows,

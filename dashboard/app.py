@@ -12,7 +12,7 @@ import streamlit as st
 # Allow `from dashboard.lib import ...` when run via `streamlit run dashboard/app.py`
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dashboard.lib import config, db, theme  # noqa: E402
+from dashboard.lib import config, db, theme
 
 st.set_page_config(
     page_title="Basketball Intelligence",
@@ -68,7 +68,7 @@ def bootstrap_warehouse() -> None:
     try:
         with requests.get(url, stream=True, timeout=300) as r:
             r.raise_for_status()
-            with open(tmp, "wb") as f:
+            with tmp.open("wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
         tmp.replace(db.DB_PATH)
@@ -94,7 +94,7 @@ if not db.warehouse_exists():
     )
     st.stop()
 
-from dashboard.views import (  # noqa: E402
+from dashboard.views import (
     advanced,
     arcade,
     dev_lab,

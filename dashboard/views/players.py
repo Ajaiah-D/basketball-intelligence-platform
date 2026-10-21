@@ -15,9 +15,8 @@ import unicodedata
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, media
+from dashboard.lib import db, glossary, media, viz
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 
 TABLE_COLS = [
     "player",
@@ -139,7 +138,7 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-    teams = ["All teams"] + sorted(stats["team"].unique())
+    teams = ["All teams", *sorted(stats["team"].unique())]
     team = f1.selectbox(
         "Team",
         teams,
@@ -291,6 +290,7 @@ def render() -> None:
             ("3P%", fmt(row.fg3_pct), f"on {fmt(row.tpa_pg)} 3PA/g ({row.tpa_total} total)"),
             ("TS%", fmt(row.ts_pct), "true shooting"),
         ],
+        strict=True,
     ):
         col.markdown(
             T.kpi(label, val, sub, help=glossary.TERMS.get(label, "")), unsafe_allow_html=True

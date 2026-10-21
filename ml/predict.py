@@ -9,7 +9,7 @@ ones, and every row carries the model version that produced it.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
@@ -82,7 +82,7 @@ def write_predictions(con, rows: pd.DataFrame) -> int:
     stamped = rows.copy()
     stamped["prediction_id"] = [str(uuid.uuid4()) for _ in range(len(stamped))]
     stamped["model_version"] = MODEL_VERSION
-    stamped["predicted_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+    stamped["predicted_at"] = datetime.now(UTC).replace(tzinfo=None)
     stamped = stamped[
         [
             "prediction_id",

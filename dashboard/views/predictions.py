@@ -7,9 +7,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary
+from dashboard.lib import db, glossary, viz
 from dashboard.lib import theme as T
-from dashboard.lib import viz
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -34,7 +33,7 @@ def _clock(t) -> str:
 
 def _split(win_probability: float) -> tuple[int, int]:
     """Whole-number (home %, away %) that always add to 100."""
-    home = int(round(float(win_probability) * 100))
+    home = round(float(win_probability) * 100)
     return home, 100 - home
 
 
@@ -48,7 +47,7 @@ def prediction_card(r, tip: str) -> str:
     home_fav = float(r.win_probability) >= 0.5
     fav, fav_pct = (home, home_pct) if home_fav else (away, away_pct)
     # Never "by 0": a pick that is a coin flip is still a pick by a point.
-    by = max(1, int(round(abs(float(r.predicted_margin)))))
+    by = max(1, round(abs(float(r.predicted_margin))))
     # The underdog's side is dimmed so the favorite reads at a glance; the
     # small gap keeps the split visible when both teams share a color.
     away_op, home_op = (0.5, 1) if home_fav else (1, 0.5)
@@ -83,7 +82,8 @@ def _upcoming(upcoming: pd.DataFrame) -> pd.DataFrame:
     tips = [_eastern_tipoff(t) for t in df["tipoff_utc"]]
     df["tip_label"] = [_clock(t) for t in tips]
     df["day_et"] = [
-        t.date() if t is not None else pd.Timestamp(g).date() for t, g in zip(tips, df["game_date"])
+        t.date() if t is not None else pd.Timestamp(g).date()
+        for t, g in zip(tips, df["game_date"], strict=True)
     ]
     # Within a day: by tip-off, unknown times last.
     df["sort_key"] = [t.value if t is not None else float("inf") for t in tips]

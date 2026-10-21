@@ -28,7 +28,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -41,12 +41,12 @@ PYTHON = sys.executable
 DBT = str(Path(PYTHON).parent / ("dbt.exe" if os.name == "nt" else "dbt"))
 
 sys.path.insert(0, str(PROJECT_ROOT))
-from scripts.season_teams import current_season_and_teams  # noqa: E402
+from scripts.season_teams import current_season_and_teams
 
 
 def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
     print(f"-> {name}")
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     try:
         result = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, capture_output=True, text=True)
         ok = result.returncode == 0
@@ -59,7 +59,7 @@ def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
     entry = {
         "step": name,
         "ok": ok,
-        "seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 1),
+        "seconds": round((datetime.now(UTC) - started).total_seconds(), 1),
     }
     if not ok:
         entry["error"] = error
@@ -137,7 +137,7 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
 
 def main() -> None:
     dbt_dir = PROJECT_ROOT / "dbt" / "basketball_intelligence"
-    run = {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "steps": []}
+    run = {"run_at": datetime.now(UTC).isoformat(timespec="seconds"), "steps": []}
 
     ok = run_steps(
         run,
@@ -162,7 +162,7 @@ def main() -> None:
     if ok:
         try:
             steps = payroll_steps()
-        except Exception as exc:  # noqa: BLE001 - record it rather than crash the run
+        except Exception as exc:
             run["steps"].append(
                 {
                     "step": "payroll",
@@ -221,7 +221,7 @@ def main() -> None:
     run["ok"] = ok
     if run["ok"]:
         version_path = PROJECT_ROOT / "warehouse" / "version.txt"
-        version_path.write_text(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        version_path.write_text(datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
         entry = run_step(
             "publish_release",
             [
@@ -238,7 +238,7 @@ def main() -> None:
         run["ok"] = entry["ok"]
 
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_PATH, "a", encoding="utf-8") as f:
+    with LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(run) + "\n")
 
     git("add", "data/last_updated.json", "logs/refresh_runs.jsonl")
