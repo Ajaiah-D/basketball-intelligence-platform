@@ -90,6 +90,8 @@ BACKOFF_BASE_SECONDS = 4
 TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     requests.ConnectionError,
     requests.Timeout,
+    # The connection dropped partway through the body.
+    requests.exceptions.ChunkedEncodingError,
     TransientError,
 )
 
@@ -362,7 +364,8 @@ def run(
     latest = seasons[-1]
     refused: list[str] = []
 
-    def save(df: pd.DataFrame, name: str, season: str | None = None) -> None:
+    def save(df: pd.DataFrame, name: str, season: str | None = None) -> bool:
+        """Write df; False when the shrink guard kept the existing file."""
         # Collected rather than raised, so one short answer doesn't stop the
         # rest of the run from landing.
         try:
@@ -370,6 +373,8 @@ def run(
         except ShrinkRefusedError as exc:
             log.error("%s - kept the existing file (rerun with --allow-shrink to accept)", exc)
             refused.append(f"{name}/{season}")
+            return False
+        return True
 
     if smoke_test:
         log.info("Smoke test: pulling team game logs for %s only", latest)
@@ -418,7 +423,10 @@ def run(
             save(fetch_player_game_logs(season), "player_game_logs", season)
         if needed("team_game_logs"):
             team_logs = fetch_team_game_logs(season)
-            save(team_logs, "team_game_logs", season)
+            if not save(team_logs, "team_game_logs", season):
+                # The answer was refused as broken, so don't pick play-by-play
+                # games from it: fall back to the file that was kept.
+                team_logs = None
         if wants_advanced:
             save(fetch_player_advanced(season), "player_advanced", season)
             save(fetch_team_advanced(season), "team_advanced", season)

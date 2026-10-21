@@ -12,7 +12,6 @@ exceptions are transient and passes them in.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import random
@@ -27,6 +26,8 @@ import pyarrow.parquet as pq
 # Up to +25% on each backoff, so a batch of clients that failed together
 # don't all come back in the same second.
 JITTER = 0.25
+
+log = logging.getLogger(__name__)
 
 
 def atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
@@ -44,9 +45,13 @@ def atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
             os.fsync(f.fileno())
         tmp.replace(path)  # os.replace: atomic on the same volume, Windows included
     finally:
-        # Only still there when something above failed.
-        with contextlib.suppress(FileNotFoundError):
-            tmp.unlink()
+        # Only still there when something above failed. A tmp that can't be
+        # removed (a scanner holding it, say) must not replace the error
+        # that got us here; the next write overwrites it anyway.
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError as exc:
+            log.debug("could not remove %s: %s", tmp, exc)
 
 
 def parquet_row_count(path: Path) -> int | None:
@@ -75,7 +80,13 @@ SHRINK_GUARD_MIN_RATIO = 0.8
 def suspicious_shrink(new_rows: int, existing_rows: int | None) -> bool:
     """True when replacing a file of existing_rows with new_rows looks like a
     broken fetch: the new frame is empty, or under SHRINK_GUARD_MIN_RATIO of
-    the existing rows. False when there is no readable file to protect."""
+    the existing rows. False when there is no readable file to protect.
+
+    An existing file that can't be read switches the guard off. That is
+    safe: a corrupt file holds nothing worth keeping, and one that can't be
+    read because another process has it locked can't be replaced either -
+    the os.replace in atomic_write_parquet fails on the same lock.
+    """
     if not existing_rows:
         return False
     return new_rows == 0 or new_rows < existing_rows * SHRINK_GUARD_MIN_RATIO

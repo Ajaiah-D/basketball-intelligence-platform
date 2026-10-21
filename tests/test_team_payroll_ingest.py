@@ -326,7 +326,14 @@ def test_server_errors_are_retried(monkeypatch, sleeps, status):
     assert 6 <= sleeps[0] <= 7.5
 
 
-@pytest.mark.parametrize("error", [requests.ConnectionError("reset"), requests.ReadTimeout("slow")])
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.ConnectionError("reset"),
+        requests.ReadTimeout("slow"),
+        requests.exceptions.ChunkedEncodingError("reset mid-body"),
+    ],
+)
 def test_network_errors_are_retried(monkeypatch, sleeps, error):
     html, get = _fetch(monkeypatch, error, _response(200, "ok"))
     assert html == "ok"
@@ -672,3 +679,46 @@ def test_salary_lines_only_a_large_or_empty_shrink_is_refused(monkeypatch, raw, 
     assert len(players) == (lines if written else 20)
     # The pair moves together: the totals still describe the players file.
     assert int(totals["player_count"].iloc[0]) == len(players)
+
+
+def test_no_carry_over_when_only_one_existing_file_is_readable(monkeypatch, raw, caplog):
+    # Carrying DAL's total without its salary lines (or the reverse) would
+    # leave totals.player_count disagreeing with the lines file.
+    _old_fetch(monkeypatch, raw)
+    lines = raw / "team_payroll_players" / "2025-26.parquet"
+    totals_path = raw / "team_payroll" / "2025-26.parquet"
+    totals_path.write_bytes(totals_path.read_bytes()[:30])  # lines still read: 17 rows
+
+    _pages_or_errors(monkeypatch, {"BOS": BOS_HTML, "DAL": requests.ConnectionError("x")})
+    with caplog.at_level(logging.WARNING, logger="team_payroll_ingest"):
+        ok = team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"], force=True)
+
+    assert ok is False
+    assert "not carrying over" in caplog.text
+    # DAL's 3 lines are not carried without its total; BOS's 14 of 17 pass the guard.
+    totals = pd.read_parquet(totals_path)
+    players = pd.read_parquet(lines)
+    assert totals["team_abbreviation"].tolist() == ["BOS"]
+    assert set(players["team_abbreviation"]) == {"BOS"}
+    assert int(totals["player_count"].sum()) == len(players)
+
+
+def test_every_team_failing_leaves_both_files_untouched(monkeypatch, raw):
+    _old_fetch(monkeypatch, raw)
+    totals = raw / "team_payroll" / "2025-26.parquet"
+    lines = raw / "team_payroll_players" / "2025-26.parquet"
+    before = (totals.read_bytes(), lines.read_bytes())
+
+    _pages_or_errors(
+        monkeypatch, {"BOS": requests.ConnectionError("x"), "DAL": requests.ReadTimeout("y")}
+    )
+    assert team_payroll_ingest.write_season("2025-26", ["BOS", "DAL"], force=True) is False
+    monkeypatch.setattr(
+        "sys.argv",
+        ["team_payroll_ingest.py", "--season", "2025-26", "--force", "--teams", "BOS", "DAL"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        team_payroll_ingest.main()
+
+    assert exc.value.code == 1
+    assert (totals.read_bytes(), lines.read_bytes()) == before
