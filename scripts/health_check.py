@@ -21,8 +21,11 @@ from pathlib import Path
 import duckdb
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
-LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
+sys.path.insert(0, str(PROJECT_ROOT))
+from core import paths
+
+DB_PATH = paths.warehouse_path()
+LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
 
 CHECKS_PASSED: list[str] = []
 CHECKS_FAILED: list[str] = []

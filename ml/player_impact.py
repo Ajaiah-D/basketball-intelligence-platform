@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
+
+from core import paths
 
 STATS = ["pts", "orb", "drb", "ast", "stl", "blk", "tov", "fga", "fta", "tpm", "pf"]
 FEATURES = [f"{s}_r" for s in STATS]
@@ -332,7 +333,7 @@ def write(con, impact_df: pd.DataFrame, meta: dict) -> None:
 def main() -> None:
     import duckdb
 
-    db_path = Path(__file__).resolve().parent.parent / "warehouse" / "basketball.duckdb"
+    db_path = paths.warehouse_path()
     con = duckdb.connect(str(db_path))
     try:
         impact_df, meta = build(con)

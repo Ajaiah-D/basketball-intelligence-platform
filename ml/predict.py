@@ -13,6 +13,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
+from core import paths
+
 MODEL_VERSION = "ridge-v1"
 
 # The subset of ml.features.FEATURE_COLUMNS that can actually be computed
@@ -104,8 +106,6 @@ def write_predictions(con, rows: pd.DataFrame) -> int:
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-
     import duckdb
 
     from ml.elo import BASE_RATING, current_ratings
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     # to right now, not the whole rest of the season.
     THROUGH_DAYS_AHEAD = 7
 
-    db_path = Path(__file__).resolve().parent.parent / "warehouse" / "basketball.duckdb"
+    db_path = paths.warehouse_path()
     con = duckdb.connect(str(db_path))
     try:
         through = date.today() + timedelta(days=THROUGH_DAYS_AHEAD)

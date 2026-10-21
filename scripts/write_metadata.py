@@ -11,14 +11,19 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
-OUT_PATH = PROJECT_ROOT / "data" / "last_updated.json"
+# Run as `python scripts/write_metadata.py`, so the repo root is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import paths
+
+DB_PATH = paths.warehouse_path()
+# Committed by the refresh, so it stays in the repo whatever BIP_DATA_HOME says.
+OUT_PATH = paths.PROJECT_ROOT / "data" / "last_updated.json"
 
 
 def _one_row(con: duckdb.DuckDBPyConnection, sql: str) -> tuple:

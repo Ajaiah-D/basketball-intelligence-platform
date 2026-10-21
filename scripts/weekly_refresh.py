@@ -33,7 +33,11 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOG_PATH = PROJECT_ROOT / "logs" / "refresh_runs.jsonl"
+sys.path.insert(0, str(PROJECT_ROOT))
+from core import paths
+from scripts.season_teams import current_season_and_teams
+
+LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
 RELEASE_TAG = "data-v1"  # reused indefinitely so WAREHOUSE_URL never changes
 PYTHON = sys.executable
 # Task Scheduler launches this with the venv's python.exe directly (not an
@@ -41,15 +45,18 @@ PYTHON = sys.executable
 # PATH - resolve dbt's full path the same way sys.executable resolves python.
 DBT = str(Path(PYTHON).parent / ("dbt.exe" if os.name == "nt" else "dbt"))
 
-sys.path.insert(0, str(PROJECT_ROOT))
-from scripts.season_teams import current_season_and_teams
-
 
 def run_step(name: str, cmd: list[str], cwd: Path | None = None) -> dict:
     print(f"-> {name}")
     started = datetime.now(UTC)
     try:
-        result = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, capture_output=True, text=True)
+        # Every child gets the resolved warehouse, so dbt (which reads
+        # BIP_WAREHOUSE through its profile) and the scripts agree on the
+        # file even when only BIP_DATA_HOME is set.
+        env = {**os.environ, "BIP_WAREHOUSE": str(paths.warehouse_path())}
+        result = subprocess.run(
+            cmd, cwd=cwd or PROJECT_ROOT, env=env, capture_output=True, text=True
+        )
         ok = result.returncode == 0
         error = None if ok else (result.stderr or result.stdout)[-2000:]
     except OSError as exc:
@@ -222,7 +229,7 @@ def main() -> None:
     run["player_impact_ok"] = player_impact_ok
     run["ok"] = ok
     if run["ok"]:
-        version_path = PROJECT_ROOT / "warehouse" / "version.txt"
+        version_path = paths.release_version_path()
         version_path.write_text(datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
         entry = run_step(
             "publish_release",
@@ -231,8 +238,8 @@ def main() -> None:
                 "release",
                 "upload",
                 RELEASE_TAG,
-                "warehouse/basketball.duckdb",
-                "warehouse/version.txt",
+                str(paths.warehouse_path()),
+                str(version_path),
                 "--clobber",
             ],
         )

@@ -22,6 +22,13 @@ ignore = ["RUF001", "RUF002", "RUF003", "E501", "N812"]
 "tests/**" = ["N802", "PTH"]
 # sys.path must be set before the imports.
 "dashboard/app.py" = ["E402"]
+# Run as scripts (`python ingestion/x.py`), so they put the repo root on sys.path
+# before importing core.
+"ingestion/nba_ingest.py" = ["E402"]
+"ingestion/team_payroll_ingest.py" = ["E402"]
+"scripts/health_check.py" = ["E402"]
+"scripts/load_to_duckdb.py" = ["E402"]
+"scripts/write_metadata.py" = ["E402"]
 # Same for the scripts and conftest, which put the repo root on sys.path
 # before importing from it.
 "scripts/backfill_team_payroll.py" = ["E402"]
@@ -40,9 +47,8 @@ exclude = ["*.md"]
 [tool.mypy]
 python_version = "3.12"
 # Gradual typing: unannotated functions are still checked, but nothing is
-# forced to carry annotations. `core` joins this list once the package exists
-# (mypy errors on a path that is not there).
-files = ["dashboard", "ingestion", "ml", "scripts"]
+# forced to carry annotations.
+files = ["core", "dashboard", "ingestion", "ml", "scripts"]
 # dashboard/, dashboard/lib/, ingestion/ and scripts/ have no __init__.py;
 # resolve their modules from the repo root, the way the app imports them.
 explicit_package_bases = true

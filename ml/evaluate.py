@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from core import paths
 from ml.train import evaluate
 
 SETTLED_SQL = """
@@ -61,15 +62,13 @@ def calibration_table(con, bins: int = 10) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-
     import duckdb
 
     # predictions and/or the marts it joins against may not exist yet (a
     # fresh warehouse, or a week where ml.predict wrote nothing because the
     # slate was empty) - that is a normal state, not a failure, so a missing
     # table degrades to "nothing to score" instead of crashing the refresh.
-    db_path = Path(__file__).resolve().parent.parent / "warehouse" / "basketball.duckdb"
+    db_path = paths.warehouse_path()
     con = duckdb.connect(str(db_path))
     try:
         try:

@@ -44,10 +44,14 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payroll"
+# Run as `python ingestion/team_payroll_ingest.py`, so the repo root is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import paths
+
+RAW_DIR = paths.raw_dir() / "team_payroll"
 # One row per salary line - the rows team_payroll sums. Kept so the dashboard
 # can show which contracts a payroll is made of, not just its total.
-PLAYERS_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "team_payroll_players"
+PLAYERS_DIR = paths.raw_dir() / "team_payroll_players"
 
 TOTAL_COLUMNS = ["season", "team_abbreviation", "team_payroll", "player_count", "fetched_at_utc"]
 PLAYER_COLUMNS = [
