@@ -592,6 +592,33 @@ def test_a_killed_run_s_snapshot_is_restored_first(fake_run, env, argv):
     assert not wr.snapshot_path().exists()
 
 
+def test_a_snapshot_that_cannot_be_deleted_after_publishing_is_neutralised(
+    fake_run, env, monkeypatch
+):
+    unlink = Path.unlink
+
+    def locked_snapshot(self, *args, **kwargs):
+        if self == wr.snapshot_path():
+            raise PermissionError(32, "in use by a scanner")
+        return unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked_snapshot)
+    out = fake_run(after=_predict_appends(env))
+    assert out["run"]["ok"] is True
+    (drop,) = [s for s in out["run"]["steps"] if s["step"] == "drop_snapshot"]
+    assert drop["ok"] is False
+    assert "in use by a scanner" in drop["error"]
+    published = env["history"].read_bytes()
+    assert published == HISTORY + APPENDED
+
+    # The lock is gone by the next run, which finds the snapshot left over:
+    # rolling back to it must not take the published predictions out.
+    monkeypatch.setattr(Path, "unlink", unlink)
+    fake_run(argv=("--no-publish",))
+    assert env["history"].read_bytes() == published
+    assert not wr.snapshot_path().exists()
+
+
 def test_a_killed_run_that_created_the_history_leaves_none(fake_run, env):
     wr.snapshot_path().write_bytes(b"absent\n")
     fake_run(argv=("--no-publish",))

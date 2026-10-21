@@ -814,14 +814,37 @@ def roll_back_history() -> bool | None:
     return changed
 
 
-def drop_snapshot() -> None:
-    """The run published: its predictions stay, so the snapshot goes."""
+def drop_snapshot(run: dict) -> None:
+    """The run published: its predictions stay, so the snapshot goes.
+
+    Left behind, the next run would roll back predictions that are already
+    public. When it can't be deleted it is rewritten to the published
+    history instead, which makes that roll back a no-op, and the failure is
+    recorded as a step so health_check reports it.
+    """
+    started = time.monotonic()
+    path = snapshot_path()
     try:
-        snapshot_path().unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
+        return
     except OSError as exc:
-        # Left behind, the next run would roll back predictions that are
-        # already public. Say so where the owner will look.
-        log.error("Could not delete %s (%s); delete it by hand", snapshot_path(), exc)
+        error = f"could not delete {_display(path)}: {exc}"
+    try:
+        save_snapshot()
+    except OSError as exc:
+        error += f"; could not overwrite it either ({exc}): delete it by hand"
+        log.error(
+            "Could not delete or overwrite %s (%s); delete it by hand before the next "
+            "run, or that run will discard predictions that were published",
+            path,
+            exc,
+        )
+    else:
+        error += "; overwrote it with the published history"
+        log.error("Could not delete %s; overwrote it with the published history", path)
+    run["steps"].append(
+        {"step": "drop_snapshot", "ok": False, "seconds": _since(started), "error": error}
+    )
 
 
 def discard_predictions(run: dict) -> None:
@@ -871,7 +894,10 @@ def refresh(publishing: bool) -> int:
         def release_uploaded() -> None:
             nonlocal published
             published = True
-            drop_snapshot()
+            # A hard kill between the upload finishing and this line still
+            # leaves the snapshot, and the next run rolls back published rows;
+            # that window is one gh exit and one unlink wide.
+            drop_snapshot(run)
 
         try:
             # A run that was killed outright left its snapshot behind.
