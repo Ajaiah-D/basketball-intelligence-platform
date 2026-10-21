@@ -12,6 +12,7 @@ import streamlit as st
 # Allow `from dashboard.lib import ...` when run via `streamlit run dashboard/app.py`
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import paths
 from dashboard.lib import config, db, theme
 
 st.set_page_config(
@@ -23,7 +24,7 @@ st.set_page_config(
 theme.inject(st)
 
 
-VERSION_PATH = db.DB_PATH.with_suffix(".version")
+VERSION_PATH = paths.warehouse_version_path()
 
 
 def _remote_version(url: str) -> str | None:

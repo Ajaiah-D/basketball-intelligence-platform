@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 COPY .streamlit/ .streamlit/
+COPY core/ core/
 COPY dashboard/ dashboard/
 
 # The warehouse is downloaded on first boot via the WAREHOUSE_URL env var

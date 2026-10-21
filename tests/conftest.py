@@ -15,9 +15,10 @@ sys.path.insert(0, str(ROOT))
 # Imported after the sys.path insert above - this conftest is what puts the
 # repo root on the path in the first place, so a top-of-file import here
 # would not resolve.
+from core import paths
 from dashboard.lib import db
 
-DB_PATH = ROOT / "warehouse" / "basketball.duckdb"
+DB_PATH = paths.warehouse_path()
 
 
 @pytest.fixture(scope="session")

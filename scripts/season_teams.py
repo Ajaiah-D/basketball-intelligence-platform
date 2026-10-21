@@ -8,12 +8,11 @@ historical franchise-code history from nba_api ingestion.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import duckdb
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
+from core import paths
+
+DB_PATH = paths.warehouse_path()
 FIRST_PAYROLL_SEASON = "1984-85"  # payroll has no meaning before the salary cap existed
 
 

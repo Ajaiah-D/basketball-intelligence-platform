@@ -46,7 +46,11 @@ from nba_api.stats.endpoints import (
 )
 from nba_api.stats.static import teams as static_teams
 
-RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+# Run as `python ingestion/nba_ingest.py`, so the repo root is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import paths
+
+RAW_DIR = paths.raw_dir()
 
 # The NBA only publishes advanced box score stats (ratings, usage, PIE) from
 # 1996-97 on; earlier seasons return zero rows. Everything before that is

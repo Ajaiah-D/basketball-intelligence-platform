@@ -5,6 +5,8 @@ basketball_intelligence:
   outputs:
     dev:
       type: duckdb
-      # Relative to this directory (dbt/basketball_intelligence/)
-      path: ../../warehouse/basketball.duckdb
+      # BIP_WAREHOUSE (set by the weekly refresh for its child processes)
+      # picks the file; the default is relative to this directory
+      # (dbt/basketball_intelligence/).
+      path: "{{ env_var('BIP_WAREHOUSE', '../../warehouse/basketball.duckdb') }}"
       threads: 4

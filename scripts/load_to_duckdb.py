@@ -16,9 +16,12 @@ from pathlib import Path
 
 import duckdb
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW_DIR = PROJECT_ROOT / "data" / "raw"
-DB_PATH = PROJECT_ROOT / "warehouse" / "basketball.duckdb"
+# Run as `python scripts/load_to_duckdb.py`, so the repo root is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core import paths
+
+RAW_DIR = paths.raw_dir()
+DB_PATH = paths.warehouse_path()
 
 log = logging.getLogger("load_to_duckdb")
 

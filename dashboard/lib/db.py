@@ -5,16 +5,18 @@ season-scoped; the Arcade pulls from every ingested season."""
 from __future__ import annotations
 
 import unicodedata
-from pathlib import Path
 
 import duckdb
 import numpy as np
 import pandas as pd
 import streamlit as st
 
+from core import paths
+
 from . import franchises
 
-DB_PATH = Path(__file__).resolve().parents[2] / "warehouse" / "basketball.duckdb"
+# Module constant for now: tests monkeypatch it.
+DB_PATH = paths.warehouse_path()
 
 # nba_api's static team data has no conference field, so map it here.
 # Covers current franchises plus historical/relocated abbreviations.

@@ -38,6 +38,9 @@ def fake_run(tmp_path, monkeypatch):
             return subprocess.CompletedProcess(args, 1 if args[0] == "diff" else 0)
 
         (tmp_path / "warehouse").mkdir(exist_ok=True)
+        # The version marker is written next to the warehouse; keep it out of
+        # the real repo's warehouse/ folder.
+        monkeypatch.setenv("BIP_WAREHOUSE", str(tmp_path / "warehouse" / "basketball.duckdb"))
         log = tmp_path / "logs" / "refresh_runs.jsonl"
         monkeypatch.setattr(wr, "run_step", run_step)
         monkeypatch.setattr(wr, "git", git)
@@ -107,3 +110,44 @@ def test_commit_status_wording():
     assert wr.commit_status(True, False, True) == "ok (payroll step failed)"
     assert wr.commit_status(True, True, False) == "ok (player_impact step failed)"
     assert wr.commit_status(False, False, None) == "FAILED"
+
+
+def test_every_child_process_gets_the_resolved_warehouse(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_subprocess_run(cmd, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    # Only BIP_DATA_HOME is set: the children must still be told the file.
+    monkeypatch.delenv("BIP_WAREHOUSE", raising=False)
+    monkeypatch.setenv("BIP_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(wr.subprocess, "run", fake_subprocess_run)
+    wr.run_step("anything", ["tool"])
+    assert seen["env"]["BIP_WAREHOUSE"] == str(tmp_path / "warehouse" / "basketball.duckdb")
+    # the rest of the environment is passed through
+    assert seen["env"]["PATH"] == wr.os.environ["PATH"]
+
+
+def test_the_release_uploads_the_resolved_paths(monkeypatch, tmp_path):
+    uploads = []
+
+    def run_step(name, cmd, cwd=None):
+        if name == "publish_release":
+            uploads.append(cmd)
+        return {"step": name, "ok": True, "seconds": 0.0}
+
+    home = tmp_path / "home"
+    (home / "warehouse").mkdir(parents=True)
+    monkeypatch.delenv("BIP_WAREHOUSE", raising=False)
+    monkeypatch.setenv("BIP_DATA_HOME", str(home))
+    monkeypatch.setattr(wr, "run_step", run_step)
+    monkeypatch.setattr(wr, "git", lambda *a: subprocess.CompletedProcess(a, 0))
+    monkeypatch.setattr(wr, "payroll_steps", lambda: [])
+    monkeypatch.setattr(wr, "LOG_PATH", tmp_path / "logs" / "refresh_runs.jsonl")
+    with pytest.raises(SystemExit):
+        wr.main()
+    (cmd,) = uploads
+    assert str(home / "warehouse" / "basketball.duckdb") in cmd
+    assert str(home / "warehouse" / "version.txt") in cmd
+    assert (home / "warehouse" / "version.txt").exists()
