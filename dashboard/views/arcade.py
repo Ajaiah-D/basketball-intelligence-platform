@@ -946,10 +946,12 @@ def _render_draft(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
             unsafe_allow_html=True,
         )
         cols = st.columns(draft.OPTIONS)
-        for k, (col, key, label) in enumerate(zip(cols, state["offer"], offer, strict=True)):
+        # The offer can hold fewer than OPTIONS players when the pool runs low,
+        # so index the columns rather than zipping them.
+        for k, (key, label) in enumerate(zip(state["offer"], offer, strict=True)):
             if label is None:
                 continue
-            with col:
+            with cols[k]:
                 st.markdown(_option_html(pool.loc[label]), unsafe_allow_html=True)
                 st.button(
                     "Pick him",

@@ -162,6 +162,7 @@ def main() -> None:
     if ok:
         try:
             steps = payroll_steps()
+        # Broad on purpose: record the failure rather than crash the run.
         except Exception as exc:
             run["steps"].append(
                 {
