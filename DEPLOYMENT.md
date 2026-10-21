@@ -83,7 +83,7 @@ keep working against an older warehouse in the meantime.
     (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
 - **Data refresh cadence**: `scripts/weekly_refresh.py` runs the pipeline
   end to end (ingest game data, load DuckDB, scrape the current season's
-  salaries, dbt seed/run/test, re-score player impact for the Arcade, predict
+  salaries, dbt build, re-score player impact for the Arcade, predict
   and score games, republish to the `data-v1` Release) and is meant to be triggered by a local Windows Task Scheduler job, not
   GitHub Actions. stats.nba.com silently blocks requests from cloud/
   datacenter IP ranges (AWS, Azure, GCP, and GitHub-hosted Actions runners
@@ -97,6 +97,18 @@ keep working against an older warehouse in the meantime.
   and the player impact scoring. The rest of the refresh still publishes
   (the warehouse keeps last week's salary or impact tables), and each
   failure is recorded in the run log (`payroll_ok`, `player_impact_ok`).
+
+  The warehouse is built in a copy (`warehouse/next/basketball.duckdb`) and
+  only swapped onto `basketball.duckdb` once every required step passed, so
+  a failed run leaves the real file and the release untouched. The swap
+  fails if something holds the warehouse open (a local dashboard): close it
+  and rerun. Each step's full output goes to `logs/runs/<run time>/`, and
+  `logs/refresh.lock` stops two runs overlapping. Before a scheduled run,
+  `python scripts/weekly_refresh.py --no-publish` does a dry run: every step
+  against the copy, then the copy is deleted - no swap, upload or commit.
+  It does still update the raw parquet files and `data/last_updated.json`,
+  and logs a `"dry_run": true` line (which `health_check.py` skips); the
+  next scheduled run commits both.
 
   It's registered as a Windows Scheduled Task named
   `BasketballIntelligence-WeeklyRefresh` (action: this repo's

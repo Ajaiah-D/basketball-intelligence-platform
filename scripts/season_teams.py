@@ -8,6 +8,8 @@ historical franchise-code history from nba_api ingestion.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import duckdb
 
 from core import paths
@@ -16,9 +18,15 @@ DB_PATH = paths.warehouse_path()
 FIRST_PAYROLL_SEASON = "1984-85"  # payroll has no meaning before the salary cap existed
 
 
-def seasons_and_teams(first_season: str = FIRST_PAYROLL_SEASON) -> dict[str, list[str]]:
-    """{season: [team codes active that season]}, first_season onward, oldest first."""
-    con = duckdb.connect(str(DB_PATH), read_only=True)
+def seasons_and_teams(
+    first_season: str = FIRST_PAYROLL_SEASON, db_path: Path | None = None
+) -> dict[str, list[str]]:
+    """{season: [team codes active that season]}, first_season onward, oldest first.
+
+    db_path defaults to the warehouse; the weekly refresh passes the copy it
+    is building, which is where this run's ingestion has landed.
+    """
+    con = duckdb.connect(str(db_path or DB_PATH), read_only=True)
     try:
         # The "as team_abbreviation" alias looks redundant but is not: the
         # underlying nba_api column is TEAM_ABBREVIATION (uppercase). DuckDB
@@ -38,10 +46,10 @@ def seasons_and_teams(first_season: str = FIRST_PAYROLL_SEASON) -> dict[str, lis
     }
 
 
-def current_season_and_teams() -> tuple[str, list[str]]:
+def current_season_and_teams(db_path: Path | None = None) -> tuple[str, list[str]]:
     """(most recent season in the warehouse, team codes active that season)."""
-    by_season = seasons_and_teams()
+    by_season = seasons_and_teams(db_path=db_path)
     if not by_season:
-        raise RuntimeError(f"no seasons in raw.team_game_logs at {DB_PATH}")
+        raise RuntimeError(f"no seasons in raw.team_game_logs at {db_path or DB_PATH}")
     season = max(by_season)
     return season, by_season[season]

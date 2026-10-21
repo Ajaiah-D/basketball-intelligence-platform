@@ -120,16 +120,39 @@ def check_freshness() -> None:
         ok(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
 
 
+def last_scheduled_run(lines: list[str]) -> tuple[dict | None, dict | None]:
+    """(the last real run, its git_push line or None) from refresh_runs.jsonl.
+
+    The refresh appends its git push result as a separate line after the
+    run's own line, and a --no-publish dry run writes a line marked
+    "dry_run"; neither is the run this check is about.
+    """
+    records = [json.loads(line) for line in lines if line.strip()]
+    runs = [r for r in records if "steps" in r and not r.get("dry_run")]
+    if not runs:
+        return None, None
+    last = runs[-1]
+    push = next(
+        (
+            r
+            for r in reversed(records)
+            if r.get("step") == "git_push" and r.get("run_at") == last["run_at"]
+        ),
+        None,
+    )
+    return last, push
+
+
 def check_last_run() -> None:
     print("\nWeekly refresh job (scripts/weekly_refresh.py via Task Scheduler)")
     if not LOG_PATH.exists():
         fail(f"{LOG_PATH} does not exist - the scheduled job has never run")
         return
     lines = [line for line in LOG_PATH.read_text().splitlines() if line.strip()]
-    if not lines:
-        fail(f"{LOG_PATH} is empty")
+    last, push = last_scheduled_run(lines)
+    if last is None:
+        fail(f"{LOG_PATH} has no scheduled run in it")
         return
-    last = json.loads(lines[-1])
     run_at = datetime.fromisoformat(last["run_at"])
     age_days = (datetime.now(UTC) - run_at).days
     if not last.get("ok"):
@@ -160,7 +183,13 @@ def check_last_run() -> None:
                     f"  NOTE step '{step['step']}' failed but did not block the "
                     f"run; the warehouse is carrying last week's data for it"
                 )
-    print(f"  ({len(lines)} run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
+    # The release is already published by the time the run log is pushed,
+    # so a failed push is not a failed refresh - but it does mean GitHub's
+    # copy of this log is behind until the next run pushes it.
+    if push is not None and not push.get("ok"):
+        print(f"  NOTE git push after that run failed: {push.get('error', '')[-200:]}")
+    runs = sum(1 for line in lines if "steps" in json.loads(line))
+    print(f"  ({runs} run(s) recorded in {LOG_PATH.relative_to(PROJECT_ROOT)})")
 
 
 def check_api(skip: bool) -> None:
