@@ -20,9 +20,10 @@ Game logs are written one parquet per season (data/raw/player_game_logs/
 files already exist (and read as valid parquet) are skipped unless --force
 is passed. Every write is atomic, so a killed run never leaves half a file.
 
-Replacing a season file with one that has fewer rows is refused (the old
-file stays, the run exits 1): a partial answer from the API should not
-quietly erase good data. --allow-shrink overrides it.
+Replacing a season file with an empty frame, or one under 80% of its rows,
+is refused (the old file stays, the run exits 1): a broken or partial
+answer from the API should not quietly erase good data. A smaller drop is
+normal - the NBA corrects box scores. --allow-shrink overrides it.
 
 Usage:
     python ingestion/nba_ingest.py                      # current season, 20 most recent games of PBP
@@ -65,6 +66,7 @@ from core.io import (
     is_valid_parquet,
     parquet_row_count,
     retry_transient,
+    suspicious_shrink,
 )
 
 RAW_DIR = paths.raw_dir()
@@ -91,7 +93,8 @@ TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     TransientError,
 )
 
-# Season files a re-fetch may not replace with fewer rows. Play-by-play is
+# Season files a re-fetch may not replace with an empty frame or with less
+# than SHRINK_GUARD_MIN_RATIO of their rows (see core.io). Play-by-play is
 # left out: its size follows --pbp-games, so shrinking is the normal case.
 SHRINK_GUARDED = frozenset(
     {"player_game_logs", "team_game_logs", "player_advanced", "team_advanced", "schedule"}
@@ -126,7 +129,10 @@ def _request_once(endpoint_cls, kwargs: dict) -> pd.DataFrame:
     try:
         endpoint.get_request()
     except (ValueError, KeyError) as exc:
-        # nba_api has no public accessor for the status.
+        # nba_api has no public accessor for the status, so this reads the
+        # private NBAResponse._status_code (checked against nba_api 1.11.4).
+        # If a later version renames it, status is None and the error is
+        # treated as not transient: it fails fast rather than retrying.
         status = getattr(getattr(endpoint, "nba_response", None), "_status_code", None)
         if isinstance(status, int) and is_transient_status(status):
             raise TransientError(
@@ -300,7 +306,7 @@ def fetch_teams() -> pd.DataFrame:
 
 
 class ShrinkRefusedError(Exception):
-    """A re-fetch came back with fewer rows than the file it would replace."""
+    """A re-fetch came back empty, or far smaller than the file it would replace."""
 
 
 def write_parquet(
@@ -310,13 +316,14 @@ def write_parquet(
     when a season is given (per-season partitioning for game logs).
 
     The write is atomic. For the SHRINK_GUARDED season files, replacing a
-    readable file with fewer rows raises ShrinkRefusedError and leaves the
-    file alone, unless allow_shrink.
+    readable file with an empty frame or one under SHRINK_GUARD_MIN_RATIO of
+    its rows raises ShrinkRefusedError and leaves the file alone, unless
+    allow_shrink.
     """
     path = RAW_DIR / name / f"{season}.parquet" if season else RAW_DIR / f"{name}.parquet"
     if season and name in SHRINK_GUARDED and not allow_shrink:
         existing = parquet_row_count(path)
-        if existing is not None and len(df) < existing:
+        if suspicious_shrink(len(df), existing):
             raise ShrinkRefusedError(
                 f"{name}/{season}: the re-fetch has {len(df)} rows, the file on disk {existing}"
             )
@@ -474,7 +481,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-shrink",
         action="store_true",
-        help="Replace a season file even when the re-fetch has fewer rows",
+        help="Replace a season file even when the re-fetch is empty or over 20%% smaller",
     )
     parser.add_argument(
         "--pbp-games",

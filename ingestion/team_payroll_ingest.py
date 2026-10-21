@@ -17,12 +17,13 @@ Basketball-Reference publishes a 20 requests/minute rate limit; this script
 throttles to one request per 3.5 seconds (~17/min) to stay comfortably under
 it. Do not remove the sleep. Going over earns a 429 and, past that, a block
 that can last an hour, so a 429 waits for its Retry-After (or a minute,
-doubling) before trying again.
+doubling) before trying again - unless the wait is over five minutes, in
+which case the run stops asking and the remaining teams count as failed.
 
 Teams are fetched one at a time and a team whose fetch fails is listed and
 left out; the season is still written with the rest, and the script exits
-1 so the caller knows. Re-fetching a season into fewer rows than the files
-on disk is refused unless --allow-shrink.
+1 so the caller knows. Replacing a season's files with an empty frame, or
+one under 80% of their rows, is refused unless --allow-shrink.
 
 Eight team codes differ between this project's nba_api-derived codes and
 Basketball-Reference's own, with a different cutoff season - and in one case
@@ -64,6 +65,7 @@ from core.io import (
     parquet_row_count,
     retry_after_seconds,
     retry_transient,
+    suspicious_shrink,
 )
 
 RAW_DIR = paths.raw_dir() / "team_payroll"
@@ -88,6 +90,10 @@ ERROR_BACKOFF_SECONDS = 6  # 6s, 12s after a dropped connection or a 5xx
 # A 429 with no Retry-After: 60s, 120s (240s if MAX_RETRIES ever grows).
 # Retrying any sooner only extends the block.
 RATE_LIMIT_BACKOFF_SECONDS = 60
+# A Retry-After longer than this is a block, not a hiccup. Sleeping through
+# it would stall the weekly refresh for up to an hour per retry; payroll is
+# non-fatal there, so giving up and letting next week's run try is cheaper.
+MAX_RETRY_AFTER_SECONDS = 300
 TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     requests.ConnectionError,
     requests.Timeout,
@@ -238,6 +244,7 @@ def fetch_team_season_html(team_code: str, season: str) -> str | None:
         delay=_retry_delay,
         label=url,
         log=log,
+        max_retry_after=MAX_RETRY_AFTER_SECONDS,
     )
 
 
@@ -282,6 +289,15 @@ class SeasonPayroll(NamedTuple):
     failed: list[str]  # team codes whose fetch failed, in request order
 
 
+def _blocked(exc: BaseException) -> bool:
+    """A 429 whose Retry-After is over MAX_RETRY_AFTER_SECONDS."""
+    return (
+        isinstance(exc, TransientError)
+        and exc.retry_after is not None
+        and exc.retry_after > MAX_RETRY_AFTER_SECONDS
+    )
+
+
 def ingest_season(season: str, team_codes: list[str]) -> SeasonPayroll:
     """Fetch payroll for every team active in `season`, one team at a time.
 
@@ -291,18 +307,27 @@ def ingest_season(season: str, team_codes: list[str]) -> SeasonPayroll:
     completeness flag can only fire for a team-season that actually exists -
     one players row per salary line, and the teams whose fetch failed after
     its retries. A failed team is logged and left out so the others still
-    land; a bug (TypeError and the like) still stops the run.
+    land; a bug (TypeError and the like) still stops the run. A rate-limit
+    block (Retry-After over MAX_RETRY_AFTER_SECONDS) fails that team and
+    every one after it without another request.
 
     fetched_at_utc is stamped per team at fetch time (naive UTC), so the
     dashboard can say when its salary figures were last refreshed.
     """
     records, player_records = [], []
     failed: list[str] = []
-    for code in team_codes:
+    for i, code in enumerate(team_codes):
         try:
             result = team_season_payroll(code, season)
         except (requests.RequestException, TransientError) as exc:
             log.error("Giving up on %s %s: %s", code, season, exc)
+            if _blocked(exc):
+                # Told to stay away for longer than we'll wait: asking for
+                # the next page now would only extend the block.
+                failed.extend(team_codes[i:])
+                if team_codes[i + 1 :]:
+                    log.error("Rate limited - not fetching %s", ", ".join(team_codes[i + 1 :]))
+                break
             failed.append(code)
             continue
         fetched_at = datetime.now(UTC).replace(tzinfo=None)
@@ -369,9 +394,10 @@ def write_season(
     Returns True when every team was fetched and the files were written (or
     were already complete), False when a team failed or the shrink guard
     kept the old files. A season with failed teams is still written with
-    the teams that succeeded, unless nothing succeeded at all. Replacing a
-    file with fewer rows than it has is refused - both files are kept, so
-    they stay a matching pair - unless allow_shrink.
+    the teams that succeeded, unless nothing succeeded at all. Replacing
+    either file with an empty frame or one under SHRINK_GUARD_MIN_RATIO of
+    its rows is refused - both files are kept, so they stay a matching
+    pair - unless allow_shrink.
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PLAYERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -397,12 +423,12 @@ def write_season(
         shrunk = [
             f"{path.parent.name}/{path.name} ({existing} -> {len(new)} rows)"
             for path, new in ((out_path, df), (players_path, players))
-            if (existing := parquet_row_count(path)) is not None and len(new) < existing
+            if suspicious_shrink(len(new), existing := parquet_row_count(path))
         ]
         if shrunk:
             log.error(
-                "%s: re-fetch is smaller than the files on disk: %s - kept the existing "
-                "files (rerun with --allow-shrink to accept)",
+                "%s: re-fetch is empty or over 20%% smaller than the files on disk: %s - "
+                "kept the existing files (rerun with --allow-shrink to accept)",
                 season,
                 "; ".join(shrunk),
             )
@@ -439,7 +465,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-shrink",
         action="store_true",
-        help="Replace the season's files even when the re-fetch has fewer rows",
+        help="Replace the season's files even when the re-fetch is empty or over 20%% smaller",
     )
     parser.add_argument(
         "--teams",

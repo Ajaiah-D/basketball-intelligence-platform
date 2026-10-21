@@ -7,6 +7,10 @@ separate relocation table here.
 Usage:
     python scripts/backfill_team_payroll.py
     python scripts/backfill_team_payroll.py --force   # re-fetch already-ingested seasons too
+
+Exits 1 after the last season if any season was left incomplete (a team
+failed, or the shrink guard kept the old files); the log names them. A
+season missing a team is fetched again by a plain rerun.
 """
 
 from __future__ import annotations
@@ -38,8 +42,21 @@ def main() -> None:
 
     by_season = seasons_and_teams()
     log.info("Backfilling %d seasons (%s -> %s)", len(by_season), min(by_season), max(by_season))
-    for season, teams in by_season.items():
-        write_season(season, teams, force=args.force)
+    # Every season is attempted even after one fails, so a single bad team
+    # doesn't leave the rest of the history unfetched.
+    incomplete = [
+        season
+        for season, teams in by_season.items()
+        if not write_season(season, teams, force=args.force)
+    ]
+    if incomplete:
+        # Which teams failed is in each season's own error line above.
+        log.error(
+            "Backfill finished with %d incomplete season(s): %s",
+            len(incomplete),
+            ", ".join(incomplete),
+        )
+        sys.exit(1)
     log.info("Backfill complete.")
 
 
