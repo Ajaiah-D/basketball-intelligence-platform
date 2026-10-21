@@ -1,0 +1,13 @@
+-c requirements.txt
+# Dev and CI only - not installed in the deployed image.
+# Recompile: pip-compile --strip-extras --output-file requirements-dev.txt requirements-dev.in
+pytest
+scikit-learn
+scipy
+pyarrow
+pip-tools
+ruff
+mypy
+pre-commit
+pandas-stubs
+types-requests

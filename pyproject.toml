@@ -1,0 +1,6 @@
+# Tool configuration only: this is an application, not an installable package,
+# so there is no build backend.
+[project]
+name = "basketball-intelligence-platform"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
