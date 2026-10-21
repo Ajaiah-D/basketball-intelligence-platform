@@ -1,0 +1,12 @@
+# Direct runtime dependencies. Recompile: pip-compile --strip-extras --output-file requirements.txt requirements.in
+nba_api
+pandas
+duckdb
+dbt-duckdb
+streamlit
+plotly
+python-dotenv
+requests
+# predictions.py builds ZoneInfo("America/New_York"); Streamlit Cloud must not
+# depend on the system having an IANA tz database.
+tzdata
