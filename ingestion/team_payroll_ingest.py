@@ -15,7 +15,14 @@ table at all (team_payroll null, player_count 0) - see ingest_season.
 
 Basketball-Reference publishes a 20 requests/minute rate limit; this script
 throttles to one request per 3.5 seconds (~17/min) to stay comfortably under
-it. Do not remove the sleep.
+it. Do not remove the sleep. Going over earns a 429 and, past that, a block
+that can last an hour, so a 429 waits for its Retry-After (or a minute,
+doubling) before trying again.
+
+Teams are fetched one at a time and a team whose fetch fails is listed and
+left out; the season is still written with the rest, and the script exits
+1 so the caller knows. Re-fetching a season into fewer rows than the files
+on disk is refused unless --allow-shrink.
 
 Eight team codes differ between this project's nba_api-derived codes and
 Basketball-Reference's own, with a different cutoff season - and in one case
@@ -40,6 +47,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 import requests
@@ -47,6 +55,16 @@ import requests
 # Run as `python ingestion/team_payroll_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
+from core.io import (
+    TransientError,
+    atomic_write_parquet,
+    backoff_delay,
+    is_transient_status,
+    is_valid_parquet,
+    parquet_row_count,
+    retry_after_seconds,
+    retry_transient,
+)
 
 RAW_DIR = paths.raw_dir() / "team_payroll"
 # One row per salary line - the rows team_payroll sums. Kept so the dashboard
@@ -65,7 +83,16 @@ PLAYER_COLUMNS = [
 
 MIN_SECONDS_BETWEEN_REQUESTS = 3.5
 REQUEST_TIMEOUT = 30
-MAX_RETRIES = 3
+MAX_RETRIES = 3  # attempts in all
+ERROR_BACKOFF_SECONDS = 6  # 6s, 12s after a dropped connection or a 5xx
+# A 429 with no Retry-After: 60s, 120s (240s if MAX_RETRIES ever grows).
+# Retrying any sooner only extends the block.
+RATE_LIMIT_BACKOFF_SECONDS = 60
+TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    requests.ConnectionError,
+    requests.Timeout,
+    TransientError,
+)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 # nba_code -> (bbref_code, last season-end-year still under that bbref_code).
@@ -170,31 +197,48 @@ def _throttle() -> None:
     _last_request_at = time.monotonic()
 
 
-def fetch_team_season_html(team_code: str, season: str) -> str:
+def _get_page(url: str) -> str | None:
+    """One throttled GET. None for a 404; a 429 or 5xx raises TransientError
+    and any other error status raises requests.HTTPError."""
+    _throttle()
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
+    if resp.status_code == 404:
+        return None
+    if is_transient_status(resp.status_code):
+        raise TransientError(
+            f"HTTP {resp.status_code} from {url}",
+            status=resp.status_code,
+            retry_after=retry_after_seconds(resp.headers.get("Retry-After")),
+        )
+    resp.raise_for_status()
+    # The site serves UTF-8 under a bare "text/html", which requests
+    # decodes as ISO-8859-1 - "Luka Dončić" came out "DonÄ\x8diÄ\x87".
+    resp.encoding = "utf-8"
+    return resp.text
+
+
+def _retry_delay(exc: BaseException, attempt: int) -> float:
+    # Only reached without a Retry-After; retry_transient uses that first.
+    if isinstance(exc, TransientError) and exc.status == 429:
+        return backoff_delay(RATE_LIMIT_BACKOFF_SECONDS, attempt)
+    return backoff_delay(ERROR_BACKOFF_SECONDS, attempt)
+
+
+def fetch_team_season_html(team_code: str, season: str) -> str | None:
+    """The team-season page's HTML, or None when the site has no such page.
+
+    Dropped connections, timeouts, 429s and 5xx answers are retried; a 404
+    or another 4xx is not, since asking again gets the same answer.
+    """
     url = f"https://www.basketball-reference.com/teams/{team_code}/{season_end_year(season)}.html"
-    for attempt in range(1, MAX_RETRIES + 1):
-        _throttle()
-        try:
-            resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            # The site serves UTF-8 under a bare "text/html", which requests
-            # decodes as ISO-8859-1 - "Luka Dončić" came out "DonÄ\x8diÄ\x87".
-            resp.encoding = "utf-8"
-            return resp.text
-        except requests.RequestException as exc:
-            if attempt == MAX_RETRIES:
-                raise
-            backoff = 2**attempt * 3
-            log.warning(
-                "%s failed (attempt %d/%d): %s -- retrying in %ds",
-                url,
-                attempt,
-                MAX_RETRIES,
-                exc,
-                backoff,
-            )
-            time.sleep(backoff)
-    raise RuntimeError("unreachable")
+    return retry_transient(
+        lambda: _get_page(url),
+        attempts=MAX_RETRIES,
+        transient=TRANSIENT_ERRORS,
+        delay=_retry_delay,
+        label=url,
+        log=log,
+    )
 
 
 def team_season_payroll(nba_code: str, season: str) -> dict:
@@ -211,12 +255,17 @@ def team_season_payroll(nba_code: str, season: str) -> dict:
     team_payroll is None (never 0) when the page has no salary table - e.g. a
     franchise's first partial season, or one of the gap seasons above. A real
     team's payroll is never actually zero, so None can't be mistaken for a
-    genuine value downstream.
+    genuine value downstream. A 404 for the page is treated the same way.
 
     players is the parsed salary rows the total was summed from.
     """
     code = bbref_code(nba_code, season)
     html = fetch_team_season_html(code, season)
+    if html is None:
+        # Logged loudly: every 404 so far has been a team-code mismatch (see
+        # the code maps above), not a page that truly doesn't exist.
+        log.warning("No page for %s %s (bbref code %s, HTTP 404)", nba_code, season, code)
+        html = ""
     rows = parse_salary_table(html)
     if not rows:
         return {"team_payroll": None, "player_count": 0, "players": []}
@@ -227,20 +276,35 @@ def team_season_payroll(nba_code: str, season: str) -> dict:
     }
 
 
-def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch payroll for every team active in `season`.
+class SeasonPayroll(NamedTuple):
+    totals: pd.DataFrame
+    players: pd.DataFrame
+    failed: list[str]  # team codes whose fetch failed, in request order
 
-    Returns (totals, players): one totals row per team, always - a team with
-    no salary data still gets a row (null payroll, player_count 0) rather than
-    being dropped, because a downstream completeness flag can only fire for a
-    team-season that actually exists - and one players row per salary line.
+
+def ingest_season(season: str, team_codes: list[str]) -> SeasonPayroll:
+    """Fetch payroll for every team active in `season`, one team at a time.
+
+    Returns (totals, players, failed): one totals row per team that was
+    fetched - a team with no salary data still gets a row (null payroll,
+    player_count 0) rather than being dropped, because a downstream
+    completeness flag can only fire for a team-season that actually exists -
+    one players row per salary line, and the teams whose fetch failed after
+    its retries. A failed team is logged and left out so the others still
+    land; a bug (TypeError and the like) still stops the run.
 
     fetched_at_utc is stamped per team at fetch time (naive UTC), so the
     dashboard can say when its salary figures were last refreshed.
     """
     records, player_records = [], []
+    failed: list[str] = []
     for code in team_codes:
-        result = team_season_payroll(code, season)
+        try:
+            result = team_season_payroll(code, season)
+        except (requests.RequestException, TransientError) as exc:
+            log.error("Giving up on %s %s: %s", code, season, exc)
+            failed.append(code)
+            continue
         fetched_at = datetime.now(UTC).replace(tzinfo=None)
         if result["player_count"] == 0:
             log.warning("No salary data for %s %s - writing a null-payroll row", code, season)
@@ -268,22 +332,84 @@ def ingest_season(season: str, team_codes: list[str]) -> tuple[pd.DataFrame, pd.
     players = pd.DataFrame.from_records(player_records, columns=PLAYER_COLUMNS)
     players["salary_usd"] = players["salary_usd"].astype("int64")
     players["fetched_at_utc"] = pd.to_datetime(players["fetched_at_utc"])
-    return df, players
+    return SeasonPayroll(df, players, failed)
 
 
-def write_season(season: str, team_codes: list[str], force: bool = False) -> None:
+def season_done(out_path: Path, players_path: Path, team_codes: list[str]) -> bool:
+    """True when both of a season's files read as parquet and the totals
+    have a row for every requested team.
+
+    Both files: a season backfilled before per-player rows were kept has the
+    totals file alone and must be fetched again. Every team: a season
+    written while a team's fetch was failing must not count as finished, or
+    that team would stay missing for good.
+    """
+    for path in (out_path, players_path):
+        if not is_valid_parquet(path):
+            if path.exists():
+                log.warning("%s is unreadable - fetching the season again", path.name)
+            return False
+    totals = pd.read_parquet(out_path)
+    if "team_abbreviation" not in totals.columns:
+        return False
+    missing = set(team_codes) - set(totals["team_abbreviation"])
+    if missing:
+        log.info(
+            "%s lacks %s - fetching the season again", out_path.name, ", ".join(sorted(missing))
+        )
+        return False
+    return True
+
+
+def write_season(
+    season: str, team_codes: list[str], force: bool = False, allow_shrink: bool = False
+) -> bool:
+    """Fetch and write one season's two payroll files.
+
+    Returns True when every team was fetched and the files were written (or
+    were already complete), False when a team failed or the shrink guard
+    kept the old files. A season with failed teams is still written with
+    the teams that succeeded, unless nothing succeeded at all. Replacing a
+    file with fewer rows than it has is refused - both files are kept, so
+    they stay a matching pair - unless allow_shrink.
+    """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PLAYERS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RAW_DIR / f"{season}.parquet"
     players_path = PLAYERS_DIR / f"{season}.parquet"
-    # Skip only when BOTH files exist: a season backfilled before per-player
-    # rows were kept has the totals file alone and must be fetched again.
-    if out_path.exists() and players_path.exists() and not force:
+    if not force and season_done(out_path, players_path, team_codes):
         log.info("%s already ingested, skipping (use --force to redo)", season)
-        return
-    df, players = ingest_season(season, team_codes)
-    df.to_parquet(out_path, index=False)
-    players.to_parquet(players_path, index=False)
+        return True
+    df, players, failed = ingest_season(season, team_codes)
+    if failed:
+        log.error(
+            "%s: %d of %d teams failed and are left out: %s",
+            season,
+            len(failed),
+            len(team_codes),
+            ", ".join(failed),
+        )
+    if df.empty:
+        log.error("%s: no team was fetched - nothing written", season)
+        return False
+
+    if not allow_shrink:
+        shrunk = [
+            f"{path.parent.name}/{path.name} ({existing} -> {len(new)} rows)"
+            for path, new in ((out_path, df), (players_path, players))
+            if (existing := parquet_row_count(path)) is not None and len(new) < existing
+        ]
+        if shrunk:
+            log.error(
+                "%s: re-fetch is smaller than the files on disk: %s - kept the existing "
+                "files (rerun with --allow-shrink to accept)",
+                season,
+                "; ".join(shrunk),
+            )
+            return False
+
+    atomic_write_parquet(df, out_path)
+    atomic_write_parquet(players, players_path)
     empty = int((df["player_count"] == 0).sum())
     log.info(
         "Wrote %s (%d teams, %d salary lines, %d teams with no salary data)",
@@ -292,6 +418,7 @@ def write_season(season: str, team_codes: list[str], force: bool = False) -> Non
         len(players),
         empty,
     )
+    return not failed
 
 
 def main() -> None:
@@ -310,6 +437,11 @@ def main() -> None:
     )
     parser.add_argument("--force", action="store_true", help="Re-fetch even if already ingested")
     parser.add_argument(
+        "--allow-shrink",
+        action="store_true",
+        help="Replace the season's files even when the re-fetch has fewer rows",
+    )
+    parser.add_argument(
         "--teams",
         nargs="+",
         required=True,
@@ -318,7 +450,12 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.season:
-        write_season(args.season, args.teams, force=args.force)
+        # Exit 1 after writing what succeeded: the weekly refresh treats
+        # payroll as non-fatal, so this flags the run without blocking it.
+        if not write_season(
+            args.season, args.teams, force=args.force, allow_shrink=args.allow_shrink
+        ):
+            sys.exit(1)
     elif args.backfill:
         raise SystemExit(
             "Per-season --teams differs by era (relocations/expansion) - run the "
