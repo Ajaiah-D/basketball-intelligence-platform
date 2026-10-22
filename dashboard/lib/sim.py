@@ -27,7 +27,7 @@ from core.constants import GAME_MARGIN_SD, HOME_EDGE_POINTS, PLAYERS_ON_FLOOR
 STARTER_MINUTES = 36
 BENCH_MINUTES = 20  # 5 x 36 + 3 x 20 = 240, a real game's player-minutes
 ROSTER_SIZE = 8
-STARTERS = PLAYERS_ON_FLOOR
+STARTERS = 5  # a starting lineup: the first five spots play starter minutes
 SEASON_GAMES = 82
 N_SIMS = 1000
 # How much of the usage a roster has beyond a league-average lineup it

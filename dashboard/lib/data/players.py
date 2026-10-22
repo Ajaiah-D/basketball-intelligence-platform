@@ -113,6 +113,7 @@ def _names_containing(needle: str) -> list[str]:
     if not needle:
         return []  # an empty needle would match everyone
     names = q("select distinct player_name from main_marts.mart_player_season")["player_name"]
+    names = names.dropna()  # fold() would turn a null into the text "nan"
     return names[names.map(fold).str.contains(needle, regex=False)].tolist()
 
 

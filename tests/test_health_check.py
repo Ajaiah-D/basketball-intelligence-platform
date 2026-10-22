@@ -6,6 +6,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import duckdb
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -94,6 +95,28 @@ def test_check_last_run_is_quiet_without_dbt_warnings(tmp_path, monkeypatch, cap
     assert "dbt finished" not in zero + older
 
 
+@pytest.fixture
+def schedule_db(tmp_path):
+    """A warehouse whose 2026-27 schedule opens on October 21, after a
+    preseason game that must not count as opening night."""
+    path = tmp_path / "schedule.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute("create schema main_staging")
+    con.execute(
+        "create table main_staging.stg_schedule "
+        "(season varchar, game_date date, is_regular_season boolean)"
+    )
+    con.execute(
+        "insert into main_staging.stg_schedule values "
+        "('2026-27', '2026-10-05', false), "
+        "('2026-27', '2026-10-21', true), "
+        "('2026-27', '2026-10-22', true), "
+        "('2027-28', '2027-10-19', false)"
+    )
+    con.close()
+    return path
+
+
 @pytest.mark.parametrize(
     ("day", "offseason"),
     [
@@ -101,10 +124,42 @@ def test_check_last_run_is_quiet_without_dbt_warnings(tmp_path, monkeypatch, cap
         (date(2026, 4, 21), True),
         (date(2026, 7, 1), True),
         (date(2026, 10, 1), True),  # the new season is current, no games yet
-        (date(2026, 10, 14), True),
-        (date(2026, 10, 15), False),  # the checks expect games again
+        (date(2026, 10, 6), True),  # a preseason game is not opening night
+        (date(2026, 10, 15), True),  # no longer cut off mid-October
+        (date(2026, 10, 20), True),
+        (date(2026, 10, 21), False),  # opening night: the checks expect games
+        (date(2026, 12, 1), False),
         (date(2027, 1, 15), False),
     ],
 )
-def test_offseason_bounds(day, offseason):
-    assert health_check.in_offseason(day) is offseason
+def test_offseason_ends_at_the_scheduled_opening_night(schedule_db, day, offseason):
+    assert health_check.in_offseason(day, schedule_db) is offseason
+
+
+def test_opening_night_comes_from_the_regular_season_schedule(schedule_db):
+    assert health_check.opening_night(date(2026, 7, 1), schedule_db) == date(2026, 10, 21)
+    assert health_check.opening_night(date(2026, 11, 1), schedule_db) == date(2026, 10, 21)
+
+
+@pytest.mark.parametrize(
+    ("day", "offseason"),
+    [
+        (date(2027, 4, 21), True),
+        (date(2027, 10, 30), True),
+        (date(2027, 10, 31), False),  # OFFSEASON_FALLBACK_END
+    ],
+)
+def test_offseason_falls_back_when_the_schedule_lacks_the_season(schedule_db, day, offseason):
+    # 2027-28 has only a preseason game in this schedule.
+    assert health_check.in_offseason(day, schedule_db) is offseason
+
+
+def test_offseason_falls_back_without_a_readable_schedule(tmp_path):
+    missing = tmp_path / "missing.duckdb"
+    empty = tmp_path / "empty.duckdb"
+    duckdb.connect(str(empty)).close()  # a warehouse with no stg_schedule
+    for path in (missing, empty):
+        assert health_check.opening_night(date(2026, 7, 1), path) == date(2026, 10, 31)
+        assert health_check.in_offseason(date(2026, 10, 30), path) is True
+        assert health_check.in_offseason(date(2026, 10, 31), path) is False
+    assert not missing.exists()  # a read-only probe never creates the file

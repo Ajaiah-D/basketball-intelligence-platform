@@ -27,7 +27,8 @@ from core.constants import (
     LAST_RUN_MAX_AGE_DAYS,
     LATEST_GAME_MAX_AGE_DAYS,
     OFFSEASON_AFTER,
-    OFFSEASON_BEFORE,
+    OFFSEASON_FALLBACK_END,
+    SEASON_START_MONTH,
     WAREHOUSE_MAX_AGE_DAYS,
 )
 
@@ -43,13 +44,43 @@ def ok(msg: str) -> None:
     print(f"  OK   {msg}")
 
 
-def in_offseason(today: date | None = None) -> bool:
-    """Roughly mid-April to mid-October (OFFSEASON_AFTER to OFFSEASON_BEFORE),
-    when no regular season games are played. Stale data and an idle refresh
-    job are the correct state then, not a problem, and a check that cries
-    wolf all summer is a check nobody reads by the time the season starts."""
+OPENING_NIGHT_SQL = """
+    select min(game_date) from main_staging.stg_schedule
+    where season = ? and is_regular_season
+"""
+
+
+def opening_night(today: date, db_path: Path | None = None) -> date:
+    """The first regular-season game of the season that starts in `today`'s
+    year, from the warehouse's schedule; OFFSEASON_FALLBACK_END of that
+    year when the warehouse is missing, unreadable or has no schedule for
+    that season yet."""
+    # Imported here: nba_ingest pulls in nba_api, which only check_api and
+    # this need.
+    from ingestion.nba_ingest import current_season
+
+    season = current_season(date(today.year, SEASON_START_MONTH, 1))
+    try:
+        with duckdb.connect(str(db_path or DB_PATH), read_only=True) as con:
+            row = con.execute(OPENING_NIGHT_SQL, [season]).fetchone()
+    except duckdb.Error:
+        row = None
+    if row is not None and row[0] is not None:
+        return row[0]
+    return date(today.year, *OFFSEASON_FALLBACK_END)
+
+
+def in_offseason(today: date | None = None, db_path: Path | None = None) -> bool:
+    """From OFFSEASON_AFTER (about the end of the regular season) until the
+    next opening night, when no regular season games are played. Stale data
+    and an idle refresh job are the correct state then, not a problem, and a
+    check that cries wolf all summer is a check nobody reads by the time the
+    season starts. current_season() rolls over on October 1, weeks before
+    the first game, so the end comes from the schedule, not the calendar."""
     today = today or date.today()
-    return OFFSEASON_AFTER < (today.month, today.day) < OFFSEASON_BEFORE
+    if (today.month, today.day) <= OFFSEASON_AFTER:
+        return False
+    return today < opening_night(today, db_path)
 
 
 def fail(msg: str) -> None:

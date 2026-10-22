@@ -17,6 +17,7 @@ ROWS = [
     (3, "2024-25", "Đorđe Petrović", 10),
     (4, "2024-25", "Nikola Jokić", 79),
     (5, "2024-25", "Plain Name", 82),
+    (6, "2024-25", None, 30),  # a null name must not fold to "nan"
 ]
 
 COLUMNS = """
@@ -92,3 +93,8 @@ def test_no_match_and_an_empty_search_return_the_columns_and_no_rows(names_wareh
 def test_percent_and_underscore_are_literal(names_warehouse):
     assert players.player_latest_seasons("%").empty
     assert players.player_latest_seasons("_").empty
+
+
+def test_a_null_name_matches_nothing(names_warehouse):
+    assert players._names_containing("nan") == []
+    assert players.player_latest_seasons("nan").empty
