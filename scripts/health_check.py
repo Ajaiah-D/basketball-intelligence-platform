@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -71,16 +71,19 @@ def opening_night(today: date, db_path: Path | None = None) -> date:
 
 
 def in_offseason(today: date | None = None, db_path: Path | None = None) -> bool:
-    """From OFFSEASON_AFTER (about the end of the regular season) until the
-    next opening night, when no regular season games are played. Stale data
-    and an idle refresh job are the correct state then, not a problem, and a
-    check that cries wolf all summer is a check nobody reads by the time the
-    season starts. current_season() rolls over on October 1, weeks before
-    the first game, so the end comes from the schedule, not the calendar."""
+    """From OFFSEASON_AFTER (about the end of the regular season) until a
+    week after the next opening night. Stale data and an idle refresh job
+    are the correct state then, not a problem, and a check that cries wolf
+    all summer is a check nobody reads by the time the season starts.
+    current_season() rolls over on October 1, weeks before the first game,
+    so the end comes from the schedule, not the calendar."""
     today = today or date.today()
     if (today.month, today.day) <= OFFSEASON_AFTER:
         return False
-    return today < opening_night(today, db_path)
+    # The weekly refresh can take up to a week to load the first games, so
+    # the freshness check gets the same slack it allows in season.
+    grace = timedelta(days=LATEST_GAME_MAX_AGE_DAYS)
+    return today < opening_night(today, db_path) + grace
 
 
 def fail(msg: str) -> None:
