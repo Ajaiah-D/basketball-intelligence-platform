@@ -14,9 +14,9 @@ pages can show a split season instead of filing it under the last team.
 
 from __future__ import annotations
 
-import unicodedata
-
 import pandas as pd
+
+from core.text import fold
 
 from .core import q
 
@@ -101,27 +101,33 @@ def team_roster(season: str, team: str, min_games: int = 1) -> pd.DataFrame:
     )
 
 
-def _fold(text: str) -> str:
-    """Lower case with accents dropped, so "jokic" finds "Jokić".
-    (Task 14 replaces this and the views' copies with core.text.fold.)"""
-    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+def _names_containing(needle: str) -> list[str]:
+    """Every distinct player_name whose core.text.fold() contains `needle`
+    (already folded), taken literally: % and _ are not wildcards.
+
+    The fold runs here in Python, not in SQL: DuckDB's strip_accents() keeps
+    letters such as "ł" and "ø" that fold() spells "l" and "o", and both
+    sides of a match must fold the same way. The name list comes from the
+    query cache; folding it takes a few milliseconds.
+    """
+    if not needle:
+        return []  # an empty needle would match everyone
+    names = q("select distinct player_name from main_marts.mart_player_season")["player_name"]
+    return names[names.map(fold).str.contains(needle, regex=False)].tolist()
 
 
 def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.DataFrame:
-    """Players whose name contains `name` (case and accents ignored), each
-    at his most recent season with min_games+ games: the
-    player_season_stats() columns plus season. At most `limit` players,
-    newest seasons first (then by player_id).
-
-    contains() takes the text literally, so % and _ are not wildcards.
-    """
-    needle = _fold(name).strip()
+    """Players whose name contains `name` (case and accents ignored, as
+    core.text.fold() sees them), each at his most recent season with
+    min_games+ games: the player_season_stats() columns plus season. At
+    most `limit` players, newest seasons first (then by player_id)."""
+    matches = _names_containing(fold(name).strip())
     return q(
         """
         with latest as (
             select player_id, max(season) as season
             from main_marts.mart_player_season
-            where contains(strip_accents(lower(player_name)), ?)
+            where list_contains(?, player_name)
               and games_played >= ?
             group by player_id
             order by season desc, player_id
@@ -157,8 +163,7 @@ def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.
         join latest using (player_id, season)
         order by season desc, player_id
         """,
-        # An empty needle would match everyone; NUL matches no name.
-        (needle or "\x00", int(min_games), int(limit)),
+        (matches, int(min_games), int(limit)),
     )
 
 
