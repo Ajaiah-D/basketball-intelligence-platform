@@ -37,6 +37,9 @@ def arcade_pool(min_gp: int = 50, min_ppg: float = 14.0) -> pd.DataFrame:
             ft_pct,
             age
         from main_marts.mart_player_season
+        -- points_per_game is the mart's rounded figure, the one the card
+        -- shows, so a 13.96 season ("14.0 PPG") is in. On purpose: the
+        -- floor reads the way the number on the card does.
         where games_played >= ? and points_per_game >= ?
         order by season, player_id
         """,

@@ -45,6 +45,7 @@ def warehouse_version() -> int:
 
 
 def warehouse_exists() -> bool:
+    """Whether the warehouse file is there at all (app.py stops on False)."""
     return warehouse_path().exists()
 
 
