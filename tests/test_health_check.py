@@ -127,7 +127,12 @@ def schedule_db(tmp_path):
         (date(2026, 10, 6), True),  # a preseason game is not opening night
         (date(2026, 10, 15), True),  # no longer cut off mid-October
         (date(2026, 10, 20), True),
-        (date(2026, 10, 21), False),  # opening night: the checks expect games
+        # Opening night plus LATEST_GAME_MAX_AGE_DAYS (7) of grace for the
+        # weekly refresh to load the first games: offseason while
+        # today < opening night + 7 days.
+        (date(2026, 10, 21), True),  # opening night
+        (date(2026, 10, 27), True),  # opening night + 6
+        (date(2026, 10, 28), False),  # opening night + 7: the checks expect games
         (date(2026, 12, 1), False),
         (date(2027, 1, 15), False),
     ],
@@ -145,8 +150,9 @@ def test_opening_night_comes_from_the_regular_season_schedule(schedule_db):
     ("day", "offseason"),
     [
         (date(2027, 4, 21), True),
-        (date(2027, 10, 30), True),
-        (date(2027, 10, 31), False),  # OFFSEASON_FALLBACK_END
+        (date(2027, 10, 31), True),  # OFFSEASON_FALLBACK_END, inside the grace week
+        (date(2027, 11, 6), True),  # fallback + 6
+        (date(2027, 11, 7), False),  # fallback + 7
     ],
 )
 def test_offseason_falls_back_when_the_schedule_lacks_the_season(schedule_db, day, offseason):
@@ -160,6 +166,6 @@ def test_offseason_falls_back_without_a_readable_schedule(tmp_path):
     duckdb.connect(str(empty)).close()  # a warehouse with no stg_schedule
     for path in (missing, empty):
         assert health_check.opening_night(date(2026, 7, 1), path) == date(2026, 10, 31)
-        assert health_check.in_offseason(date(2026, 10, 30), path) is True
-        assert health_check.in_offseason(date(2026, 10, 31), path) is False
+        assert health_check.in_offseason(date(2026, 11, 6), path) is True
+        assert health_check.in_offseason(date(2026, 11, 7), path) is False
     assert not missing.exists()  # a read-only probe never creates the file

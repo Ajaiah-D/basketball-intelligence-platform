@@ -98,11 +98,13 @@ PBP_MAX_NEW_GAMES_PER_RUN = 120
 
 # The stretch with no regular-season games, when stale data and an idle
 # refresh job are the correct state. It starts after OFFSEASON_AFTER (month,
-# day) and ends at the next season's opening night, read from the
-# warehouse's schedule. When the schedule doesn't have that season yet, it
-# ends on OFFSEASON_FALLBACK_END instead: every opening night since 2006-07
-# has fallen between October 16 and 31, apart from the 2011 lockout and the
-# 2020 pandemic seasons, which opened in December.
+# day) and ends LATEST_GAME_MAX_AGE_DAYS after the next season's opening
+# night, read from the warehouse's schedule (the weekly refresh can take
+# that long to load the first games). When the schedule doesn't have that
+# season yet, OFFSEASON_FALLBACK_END stands in for opening night: every
+# opening night since 2006-07 has fallen between October 16 and 31, apart
+# from the 2011 lockout and the 2020 pandemic seasons, which opened in
+# December.
 OFFSEASON_AFTER = (4, 20)
 OFFSEASON_FALLBACK_END = (SEASON_START_MONTH, 31)
 WAREHOUSE_MAX_AGE_DAYS = 14  # the warehouse file: a weekly build plus a week of slack
