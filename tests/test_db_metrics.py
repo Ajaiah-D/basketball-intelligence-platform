@@ -195,11 +195,14 @@ def test_team_contracts_unavailable_on_an_old_warehouse(legacy_finances_warehous
 def test_a_traded_player_is_split_across_both_rosters(con):
     """Each team's roster counts only the games a player played for it, and
     the stints add back up to his whole season."""
-    season = seasons.latest_season()
-    whole = players.player_season_stats(season)
-    traded = whole[whole["team_label"].str.count(" → ") == 1]
-    if traded.empty:
-        pytest.skip(f"no two-team player in {season} in this warehouse")
+    # The newest season with a trade: early in a season nobody has moved yet.
+    for season in seasons.seasons():
+        whole = players.player_season_stats(season)
+        traded = whole[whole["team_label"].str.count(" → ") == 1]
+        if not traded.empty:
+            break
+    else:
+        pytest.skip("no two-team player in any season of this warehouse")
     pick = traded.iloc[0]
     first, second = pick["team_label"].split(" → ")
     stints = []
