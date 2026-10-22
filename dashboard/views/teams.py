@@ -5,6 +5,7 @@ so the table doesn't crowd out the team view."""
 import pandas as pd
 import streamlit as st
 
+from core.fmt import money, ordinal
 from dashboard.lib import glossary, payroll, viz
 from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
@@ -56,7 +57,7 @@ def section(title: str, help: str = "") -> None:
 
 
 def _rank_sub(rank) -> str:
-    return f"{payroll.ordinal(rank[0])} of {rank[1]}" if rank else ""
+    return f"{ordinal(rank[0])} of {rank[1]}" if rank else ""
 
 
 def _payroll_card(season: str, team: str) -> tuple[str, str] | None:
@@ -75,7 +76,7 @@ def _payroll_card(season: str, team: str) -> tuple[str, str] | None:
         return None
     rank = payroll.league_rank(league, team)
     sub = f"{_rank_sub(rank)} &middot; {label.lower()}" if rank else label.lower()
-    return payroll.money(row.iloc[0]["team_payroll"]), sub
+    return money(row.iloc[0]["team_payroll"]), sub
 
 
 def _cards(items: list[tuple]) -> None:
@@ -136,7 +137,7 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
         else None
     )
 
-    cards = [("Record", f"{row.w}-{row.l}", f"{payroll.ordinal(seed)} in the {row.conf}", "", "")]
+    cards = [("Record", f"{row.w}-{row.l}", f"{ordinal(seed)} in the {row.conf}", "", "")]
     if a is not None:
         for label, field, high, fmt in [
             ("Net rating", "net_rating", True, "{:+.1f}"),

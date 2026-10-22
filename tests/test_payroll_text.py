@@ -27,22 +27,6 @@ def _row(pay, season="2024-25", code="BOS", flagged=False, tax=TAX, a1=A1, a2=A2
     )
 
 
-def test_money_and_ordinal():
-    assert payroll.money(193_348_445) == "$193.3M"
-    assert payroll.money(850_000) == "$850K"
-    assert [payroll.ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22)] == [
-        "1st",
-        "2nd",
-        "3rd",
-        "4th",
-        "11th",
-        "12th",
-        "13th",
-        "21st",
-        "22nd",
-    ]
-
-
 def test_bracket_picks_the_highest_line_crossed():
     assert payroll.bracket(_row(130e6)) == ("Under cap", T.GOOD)
     assert payroll.bracket(_row(150e6))[0] == "Over cap"

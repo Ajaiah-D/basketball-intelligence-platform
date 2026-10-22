@@ -15,6 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from core import teams
+from core.fmt import money, ordinal
 from dashboard.lib import franchises, payroll, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import finances
@@ -93,7 +94,7 @@ def _contracts_card(contracts: pd.DataFrame) -> str:
         f'<div class="bip-row">{T.rank_badge(int(r.salary_rank))}'  # type: ignore[arg-type]  # stubs type an itertuples field as any scalar
         f'<span class="bip-name">{html.escape(str(r.player))}</span>'
         f'<span class="bip-team">{r.share_of_payroll:.0%}</span>'
-        f'<span class="bip-val">{payroll.money(r.salary_usd)}</span></div>'  # type: ignore[arg-type]  # stubs type an itertuples field as any scalar
+        f'<span class="bip-val">{money(r.salary_usd)}</span></div>'  # type: ignore[arg-type]  # stubs type an itertuples field as any scalar
         for r in contracts.head(5).itertuples()
     ]
     return f'<div class="bip-card"><h4>Biggest contracts</h4>{"".join(rows)}</div>'
@@ -119,11 +120,11 @@ def _render_team_season(
     reliable = label != "Data incomplete"
     k1, k2, k3 = st.columns(3)
     k1.markdown(
-        T.kpi("Payroll", payroll.money(row["team_payroll"]) if reliable else "N/A"),
+        T.kpi("Payroll", money(row["team_payroll"]) if reliable else "N/A"),
         unsafe_allow_html=True,
     )
     k2.markdown(
-        T.kpi("League rank", f"{payroll.ordinal(rank[0])} of {rank[1]}" if rank else "N/A"),
+        T.kpi("League rank", f"{ordinal(rank[0])} of {rank[1]}" if rank else "N/A"),
         unsafe_allow_html=True,
     )
     k3.markdown(T.kpi("Status", label, accent=color), unsafe_allow_html=True)

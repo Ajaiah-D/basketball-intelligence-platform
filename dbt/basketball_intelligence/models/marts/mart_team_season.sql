@@ -152,6 +152,8 @@ select
             / nullif(t.possessions, 0), 1))                       as net_rating,
     coalesce(a.pace,
         round(48 * t.possessions / nullif(t.team_minutes / 5.0, 0), 1)) as pace,
+    -- The year in the last label is core.constants.COMPLETE_BOX_SCORE_FIRST_SEASON
+    -- (dbt can't import it); which rows get the label follows the data.
     case when a.offensive_rating is not null then 'NBA official'
          when t.possessions is not null then 'estimated from box score'
          else 'not available before 1985-86' end                  as ratings_source,

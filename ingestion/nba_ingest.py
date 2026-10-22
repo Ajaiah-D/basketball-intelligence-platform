@@ -62,7 +62,11 @@ from nba_api.stats.static import teams as static_teams
 # Run as `python ingestion/nba_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
-from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
+from core.constants import (
+    ADVANCED_STATS_FIRST_SEASON,
+    PBP_MAX_NEW_GAMES_PER_RUN,
+    SEASON_START_MONTH,
+)
 from core.io import (
     TransientError,
     atomic_write_parquet,
@@ -75,11 +79,6 @@ from core.io import (
 )
 
 RAW_DIR = paths.raw_dir()
-
-# The NBA only publishes advanced box score stats (ratings, usage, PIE) from
-# 1996-97 on; earlier seasons return zero rows. Everything before that is
-# covered by the metrics dbt derives from raw box scores instead.
-ADVANCED_FIRST_SEASON = "1996-97"
 
 # --- Rate limiting -----------------------------------------------------------
 # stats.nba.com has no published limits; community experience is that bursts
@@ -173,11 +172,11 @@ def call_endpoint(endpoint_cls, **kwargs) -> pd.DataFrame:
 
 
 def current_season(today: date | None = None) -> str:
-    """NBA season string like '2025-26'. Seasons start in October; before
-    October we are still in (or just finished) the season that began the
-    prior year."""
+    """NBA season string like '2025-26'. Seasons start in October
+    (SEASON_START_MONTH); before October we are still in (or just finished)
+    the season that began the prior year."""
     today = today or date.today()
-    start_year = today.year if today.month >= 10 else today.year - 1
+    start_year = today.year if today.month >= SEASON_START_MONTH else today.year - 1
     return f"{start_year}-{str(start_year + 1)[-2:]}"
 
 
@@ -314,7 +313,10 @@ def accumulate_play_by_play(
 
 
 def has_advanced_stats(season: str) -> bool:
-    return int(season[:4]) >= int(ADVANCED_FIRST_SEASON[:4])
+    """Whether the NBA publishes advanced stats for `season`. Earlier
+    seasons return zero rows; dbt derives their metrics from the box scores
+    instead."""
+    return int(season[:4]) >= int(ADVANCED_STATS_FIRST_SEASON[:4])
 
 
 def fetch_player_advanced(season: str) -> pd.DataFrame:
@@ -511,7 +513,7 @@ def run(
         elif not has_advanced_stats(season):
             log.info(
                 "  no official advanced stats before %s - dbt derives them from box scores instead",
-                ADVANCED_FIRST_SEASON,
+                ADVANCED_STATS_FIRST_SEASON,
             )
         if wants_schedule:
             save(fetch_schedule(season), "schedule", season)

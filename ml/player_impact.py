@@ -45,36 +45,28 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from core import paths
+from core.constants import (
+    ADVANCED_STATS_FIRST_SEASON,
+    COMPLETE_BOX_SCORE_FIRST_SEASON,
+    COST_QUANTILES,
+    PLAYERS_ON_FLOOR,
+)
 
 log = logging.getLogger(__name__)
 
 STATS = ["pts", "orb", "drb", "ast", "stl", "blk", "tov", "fga", "fta", "tpm", "pf"]
 FEATURES = [f"{s}_r" for s in STATS]
 
-FIRST_SEASON = "1985-86"  # complete box scores start here
-FIRST_PM_SEASON = "1996-97"  # plus-minus starts here
+FIRST_SEASON = COMPLETE_BOX_SCORE_FIRST_SEASON
+FIRST_PM_SEASON = ADVANCED_STATS_FIRST_SEASON  # plus-minus starts with the advanced stats
 MIN_TRAIN_MINUTES = 500
 TEAM_NET_WEIGHT = 0.7  # how much of the team's net rating is "not him"
 RIDGE_ALPHA = 5.0
 HOLDOUT_SEASONS = 5
 MIN_GP = 40
 MIN_MPG = 15.0
-USAGE_LEAGUE_TOTAL = 5.0  # five average players on the floor
-
-# Build-mode prices (1..12). A player-season costs 1 plus the number of these
-# impact quantiles (over the whole eligible pool, every season together) it
-# clears. Tuned on the 2026-10-15 warehouse against draft.BUDGET (36):
-#   - cost 1 is replacement level, the bottom 15% (impact below about -0.9),
-#     so eight of them make a bad team (about -11), not a .500 one;
-#   - costs 2..10 are evenly spaced in impact, about +0.5 a credit, so no
-#     price band is a bargain next to its neighbours;
-#   - 11 is the top 0.5% down to 0.1% and 12 the top 0.1% (+4.3 and up): an
-#     all-time great season costs about a third of the budget, so three of
-#     them plus fillers no longer fits.
-# With those, the best 36-credit build in the all-time, 2024-25 and 2015-16
-# pools rates about +12 to +14 (not pinned at the +16 ceiling), eight
-# cost-4 players about +4 to +5, and eight cost-1 players below -10.
-COST_QUANTILES = [0.15, 0.32, 0.53, 0.72, 0.85, 0.925, 0.965, 0.985, 0.991, 0.995, 0.999]
+# A league-average lineup's usage, written to the meta table for the simulator.
+USAGE_LEAGUE_TOTAL = float(PLAYERS_ON_FLOOR)
 
 # One row per player per team per season. plus-minus is summed only when
 # every game has it: sum() skips nulls, so a partly-missing season would
@@ -146,7 +138,7 @@ def relative_rates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def costs_from_impact(impact: pd.Series) -> pd.Series:
-    """Build-mode cost (1..12) of each player-season: 1 + how many of the
+    """Build-mode cost (1..MAX_COST) of each player-season: 1 + how many of the
     COST_QUANTILES thresholds of `impact` it reaches. Pass the whole pool;
     the thresholds are its quantiles. Keeps the index."""
     values = impact.to_numpy(float)
@@ -214,13 +206,13 @@ def _player_seasons(team_rows: pd.DataFrame) -> pd.DataFrame:
 
 def _calibrate(team_rows: pd.DataFrame, seasons: pd.DataFrame, net: pd.DataFrame) -> dict:
     """Fit team net rating = offset + scale x S, where S is the team's
-    minutes-share-weighted sum of its players' season impact (x5 so the
-    shares sum to five players on the floor)."""
+    minutes-share-weighted sum of its players' season impact (shares scaled
+    to sum to PLAYERS_ON_FLOOR, five players on the floor)."""
     rows = team_rows[["season", "team_abbreviation", "player_id", "mins"]].merge(
         seasons[["season", "player_id", "impact"]], on=["season", "player_id"]
     )
     team_total = rows.groupby(["season", "team_abbreviation"])["mins"].transform("sum")
-    rows["contrib"] = (rows["mins"] / team_total * 5.0 * rows["impact"]).fillna(0.0)
+    rows["contrib"] = (rows["mins"] / team_total * PLAYERS_ON_FLOOR * rows["impact"]).fillna(0.0)
     s = rows.groupby(["season", "team_abbreviation"], as_index=False)["contrib"].sum()
     s = s.merge(net, on=["season", "team_abbreviation"], how="inner")
     x = s["contrib"].to_numpy(float)

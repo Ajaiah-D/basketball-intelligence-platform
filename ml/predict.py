@@ -274,7 +274,7 @@ def fit_and_predict(con, through: date | None = None) -> pd.DataFrame:
     (default: THROUGH_DAYS_AHEAD from today). Returns stamped rows in table
     column order; empty when nothing is scheduled."""
     from ml.elo import BASE_RATING, current_ratings
-    from ml.features import build_feature_frame
+    from ml.features import build_feature_frame, load_played_games
     from ml.train import margin_to_win_probability
 
     if through is None:
@@ -317,15 +317,7 @@ def fit_and_predict(con, through: date | None = None) -> pd.DataFrame:
 
     model = Ridge().fit(X_train, history["margin"].astype(float))
 
-    games = con.execute(
-        """
-        select game_id, season, game_date, home_team_id, away_team_id,
-               home_won, is_neutral_site
-        from main_marts.fct_team_game
-        where not (home_points = 0 and away_points = 0)
-        order by game_date, game_id
-        """
-    ).df()
+    games = load_played_games(con)
     # Seasons don't overlap and there is a months-long gap between them, so
     # the 7-day slate window always falls inside exactly one season in
     # practice - this is not expected to ever fire, but if the schedule ever

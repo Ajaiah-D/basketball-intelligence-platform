@@ -5,8 +5,8 @@ game's input. Ratings are emitted as they stood *before* each game, which
 is the only form a pre-tipoff model may use.
 
 Between seasons ratings regress toward 1500 to account for roster turnover.
-The default carry of 0.75 is the common public choice; it is a tunable, not
-a law.
+The hyperparameters' defaults (K, home advantage, carry) live in
+core.constants, shared by compute_elo and current_ratings.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+
+from core.constants import ELO_HOME_ADVANTAGE, ELO_K, ELO_SEASON_CARRY
 
 BASE_RATING = 1500.0
 
@@ -55,9 +57,9 @@ def _apply_game(
 
 def compute_elo(
     games: pd.DataFrame,
-    k: float = 20.0,
-    home_advantage: float = 100.0,
-    carry: float = 0.75,
+    k: float = ELO_K,
+    home_advantage: float = ELO_HOME_ADVANTAGE,
+    carry: float = ELO_SEASON_CARRY,
 ) -> pd.DataFrame:
     """Pre-game Elo for every game, oldest first.
 
@@ -75,7 +77,7 @@ def compute_elo(
     Marathon bombing) is not a real result and would corrupt both teams'
     ratings around that date if included. The filter lives in the SQL that
     builds `games` (mart_game_features.sql's valid_games CTE and
-    ml/features.py's matching query against fct_team_game), not here, since
+    ml.features.load_played_games), not here, since
     this function only sees home_won and has no access to the actual score.
 
     Callers converting these ratings to a win probability must add
@@ -111,9 +113,9 @@ def compute_elo(
 def current_ratings(
     games: pd.DataFrame,
     as_of_season: str,
-    k: float = 20.0,
-    home_advantage: float = 100.0,
-    carry: float = 0.75,
+    k: float = ELO_K,
+    home_advantage: float = ELO_HOME_ADVANTAGE,
+    carry: float = ELO_SEASON_CARRY,
 ) -> dict:
     """Each team's rating right now: the state after every game in `games`,
     with the between-season regression applied if `as_of_season` is a

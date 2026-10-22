@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .payroll import ordinal
+from core.fmt import ordinal
 
 CLOSE_GAME_MARGIN = 5
 

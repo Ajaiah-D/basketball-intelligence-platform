@@ -11,6 +11,7 @@ gated on minutes played rather than showing the whole league.
 
 import streamlit as st
 
+from core.constants import ADVANCED_STATS_FIRST_SEASON, COMPLETE_BOX_SCORE_FIRST_SEASON
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, seasons
@@ -92,13 +93,13 @@ ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
         "net_rating",
         True,
         "Team point differential per 100 possessions with the player on the floor "
-        "(official NBA figure, 1996-97 on)",
+        f"(official NBA figure, {ADVANCED_STATS_FIRST_SEASON} on)",
     ),
     "PIE": (
         "player_impact_estimate",
         True,
         "Player impact estimate: share of the game's total production "
-        "(official NBA figure, 1996-97 on)",
+        f"(official NBA figure, {ADVANCED_STATS_FIRST_SEASON} on)",
     ),
 }
 
@@ -171,7 +172,8 @@ def render() -> None:
         st.info(
             f"Advanced metrics are not available for {season}. The NBA's box "
             "scores are missing rebounds, turnovers and field goal attempts "
-            "before 1985-86, and those are the inputs every rate metric needs. "
+            f"before {COMPLETE_BOX_SCORE_FIRST_SEASON}, and those are the inputs every rate "
+            "metric needs. "
             f"Pick {available[-1]} or later in the sidebar."
         )
         return
@@ -230,7 +232,7 @@ def render() -> None:
         "Net rating and PIE are official NBA figures; everything else is computed from box scores."
         if has_official
         else "All metrics are computed from box scores. The NBA did not publish "
-        "official advanced stats until 1996-97."
+        f"official advanced stats until {ADVANCED_STATS_FIRST_SEASON}."
     )
     st.caption(
         f"{len(qualified)} players with {min_minutes}+ minutes. Sorted by game score. {source_note}"
