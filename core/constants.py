@@ -47,9 +47,11 @@ PREDICTION_MARGIN_SD = 13.5
 # GAME_MARGIN_SD is the Arcade simulator's game-to-game noise around a known
 # rating gap: margin ~ Normal(net_a - net_b + HOME_EDGE_POINTS, GAME_MARGIN_SD).
 # Both teams' strengths are given, so there is no model error to cover.
-# Measured 2026-10-22 as the SD of real margins around each game's
-# full-season net rating gap plus the home edge: 12.29 from 2005-06, 12.99
-# from 2015-16, 11.83 from 1985-86 (the Arcade's whole range).
+# 12.7 is kept from the simulator's original measurement. Re-measured
+# 2026-10-22 as the SD of real margins around each game's full-season net
+# rating gap plus the home edge: 12.29 from 2005-06, 12.99 from 2015-16 and
+# 11.83 from 1985-86 (the Arcade's whole range), so 12.7 sits within the
+# measured range.
 GAME_MARGIN_SD = 12.7
 
 # Points the home side adds to the simulator's expected margin. Real margins
@@ -94,12 +96,15 @@ PBP_MAX_NEW_GAMES_PER_RUN = 120
 
 # --- Health check ---------------------------------------------------------------
 
-# (month, day) bounds, both exclusive, of the stretch with no regular-season
-# games: stale data and an idle refresh job are the correct state then. The
-# end is two weeks after the October 1 rollover (SEASON_START_MONTH), when
-# the new season is already current but has no games yet.
+# The stretch with no regular-season games, when stale data and an idle
+# refresh job are the correct state. It starts after OFFSEASON_AFTER (month,
+# day) and ends at the next season's opening night, read from the
+# warehouse's schedule. When the schedule doesn't have that season yet, it
+# ends on OFFSEASON_FALLBACK_END instead: every opening night since 2006-07
+# has fallen between October 16 and 31, apart from the 2011 lockout and the
+# 2020 pandemic seasons, which opened in December.
 OFFSEASON_AFTER = (4, 20)
-OFFSEASON_BEFORE = (SEASON_START_MONTH, 15)
+OFFSEASON_FALLBACK_END = (SEASON_START_MONTH, 31)
 WAREHOUSE_MAX_AGE_DAYS = 14  # the warehouse file: a weekly build plus a week of slack
 LATEST_GAME_MAX_AGE_DAYS = 7  # in season games land every 1-3 days
 LAST_RUN_MAX_AGE_DAYS = 10  # the weekly refresh plus a few days
