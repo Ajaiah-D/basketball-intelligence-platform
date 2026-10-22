@@ -227,6 +227,24 @@ def test_a_clean_dbt_build_records_zero_warnings(fake_run):
     assert "dbt_warning_tests" not in out["run"]
 
 
+def test_a_failed_dbt_build_still_records_its_warnings(fake_run):
+    # A test that errors stops the build but dbt still prints its summary;
+    # the warnings in it are recorded and the run fails exactly as before.
+    output = (
+        "1 of 3 WARN 2 assert_player_season_matches_game_logs ..... [WARN 2 in 0.1s]\n"
+        "2 of 3 FAIL 1 assert_marts_not_empty ..... [FAIL 1 in 0.1s]\n"
+        "Done. PASS=1 WARN=1 ERROR=1 SKIP=0 NO-OP=0 REUSED=0 TOTAL=3\n"
+    )
+    out = fake_run("dbt_build", output={"dbt_build": output})
+    assert out["exit"] != 0
+    assert out["run"]["ok"] is False
+    (dbt,) = [s for s in out["run"]["steps"] if s["step"] == "dbt_build"]
+    assert dbt["ok"] is False
+    assert "player_impact" not in out["ran"]
+    assert out["run"]["dbt_warnings"] == 1
+    assert out["run"]["dbt_warning_tests"] == ["assert_player_season_matches_game_logs"]
+
+
 def test_a_dbt_log_without_a_summary_records_nothing(fake_run):
     out = fake_run("dbt_build", output={"dbt_build": "Compilation Error in model foo\n"})
     assert "dbt_warnings" not in out["run"]

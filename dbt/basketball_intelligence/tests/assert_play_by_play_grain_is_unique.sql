@@ -7,7 +7,7 @@
 -- Grouping, not a unique test on a concatenation, so a null in any part
 -- of the key still counts as a value.
 
-select game_id, action_number, action_id, count(*) as rows
+select game_id, action_number, action_id, count(*) as dupes
 from {{ ref('stg_play_by_play') }}
 group by game_id, action_number, action_id
 having count(*) > 1

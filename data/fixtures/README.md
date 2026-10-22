@@ -16,7 +16,7 @@ team-seasons named below. Keep each file under about 2 MB.
 | `player_game_logs/`, `team_game_logs/` `2024-25` | a modern season: official advanced stats, game features, standings |
 | `player_advanced/`, `team_advanced/` `1996-97` | the first official advanced season, which gives 1990-91 players their age (the Arcade's ages test) |
 | `player_advanced/`, `team_advanced/` `2024-25` | the official advanced stats beside the 2024-25 box scores |
-| `team_payroll/`, `team_payroll_players/` `1984-85`, `2024-25` | two whole payroll seasons (all 23 and 30 teams), so `assert_marts_not_empty` sees a full league |
+| `team_payroll/`, `team_payroll_players/` `1984-85`, `2024-25` | two whole payroll seasons (all 23 and 30 teams), so `assert_payroll_covers_every_team` sees a full league |
 | `team_payroll/`, `team_payroll_players/` `1986-87` (DEN, GOS), `1988-89` (MIA), `1989-90` (BOS), `1998-99` (HOU), `2009-10` (BOS), `2023-24` (the eight taxpayers) | exactly the team-seasons the `assert_team_finances_*` known-case tests name, so each test finds its rows. 1986-87 GOS has no salary rows at all |
 | `play_by_play/2025-26.parquet` | shot charts and the play-by-play grain test |
 | `schedule/2026-27.parquet` | upcoming games for the predictions |
