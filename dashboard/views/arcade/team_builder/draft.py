@@ -14,13 +14,13 @@ from dashboard.lib import draft, media, sim
 from dashboard.lib import theme as T
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.views.arcade.team_builder import state as tb_state
-from dashboard.views.arcade.team_builder.build import (
+from dashboard.views.arcade.team_builder.results import build_results
+from dashboard.views.arcade.team_builder.roster import (
     last_team,
     roster_grid,
     slot_label,
     slot_labels,
 )
-from dashboard.views.arcade.team_builder.results import build_results
 
 
 def _option_html(r) -> str:
@@ -117,10 +117,10 @@ def render_draft(pool: pd.DataFrame, season: str | None, choice: str, meta) -> N
                     args=(season, key),
                 )
         st.markdown("#### Your team")
-        roster_grid(pool, labels, spot, editable=False)
+        roster_grid(pool, labels, spot)
         return
 
-    roster_grid(pool, labels, None, editable=False)
+    roster_grid(pool, labels, None)
     rows = pool.loc[[lb for lb in labels if lb is not None]]
     st.caption(
         f"Your hidden budget was **{state['budget']} credits** (every draft "
