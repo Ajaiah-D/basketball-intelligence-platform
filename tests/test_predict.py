@@ -238,7 +238,7 @@ def test_a_failed_write_leaves_the_history_untouched(tmp_path, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(core_io.os, "replace", broken_replace)
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="disk full"):
         append_history(_stamped(at="2026-10-20 10:00:00"), path)
     assert path.read_bytes() == before
     assert list(tmp_path.iterdir()) == [path]

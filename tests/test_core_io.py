@@ -2,6 +2,7 @@
 retry loop both ingesters share. Nothing here touches the network."""
 
 import logging
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -89,7 +90,7 @@ def test_a_failed_serialisation_keeps_the_original(tmp_path):
     core_io.atomic_write_parquet(_frame(3), path)
     # A column pyarrow can't serialise fails inside to_parquet itself.
     bad = pd.DataFrame({"a": [object(), object()]})
-    with pytest.raises(pa.ArrowInvalid):
+    with pytest.raises(pa.ArrowInvalid, match="Conversion failed for column a"):
         core_io.atomic_write_parquet(bad, path)
     assert len(pd.read_parquet(path)) == 3
     assert list(tmp_path.iterdir()) == [path]
@@ -217,7 +218,7 @@ def test_the_last_transient_error_is_raised_after_all_attempts(sleeps):
 @pytest.mark.parametrize("error", [TypeError("bug"), KeyError("col"), ValueError("bad")])
 def test_non_transient_errors_are_not_retried(sleeps, error):
     call = Flaky(error)
-    with pytest.raises(type(error)):
+    with pytest.raises(type(error), match=re.escape(str(error))):
         _retry(call)
     assert call.calls == 1
     assert sleeps == []
@@ -249,7 +250,7 @@ def test_retry_after_up_to_the_cap_is_honoured(sleeps):
 
 def test_retry_after_over_the_cap_gives_up_without_waiting(sleeps):
     call = Flaky(core_io.TransientError("429", status=429, retry_after=301.0))
-    with pytest.raises(core_io.TransientError) as exc:
+    with pytest.raises(core_io.TransientError, match="429") as exc:
         _capped(call, cap=300)
     assert exc.value.retry_after == 301.0
     assert call.calls == 1

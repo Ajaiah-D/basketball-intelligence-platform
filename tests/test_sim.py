@@ -55,7 +55,7 @@ def test_usage_penalty_is_zero_without_positive_impacts_or_excess():
 
 
 def test_team_net_rating_rejects_wrong_roster_size():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="a roster needs exactly 8 players"):
         sim.team_net_rating([1.0] * 7, [1.0] * 7, 2.0, 0.0)
 
 
@@ -162,11 +162,17 @@ def test_season_once_plays_the_projection_schedule():
 
 
 def test_different_seeds_give_different_seasons():
-    totals = {
+    # A net-0 team against a net-0 league is close to a coin flip per game,
+    # so 20 seasons should spread like binomial(82, 1/2): sd about 4.5 wins
+    # around 41. "More than one distinct total" would pass a simulator that
+    # only ever produced 40 or 41 wins.
+    wins = [
         sim.simulate_season_once(0.0, [0.0] * 29, np.random.default_rng(s))["wins"]
         for s in range(20)
-    }
-    assert len(totals) > 1
+    ]
+    assert len(set(wins)) >= 8
+    assert 3.0 <= np.std(wins) <= 7.0
+    assert abs(np.mean(wins) - 41) <= 3
 
 
 def test_same_seed_gives_identical_season():

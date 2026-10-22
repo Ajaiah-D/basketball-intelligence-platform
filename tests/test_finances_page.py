@@ -140,9 +140,23 @@ def test_merged_franchise_renders_both_codes_as_one_history(warehouse_with_finan
     assert table["Season"].tolist() == ["1995-96", "1996-97"]
 
 
-@pytest.mark.parametrize("team", ["BOS", "NYK", "DEN", "MIA", "GSW"])
-def test_every_team_in_the_fixture_renders(warehouse_with_finances_mart, team):
-    _run(team)
+@pytest.mark.parametrize(
+    "team,expected",
+    [
+        ("BOS", "In 2023-24 the Boston Celtics spent $180.0M"),
+        ("NYK", "In 2023-24 the New York Knicks spent $150.0M"),
+        # No 2023-24 row: the page names the team and says so.
+        ("DEN", "No payroll data for the Denver Nuggets in 2023-24."),
+        ("MIA", "No payroll data for the Miami Heat in 2023-24."),
+        ("GSW", "No payroll data for the Golden State Warriors in 2023-24."),
+    ],
+)
+def test_every_team_in_the_fixture_renders(warehouse_with_finances_mart, team, expected):
+    """Rendering without an exception is not enough: the selected team's
+    own name, and its payroll where it has one, has to reach the page."""
+    at = _run(team)
+    shown = _markdown(at) + " " + " ".join(i.value for i in at.get("info"))
+    assert expected in shown
 
 
 def test_a_sidebar_season_before_payroll_data_falls_back_to_the_latest(

@@ -292,7 +292,7 @@ def test_retry_after_over_the_cap_fails_without_waiting(monkeypatch, sleeps):
     # An hour-long block is not worth sleeping through inside the weekly
     # refresh; payroll is non-fatal and next week's run tries again.
     too_long = str(team_payroll_ingest.MAX_RETRY_AFTER_SECONDS + 1)
-    with pytest.raises(core_io.TransientError):
+    with pytest.raises(core_io.TransientError, match="HTTP 429 from"):
         _fetch(monkeypatch, _response(429, headers={"Retry-After": too_long}), _response(200))
     assert sleeps == []
 
@@ -311,7 +311,7 @@ def test_a_long_block_stops_the_remaining_teams(monkeypatch, sleeps):
 
 
 def test_429_without_retry_after_backs_off_a_minute_then_doubles(monkeypatch, sleeps):
-    with pytest.raises(core_io.TransientError):
+    with pytest.raises(core_io.TransientError, match="HTTP 429 from"):
         _fetch(monkeypatch, *[_response(429)] * team_payroll_ingest.MAX_RETRIES)
     assert len(sleeps) == team_payroll_ingest.MAX_RETRIES - 1
     for wait, floor in zip(sleeps, [60, 120, 240], strict=False):
@@ -348,7 +348,7 @@ def test_404_is_not_retried_and_means_no_page(monkeypatch, sleeps):
 
 
 def test_403_is_not_retried(monkeypatch, sleeps):
-    with pytest.raises(requests.HTTPError):
+    with pytest.raises(requests.HTTPError, match="403"):
         _fetch(monkeypatch, _response(403), _response(200, "ok"))
     assert sleeps == []
 
@@ -356,7 +356,7 @@ def test_403_is_not_retried(monkeypatch, sleeps):
 def test_type_error_is_not_retried(monkeypatch, sleeps):
     get = FakeGet(TypeError("bad argument"), _response(200, "ok"))
     monkeypatch.setattr(team_payroll_ingest.requests, "get", get)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="bad argument"):
         team_payroll_ingest.fetch_team_season_html("BOS", "2009-10")
     assert get.calls == 1
     assert sleeps == []
@@ -407,7 +407,7 @@ def test_one_failing_team_does_not_stop_the_others(monkeypatch, caplog):
 
 def test_a_bug_still_stops_the_run(monkeypatch):
     _pages_or_errors(monkeypatch, {"BOS": TypeError("bug"), "DAL": BOS_HTML})
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="bug"):
         team_payroll_ingest.ingest_season("2009-10", ["BOS", "DAL"])
 
 

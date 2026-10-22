@@ -130,7 +130,7 @@ def test_stats_nba_error_json_with_a_5xx_is_retried(monkeypatch, sleeps):
 
 
 def test_backoff_grows_and_the_last_error_is_raised(monkeypatch, sleeps):
-    with pytest.raises(core_io.TransientError):
+    with pytest.raises(core_io.TransientError, match="HTTP 503 from"):
         _call(monkeypatch, *[(503, "")] * nba_ingest.MAX_RETRIES)
     assert len(sleeps) == nba_ingest.MAX_RETRIES - 1
     for wait, floor in zip(sleeps, [4, 8, 16], strict=False):
@@ -141,13 +141,13 @@ def test_backoff_grows_and_the_last_error_is_raised(monkeypatch, sleeps):
 def test_a_non_json_answer_without_a_server_error_is_not_retried(monkeypatch, sleeps, status):
     # A 200 or 4xx that isn't JSON is a wrong request or a moved endpoint;
     # asking again gets the same page.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Expecting value"):
         _call(monkeypatch, (status, "<html>nope</html>"), (200, GAME_LOG_BODY))
     assert sleeps == []
 
 
 def test_a_response_missing_its_result_set_is_not_retried(monkeypatch, sleeps):
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError, match="LeagueGameLog"):
         _call(monkeypatch, (200, json.dumps({"resultSets": []})), (200, GAME_LOG_BODY))
     assert sleeps == []
 
@@ -159,7 +159,7 @@ def test_type_error_is_not_retried(monkeypatch, sleeps):
         calls.append(kwargs)
         raise TypeError("unexpected keyword argument 'sesaon'")
 
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="sesaon"):
         nba_ingest.call_endpoint(bad_endpoint, sesaon="2025-26")
     assert len(calls) == 1
     assert sleeps == []
@@ -176,7 +176,7 @@ def test_a_response_without_a_readable_status_is_not_retried(monkeypatch, sleeps
         def get_request(self):
             raise ValueError("Expecting value: line 1 column 1 (char 0)")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Expecting value"):
         nba_ingest.call_endpoint(NoStatusEndpoint, season="2025-26")
     assert sleeps == []
 

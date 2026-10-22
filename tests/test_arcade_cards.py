@@ -50,7 +50,11 @@ def test_ages_count_back_from_the_first_known_age(con):
     assert len(known) and known["age"].between(17, 45).all()
     # Within one player's career, age rises exactly one year per season.
     years = known["season"].str[:4].astype(int)
-    drift = (known["age"] - years).groupby(known["player_id"]).agg(["min", "max"])
+    drift = (known["age"] - years).groupby(known["player_id"]).agg(["min", "max", "count"])
+    # Only a player with two or more aged seasons can drift, so without one
+    # the check below is vacuous. CI's fixtures have them: 1984-85 and
+    # 1990-91 counted back from 1996-97's official ages.
+    assert (drift["count"] >= 2).any(), "no player has two seasons with a known age"
     assert ((drift["max"] - drift["min"]) <= 1).all()
 
 
