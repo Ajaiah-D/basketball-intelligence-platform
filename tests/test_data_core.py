@@ -134,3 +134,27 @@ def test_objects_exist_lets_a_broken_file_raise(tmp_path):
     path.write_bytes(b"not a duckdb file" * 100)
     with core.use_warehouse(path), pytest.raises(duckdb.Error):
         core.objects_exist("main.t")
+
+
+def test_use_warehouse_clears_the_caches_on_entry_and_exit(tmp_path):
+    """The file's mtime is pinned after every rewrite, so the cache key never
+    changes: only use_warehouse's own clearing can make q() read it again."""
+    path = _warehouse(tmp_path / "w.duckdb", 1)
+    version = path.stat().st_mtime_ns
+
+    def rewrite(value: int) -> None:
+        _warehouse(path, value)
+        os.utime(path, ns=(path.stat().st_atime_ns, version))
+
+    def read() -> list[int]:
+        return core.q("select x from t")["x"].tolist()
+
+    with core.use_warehouse(path):
+        assert read() == [1]
+        rewrite(2)
+        assert read() == [1]  # served from the cache
+        with core.use_warehouse(path):
+            assert read() == [2]  # entering cleared it
+            rewrite(3)
+            assert read() == [2]  # served from the cache
+        assert read() == [3]  # leaving cleared it
