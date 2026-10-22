@@ -13,6 +13,8 @@ import streamlit as st
 
 from dashboard.lib import db, glossary, media, viz
 from dashboard.lib import theme as T
+from dashboard.lib.data import seasons
+from dashboard.lib.stats import percentile_of
 
 # The default table: enough to answer "who is efficient and how involved
 # were they" without becoming a spreadsheet.
@@ -91,7 +93,7 @@ def leader_card(title: str, df, col: str, fmt: str = "{:.1f}") -> str:
 
 
 def render() -> None:
-    season = st.session_state.get("season") or db.latest_season()
+    season = st.session_state.get("season") or seasons.latest_season()
 
     st.markdown(f"## Advanced &nbsp;{T.chip(season)}", unsafe_allow_html=True)
 
@@ -118,9 +120,8 @@ def render() -> None:
         )
         return
 
+    # The mart carries team_label ("CHI → BOS" for a traded player).
     stats = db.player_advanced(season)
-    if not stats.empty:
-        stats = db.with_team_labels(stats, season, team_col="team_abbreviation")
     if stats.empty:
         st.info("No player data for this season yet.")
         return
@@ -245,7 +246,7 @@ def render() -> None:
         val = row.get(col)
         if val is None or val != val:
             continue
-        pct = db.percentile_of(qualified[col], val, higher_better)
+        pct = percentile_of(qualified[col], val, higher_better)
         if pct is not None:
             rows.append((label, pct, val))
     st.plotly_chart(viz.percentile_bars(rows), config=viz.PLOTLY_CONFIG, width="stretch")
@@ -274,8 +275,8 @@ def render() -> None:
     labels, a_pcts, b_pcts = [], [], []
     for label in COMPARE_METRICS:
         col, higher_better, _ = db.ADVANCED_METRICS[label]
-        pa = db.percentile_of(qualified[col], a.get(col), higher_better)
-        pb = db.percentile_of(qualified[col], b.get(col), higher_better)
+        pa = percentile_of(qualified[col], a.get(col), higher_better)
+        pb = percentile_of(qualified[col], b.get(col), higher_better)
         if pa is not None and pb is not None:
             labels.append(label)
             a_pcts.append(pa)

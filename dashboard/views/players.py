@@ -7,7 +7,7 @@ outliers (a center shooting 100% on three 3PA) are visible at a glance.
 
 Search in Season scope looks in the selected season first; a player who
 didn't play that season is still found, at his most recent season, marked
-by a Season column (db.player_latest_seasons).
+by a Season column (data.players.player_latest_seasons).
 """
 
 import unicodedata
@@ -15,8 +15,10 @@ import unicodedata
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, media, viz
+from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
+from dashboard.lib.data import players, seasons
+from dashboard.lib.stats import percentile_of
 
 TABLE_COLS = [
     "player",
@@ -63,14 +65,14 @@ SHOOTING_RANKS = [
 
 
 def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
-    pool = db.player_season_stats(season)
+    pool = players.player_season_stats(season)
     out = []
     for label, pct_col, vol_col, min_vol in SHOOTING_RANKS:
         value = row.get(pct_col)
         if value is None or value != value or row.get(vol_col, 0) < min_vol:
             continue
         qualified = pool[pool[vol_col] >= min_vol][pct_col]
-        rank = db.percentile_of(qualified, value, higher_is_better=True)
+        rank = percentile_of(qualified, value, higher_is_better=True)
         if rank is not None:
             out.append((label, rank, value))
     return out
@@ -88,7 +90,7 @@ def _sync_season() -> None:
 
 
 def render() -> None:
-    season = st.session_state.get("season") or db.latest_season()
+    season = st.session_state.get("season") or seasons.latest_season()
 
     head = st.container()  # title renders here once the scope toggle is known
     f0, fs, f1, f2, f3 = st.columns([2, 2, 2, 2, 3])
@@ -113,7 +115,7 @@ def render() -> None:
         st.session_state["players_season"] = season
         fs.selectbox(
             "Season",
-            db.seasons(),
+            seasons.seasons(),
             key="players_season",
             label_visibility="collapsed",
             on_change=_sync_season,
@@ -121,14 +123,14 @@ def render() -> None:
         )
 
     if career:
-        stats = db.player_career_stats()
+        stats = players.player_career_stats()
         stats["team_label"] = stats["team"]
         stats["span"] = stats["first_season"].where(
             stats["seasons"] == 1, stats["first_season"] + " to " + stats["last_season"]
         )
         min_gp = f2.slider("Min career games", 1, 1500, 200)
     else:
-        stats = db.with_team_labels(db.player_season_stats(season), season)
+        stats = players.player_season_stats(season)
         min_gp = f2.slider("Min games", 1, 82, 25)
 
     with head:
@@ -159,7 +161,7 @@ def render() -> None:
     # his most recent season instead, after this season's matches.
     others = pd.DataFrame()
     if search.strip() and not career:
-        others = db.player_latest_seasons(search, min_gp)
+        others = players.player_latest_seasons(search, min_gp)
         others = others[~others.player_id.isin(view.player_id)]
         if team != "All teams":
             others = others[others.team_label.str.contains(team, regex=False)]
@@ -306,7 +308,7 @@ def render() -> None:
         )
 
     if career:
-        bk = db.player_season_breakdown(int(row.player_id))
+        bk = players.player_season_breakdown(int(row.player_id))
         st.markdown(
             "**Career trajectory** - bars are season averages, "
             "the line is the career average to date"
@@ -342,7 +344,7 @@ def render() -> None:
         )
         return
 
-    games = db.player_game_log(int(row.player_id), row_season)
+    games = players.player_game_log(int(row.player_id), row_season)
     c1, c2 = st.columns([3, 2])
     with c1:
         st.markdown("**Scoring trend**")
@@ -350,7 +352,7 @@ def render() -> None:
     with c2:
         st.markdown("**Shooting vs league** (labels show attempts/game)")
         st.plotly_chart(
-            viz.shooting_profile(row, db.league_shooting_averages(row_season), row.player),
+            viz.shooting_profile(row, players.league_shooting_averages(row_season), row.player),
             config=viz.PLOTLY_CONFIG,
             width="stretch",
         )

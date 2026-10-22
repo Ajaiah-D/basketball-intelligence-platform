@@ -41,6 +41,8 @@ import streamlit as st
 from core import teams
 from dashboard.lib import db, draft, glossary, media, sim
 from dashboard.lib import theme as T
+from dashboard.lib.data import arcade as arcade_data
+from dashboard.lib.data import seasons
 
 STATS = {
     "ppg": ("points", "PPG"),
@@ -51,7 +53,7 @@ STATS = {
 
 
 def _pool():
-    return db.arcade_pool()
+    return arcade_data.arcade_pool()
 
 
 def player_card(r, value_html: str = "") -> str:
@@ -205,8 +207,9 @@ def my_clues(r) -> list[str]:
     HTML tags - markdown syntax like **bold** is NOT processed there."""
     decade = f"{r.season[:3]}0s"
     tier = "30+" if r.ppg >= 30 else "25+" if r.ppg >= 25 else "20+" if r.ppg >= 20 else "under 20"
-    # Age (when known - see db.arcade_pool) leads the first clue: it frames
-    # everything after it, a 21-year-old and a 34-year-old are different hunts.
+    # Age (when known - see arcade_data.arcade_pool) leads the first clue: it
+    # frames everything after it, a 21-year-old and a 34-year-old are
+    # different hunts.
     age = r.get("age")
     who = f"<b>{int(age)}-year-old</b> " if age is not None and pd.notna(age) else ""
     opener = (
@@ -376,7 +379,7 @@ def _row_keys(rows: pd.DataFrame) -> list[str]:
 
 def _meta() -> tuple[float, float, float]:
     """(team_scale, team_offset, usage_league_total) from the impact model."""
-    m = db.player_impact_meta()
+    m = arcade_data.player_impact_meta()
     return (
         float(m.get("team_scale", 1.0)),
         float(m.get("team_offset", 0.0)),
@@ -413,7 +416,7 @@ def _opponents(season: str | None) -> tuple[list[float], list[str], str]:
                 teams["team_abbreviation"].tolist(),
                 "season",
             )
-    every = db.all_team_net_ratings()
+    every = arcade_data.all_team_net_ratings()
     if not len(every):
         return [0.0], ["an average team"], "average"
     idx = np.random.default_rng(7).choice(len(every), size=min(29, len(every)), replace=False)
@@ -915,7 +918,7 @@ def _tb_pick(season: str | None, key: tuple[int, str]) -> None:
     state = st.session_state.get("tb_pick")
     if state is None or key not in state["offer"]:
         return  # a stale click: a double click, or the offer already moved on
-    pool = db.player_impact_pool(season)
+    pool = arcade_data.player_impact_pool(season)
     label = _slot_labels(pool, [key])[0]
     if label is None:
         return
@@ -1036,10 +1039,10 @@ It's a game built on real numbers, not a scouting tool.
 
 
 def render_build_team() -> None:
-    if not db.player_impact_available():
+    if not arcade_data.player_impact_available():
         st.info("Team building needs a newer copy of the data - check back after the next refresh.")
         return
-    all_pool = db.player_impact_pool(None)
+    all_pool = arcade_data.player_impact_pool(None)
     choices = [ALL_TIME, *sorted((str(s) for s in all_pool["season"].unique()), reverse=True)]
     if st.session_state.get("tb_mode") not in MODES:
         st.session_state["tb_mode"] = MODES[0]
@@ -1053,17 +1056,17 @@ def render_build_team() -> None:
 
     choice = st.session_state["tb_pool"]
     season = None if choice == ALL_TIME else choice
-    pool = all_pool if season is None else db.player_impact_pool(season)
+    pool = all_pool if season is None else arcade_data.player_impact_pool(season)
     meta = _meta()
     if st.session_state["tb_mode"] == "Build":
         _render_build(pool, season, choice, meta)
     else:
         _render_draft(pool, season, choice, meta)
-    _explainer(db.player_impact_meta())
+    _explainer(arcade_data.player_impact_meta())
 
 
 def render() -> None:
-    n = len(db.seasons())
+    n = len(seasons.seasons())
     st.markdown(
         f'## Arcade &nbsp;<span class="bip-chip">{n} seasons of data</span>',
         unsafe_allow_html=True,

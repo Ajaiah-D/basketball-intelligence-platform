@@ -1,10 +1,11 @@
 """The Arcade's player card (Higher or Lower, Mystery Player) and the ages
-db.arcade_pool attaches to it."""
+data.arcade.arcade_pool attaches to it."""
 
 import pandas as pd
 import pytest
 
-from dashboard.lib import db, media
+from dashboard.lib import media
+from dashboard.lib.data import arcade as arcade_data
 from dashboard.views import arcade
 
 
@@ -43,9 +44,7 @@ def test_stat_html_shows_value_and_label():
 
 
 def test_ages_count_back_from_the_first_known_age(con):
-    if not db.player_ages_available():
-        pytest.skip("warehouse built before stg_player_advanced had age")
-    pool = db.arcade_pool()
+    pool = arcade_data.arcade_pool()
     known = pool.dropna(subset=["age"])
     assert len(known) and known["age"].between(17, 45).all()
     # Within one player's career, age rises exactly one year per season.
@@ -58,10 +57,11 @@ def test_ages_count_back_from_the_first_known_age(con):
     assert ((drift["max"] - drift["min"]) <= 1).all()
 
 
-def test_old_warehouse_pool_has_an_empty_age_column(con, monkeypatch):
-    monkeypatch.setattr(db, "player_ages_available", lambda: False)
-    pool = db.arcade_pool()
-    assert "age" in pool.columns and pool["age"].isna().all()
+def test_pool_holds_only_notable_seasons(con):
+    pool = arcade_data.arcade_pool()
+    assert len(pool)
+    assert (pool["gp"] >= 50).all() and (pool["ppg"] >= 14.0).all()
+    assert not pool.duplicated(["season", "player_id"]).any()
 
 
 # --- Mystery Player: the age is part of the first clue -----------------------

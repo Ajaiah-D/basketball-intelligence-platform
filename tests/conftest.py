@@ -4,6 +4,8 @@ on every refresh."""
 
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
@@ -17,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 # would not resolve.
 from core import paths
 from dashboard.lib import db
+from dashboard.lib.data import core as data_core
 
 DB_PATH = paths.warehouse_path()
 
@@ -69,21 +72,36 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-# --- Finances page coverage ----------------------------------------------------
+# --- Tiny warehouses for page tests ----------------------------------------------
 #
 # Same isolated-tmp-warehouse pattern as test_predictions_page.py's
 # no_predictions_db/with_predictions_db: a fresh DuckDB file per fixture,
-# db.DB_PATH monkeypatched onto it, and the two db.py caches (q, and the
-# relevant *_available()) cleared before and after so a stale hit from one
-# test's warehouse can't leak into the next test's assertions against a
+# with the whole dashboard pointed at it - dashboard/lib/data through
+# use_warehouse(), and the domains still in db.py through db.DB_PATH until
+# they move too. The caches are cleared before and after so a stale hit from
+# one test's warehouse can't leak into the next test's assertions against a
 # different one.
 
 
-def _reset_finances_cache() -> None:
+def _reset_caches() -> None:
+    """Clear every cache that could hold another warehouse's results. A
+    fixture or test that changes a warehouse file in place calls this too:
+    data_core's cache follows the file's mtime, but two writes can land in
+    one tick of the filesystem clock."""
     db.q.clear()
     db.team_finances_available.clear()
     db.team_contracts_available.clear()
-    db.player_impact_available.clear()
+    data_core.clear_caches()
+
+
+@contextmanager
+def _dashboard_reads(path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point the dashboard's data access at `path` for a fixture's lifetime."""
+    monkeypatch.setattr(db, "DB_PATH", path)
+    _reset_caches()
+    with data_core.use_warehouse(path):
+        yield path
+    _reset_caches()
 
 
 @pytest.fixture
@@ -92,10 +110,8 @@ def tmp_warehouse_without_marts(tmp_path, monkeypatch):
     warehouse published before mart_team_finances existed."""
     path = tmp_path / "no_marts.duckdb"
     duckdb.connect(str(path)).close()
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_finances_cache()
-    yield path
-    _reset_finances_cache()
+    with _dashboard_reads(path, monkeypatch):
+        yield path
 
 
 @pytest.fixture
@@ -188,10 +204,8 @@ def warehouse_with_finances_mart(tmp_path, monkeypatch):
             salary_rank, share_of_payroll)
     """)
     con.close()
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_finances_cache()
-    yield path
-    _reset_finances_cache()
+    with _dashboard_reads(path, monkeypatch):
+        yield path
 
 
 @pytest.fixture
@@ -203,7 +217,7 @@ def legacy_finances_warehouse(warehouse_with_finances_mart):
     con.execute("drop table main_marts.mart_team_contracts")
     con.execute("alter table main_marts.mart_team_finances drop column payroll_fetched_at_utc")
     con.close()
-    _reset_finances_cache()
+    _reset_caches()
     yield warehouse_with_finances_mart
 
 
@@ -259,10 +273,8 @@ def warehouse_with_player_impact(tmp_path, monkeypatch):
         (timestamp '2026-10-01 12:00:00', 5000, 0.62, 1.9, -0.4, 0.71, 2.3, 5.0, '{}')
     """)
     con.close()
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_finances_cache()
-    yield path
-    _reset_finances_cache()
+    with _dashboard_reads(path, monkeypatch):
+        yield path
 
 
 @pytest.fixture
@@ -325,6 +337,6 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
     con.executemany("insert into main.player_impact values (?,?,?,?,?,?,?,?,?,?,?,?)", extra)
     con.execute("update main.player_impact_meta set team_scale = 0.5, team_offset = -6.0")
     con.close()
-    _reset_finances_cache()
+    _reset_caches()
     yield warehouse_with_player_impact
-    _reset_finances_cache()
+    _reset_caches()

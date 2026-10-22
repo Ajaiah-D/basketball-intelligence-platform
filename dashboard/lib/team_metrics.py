@@ -89,7 +89,8 @@ def splits(games: pd.DataFrame, standings: pd.DataFrame) -> dict[str, str]:
 
 def move_note(team_path: str | None, team: str) -> str:
     """'from CHI', 'to BOS', or both, for a player who changed teams mid-season;
-    '' for everyone else. team_path is db.player_team_paths()'s 'A → B'."""
+    '' for everyone else. team_path is a season's team_label ('A → B'), as
+    data.players.team_roster() returns it."""
     if not team_path or " → " not in team_path:
         return ""
     teams = team_path.split(" → ")

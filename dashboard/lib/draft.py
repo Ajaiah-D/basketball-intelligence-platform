@@ -9,10 +9,10 @@ math; a bigger draw is the lucky draft. Pure pandas and numpy, no
 Streamlit; every random choice comes from the numpy Generator the caller
 passes in, so a seeded draft is reproducible.
 
-The pool is the player_impact table (db.player_impact_pool): one row per
-player-season with impact, usage and a 1..12 credit cost. Picks are kept
-as (player_id, season) pairs, which survive a data refresh; offer_options
-returns index labels of the pool DataFrame it is given.
+The pool is the player_impact table (data.arcade.player_impact_pool): one
+row per player-season with impact, usage and a 1..12 credit cost. Picks are
+kept as (player_id, season) pairs, which survive a data refresh;
+offer_options returns index labels of the pool DataFrame it is given.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """The Arcade team builder's rules: Build-mode budget validation, Draft
 mode's offers (pick one of three per spot under a hidden budget), and the
-db pool loaders. Pure pandas/numpy plus the tmp-warehouse fixtures in
+data.arcade pool loaders. Pure pandas/numpy plus the tmp-warehouse fixtures in
 conftest.py."""
 
 import sys
@@ -12,7 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard.lib import db, draft, sim
+from dashboard.lib import draft, sim
+from dashboard.lib.data import arcade as arcade_data
 
 
 def _picks(n=8, cost=5, dup=False):
@@ -223,19 +224,19 @@ def test_auto_rotation_sorts_by_impact_desc():
     assert out["player"].iloc[0] == "d"
 
 
-# --- db pool loaders -----------------------------------------------------------
+# --- data.arcade pool loaders -------------------------------------------------
 
 
 def test_player_impact_unavailable_on_a_warehouse_without_the_tables(tmp_warehouse_without_marts):
-    assert db.player_impact_available() is False
+    assert arcade_data.player_impact_available() is False
 
 
 def test_player_impact_available_with_the_tables(warehouse_with_player_impact):
-    assert db.player_impact_available() is True
+    assert arcade_data.player_impact_available() is True
 
 
 def test_player_impact_pool_one_season(warehouse_with_player_impact):
-    pool = db.player_impact_pool("2024-25")
+    pool = arcade_data.player_impact_pool("2024-25")
     assert len(pool) == 10
     assert set(pool["season"]) == {"2024-25"}
     assert pool["impact"].is_monotonic_decreasing
@@ -243,13 +244,13 @@ def test_player_impact_pool_one_season(warehouse_with_player_impact):
 
 
 def test_player_impact_pool_every_season(warehouse_with_player_impact):
-    pool = db.player_impact_pool(None)
+    pool = arcade_data.player_impact_pool(None)
     assert len(pool) == 20
     assert set(pool["season"]) == {"2023-24", "2024-25"}
     assert pool["impact"].is_monotonic_decreasing
 
 
 def test_player_impact_meta_is_one_row_dict(warehouse_with_player_impact):
-    meta = db.player_impact_meta()
+    meta = arcade_data.player_impact_meta()
     assert meta["usage_league_total"] == 5.0
     assert meta["team_scale"] == pytest.approx(1.9)

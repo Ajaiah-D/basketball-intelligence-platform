@@ -126,7 +126,7 @@ def career_trend(
     seasons_df: pd.DataFrame, stat: str, label: str, weight: str = "gp", as_rate: bool = False
 ) -> go.Figure:
     """Per-season values (context bars) + weighted career average to date
-    (emphasis line). seasons_df comes from db.player_season_breakdown.
+    (emphasis line). seasons_df comes from data.players.player_season_breakdown.
 
     `weight` is what the running average is weighted by. Games played is
     right for per-game stats; a percentage like TS% has to be weighted by
