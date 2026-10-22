@@ -2,7 +2,7 @@
 warehouse and selection state a real deploy can be in.
 
 Same AppTest pattern as test_predictions_page.py. The page's pieces
-(viz.team_finances_trend, db.team_payroll_history) are unit-tested
+(viz.team_finances_trend, data.finances.team_payroll_history) are unit-tested
 elsewhere; what only a page-level test can catch is the wiring between
 them - a selector that hands the query a value it can't resolve, a caption
 that reads a column the dataframe doesn't have, a chart handed an empty

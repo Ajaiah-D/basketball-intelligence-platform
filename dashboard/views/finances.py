@@ -15,8 +15,9 @@ import pandas as pd
 import streamlit as st
 
 from core import teams
-from dashboard.lib import db, franchises, payroll, viz
+from dashboard.lib import franchises, payroll, viz
 from dashboard.lib import theme as T
+from dashboard.lib.data import finances
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
 # acknowledged by them to be partly extrapolated/minimum-filled
@@ -107,8 +108,8 @@ def _render_team_season(
         return
     row = row_df.iloc[0]
     contracts = (
-        db.team_contracts(season, row["team_abbreviation"])
-        if db.team_contracts_available()
+        finances.team_contracts(season, row["team_abbreviation"])
+        if finances.team_contracts_available()
         else None
     )
     rank = payroll.league_rank(league, row["team_abbreviation"])
@@ -131,18 +132,18 @@ def _render_team_season(
 
 
 def render() -> None:
-    if not db.team_finances_available():
+    if not finances.team_finances_available():
         st.markdown("## Finances", unsafe_allow_html=True)
         st.info("Payroll data hasn't been loaded into this warehouse yet.")
         return
 
-    all_seasons = db.team_payroll_history()
+    all_seasons = finances.team_payroll_history()
     if all_seasons.empty:
         st.markdown("## Finances", unsafe_allow_html=True)
         st.info("No payroll data available.")
         return
     all_seasons = franchises.annotate(all_seasons)
-    cap_df = db.salary_cap_history()
+    cap_df = finances.salary_cap_history()
 
     # The sidebar's season, like every other page - a second season picker
     # here would disagree with it. Payroll starts in 1984-85 while games go

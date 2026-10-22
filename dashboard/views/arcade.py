@@ -39,10 +39,10 @@ import pandas as pd
 import streamlit as st
 
 from core import teams
-from dashboard.lib import db, draft, glossary, media, sim
+from dashboard.lib import draft, glossary, media, sim
 from dashboard.lib import theme as T
+from dashboard.lib.data import advanced, seasons
 from dashboard.lib.data import arcade as arcade_data
-from dashboard.lib.data import seasons
 
 STATS = {
     "ppg": ("points", "PPG"),
@@ -408,7 +408,7 @@ def _opponents(season: str | None) -> tuple[list[float], list[str], str]:
     fallback when a season has no team ratings) or "average" (a placeholder
     average team, for a warehouse with no team ratings at all)."""
     if season is not None:
-        teams = db.team_advanced(season)
+        teams = advanced.team_advanced(season)
         teams = teams[teams["net_rating"].notna()].sort_values("team_abbreviation")
         if len(teams) >= 2:
             return (

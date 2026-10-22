@@ -50,3 +50,17 @@ sources:
           Basketball-Reference lists the players a team finished the season
           with plus anyone on 10-day contracts along the way (at the amount
           paid); a traded player appears only on the team he ended with.
+
+  - name: ml
+    description: >
+      Tables the Python side writes into the warehouse's main schema rather
+      than dbt.
+    schema: main
+    tables:
+      - name: predictions
+        description: >
+          Every game prediction ml/predict.py has published, append-only:
+          a game is predicted again by each run until it is played. Rebuilt
+          by scripts/load_to_duckdb.py from the committed
+          data/predictions/history.csv, which is the source of truth, before
+          dbt runs.

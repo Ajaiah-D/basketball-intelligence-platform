@@ -5,8 +5,9 @@ import html
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, media, tables, viz
+from dashboard.lib import glossary, media, tables, viz
 from dashboard.lib import theme as T
+from dashboard.lib.data import games as game_data
 from dashboard.lib.data import seasons
 from dashboard.lib.tables import Col
 from dashboard.views.overview import game_card
@@ -83,8 +84,8 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
-    games = db.games_list(season)
-    pbp_ids = db.pbp_game_ids()
+    games = game_data.games_list(season)
+    pbp_ids = game_data.pbp_game_ids()
 
     teams = ["All teams", *sorted(set(games.home) | set(games.away))]
     f1, f2 = st.columns([2, 3])
@@ -117,7 +118,7 @@ def render() -> None:
     g = view[view.label == pick].iloc[0]
 
     if g.game_id in pbp_ids:
-        pbp = db.game_pbp(g.game_id)
+        pbp = game_data.game_pbp(g.game_id)
         v1, v2 = st.columns([3, 2])
         with v1:
             st.markdown("**Game flow** - score margin over time")
@@ -135,7 +136,7 @@ def render() -> None:
             "Pull more with `python ingestion/nba_ingest.py --pbp-games N`."
         )
 
-    box = db.game_box_score(g.game_id)
+    box = game_data.game_box_score(g.game_id)
     st.markdown("#### Box score")
     home_won = g.home_pts > g.away_pts
     for team, side, pts, won in (
