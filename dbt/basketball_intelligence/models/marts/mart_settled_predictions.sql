@@ -14,7 +14,10 @@
 -- main.predictions only exists once load_to_duckdb.py has loaded the
 -- history (or ml/predict.py has run). Without it the view is built empty,
 -- with the same columns, rather than failing the whole build: the refresh
--- treats "nothing to grade yet" as a normal state. Empty is also normal
+-- treats "nothing to grade yet" as a normal state. That empty view stays
+-- empty until the next dbt build even if main.predictions appears later;
+-- the refresh never hits this, since load_to_duckdb.py loads the committed
+-- history before dbt runs. Empty is also normal
 -- before the season's first result, so assert_marts_not_empty leaves this
 -- model out.
 

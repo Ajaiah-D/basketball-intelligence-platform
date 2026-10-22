@@ -5,6 +5,7 @@ with the model is published. These tests fail the moment the two differ, in
 text or in output."""
 
 import re
+import shutil
 
 import duckdb
 import pandas as pd
@@ -52,10 +53,9 @@ def test_the_dashboard_query_is_the_model_word_for_word():
 @pytest.fixture
 def synthetic_warehouse(tmp_path):
     """Predictions and results shaped to exercise every rule of the query: a
-    game predicted twice (only the first is graded), a later re-run stamped
-    first by prediction_id order on a tie, a no-contest 0-0 game, and a
-    prediction for a game not yet played. The model's query is installed as
-    the view dbt would build."""
+    game predicted twice (only the first is graded), a tie on predicted_at
+    (prediction_id decides), a no-contest 0-0 game, and a prediction for a
+    game not yet played."""
     path = tmp_path / "settled.duckdb"
     con = duckdb.connect(str(path))
     con.execute("create schema main_marts")
@@ -88,13 +88,12 @@ def synthetic_warehouse(tmp_path):
             ('g2', -4, false, 99, 103),
             ('g3', 0, false, 0, 0)
     """)
-    con.execute(f"create view main_marts.mart_settled_predictions as {_model_query()}")
     con.close()
     with data_core.use_warehouse(path):
         yield path
 
 
-def test_the_rules_hold_on_synthetic_games(synthetic_warehouse):
+def test_the_query_applies_every_grading_rule(synthetic_warehouse):
     settled = predictions.settled_predictions()
     # g1 graded on its first prediction, g2 on b1 (the tie on predicted_at
     # goes to prediction_id), g3 is a no-contest and g4 is unplayed.
@@ -104,6 +103,92 @@ def test_the_rules_hold_on_synthetic_games(synthetic_warehouse):
     ]
 
 
+@pytest.fixture(scope="module")
+def warehouse_copy(con, tmp_path_factory):
+    """A copy of the real warehouse (CI's fixture one in CI) with synthetic
+    predictions added for real played games: two home wins and two home
+    losses, one game predicted twice (only the first counts) and one with
+    two predictions stamped at the same moment (prediction_id decides). The
+    mart is a view, so nothing needs rebuilding. The copy keeps the file
+    name: dbt-duckdb's views name the catalog after it."""
+    source = paths.warehouse_path()
+    path = tmp_path_factory.mktemp("settled") / source.name
+    shutil.copyfile(source, path)
+    with duckdb.connect(str(path)) as rw:
+        games = rw.execute(
+            """
+            (select game_id, season, game_date, home_team_id, away_team_id
+             from main_marts.fct_team_game
+             where home_won and not (home_points = 0 and away_points = 0)
+               and game_id not in (select game_id from main.predictions)
+             order by game_id limit 2)
+            union all
+            (select game_id, season, game_date, home_team_id, away_team_id
+             from main_marts.fct_team_game
+             where not home_won and not (home_points = 0 and away_points = 0)
+               and game_id not in (select game_id from main.predictions)
+             order by game_id limit 2)
+            """
+        ).fetchall()
+        assert len(games) == 4, "the warehouse needs two home wins and two home losses"
+        rows = []
+        for i, (game_id, season, game_date, home, away) in enumerate(games):
+            rows.append(
+                (
+                    f"test-{i}-b",
+                    "ridge-v1",
+                    "2000-01-01 12:00",
+                    game_id,
+                    season,
+                    game_date,
+                    home,
+                    away,
+                    2.0 + i,
+                    0.55 + i / 100,
+                )
+            )
+        first, tied = games[0], games[1]
+        # A later re-run of the first game, and a same-moment rival for the
+        # second whose prediction_id sorts after test-1-b.
+        rows.append(
+            (
+                "test-0-z",
+                "ridge-v1",
+                "2000-02-01 12:00",
+                first[0],
+                first[1],
+                first[2],
+                first[3],
+                first[4],
+                -9.0,
+                0.10,
+            )
+        )
+        rows.append(
+            (
+                "test-1-z",
+                "ridge-v2",
+                "2000-01-01 12:00",
+                tied[0],
+                tied[1],
+                tied[2],
+                tied[3],
+                tied[4],
+                -8.0,
+                0.20,
+            )
+        )
+        rw.executemany(
+            "insert into main.predictions (prediction_id, model_version, predicted_at, "
+            "game_id, season, game_date, home_team_id, away_team_id, predicted_margin, "
+            "win_probability) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    expected = {g[0]: 0.55 + i / 100 for i, g in enumerate(games)}
+    with data_core.use_warehouse(path):
+        yield path, expected
+
+
 def _the_model(path) -> pd.DataFrame:
     with duckdb.connect(str(path), read_only=True) as con:
         return con.execute(
@@ -111,23 +196,19 @@ def _the_model(path) -> pd.DataFrame:
         ).df()
 
 
-def test_dashboard_and_model_agree_on_synthetic_games(synthetic_warehouse):
-    pd.testing.assert_frame_equal(
-        predictions.settled_predictions(), _the_model(synthetic_warehouse)
-    )
+def test_the_dbt_view_and_the_dashboard_agree_on_real_games(warehouse_copy):
+    path, expected = warehouse_copy
+    dashboard = predictions.settled_predictions()
+    pd.testing.assert_frame_equal(dashboard, _the_model(path))
+    # The synthetic games are in, each graded on its first prediction.
+    graded = dashboard.set_index("game_id").loc[list(expected), "win_probability"]
+    assert graded.round(6).to_dict() == {g: round(p, 6) for g, p in expected.items()}
+    assert set(dashboard.set_index("game_id").loc[list(expected), "home_won"]) == {True, False}
 
 
-def test_ml_evaluate_grades_the_same_games(synthetic_warehouse):
-    with duckdb.connect(str(synthetic_warehouse), read_only=True) as con:
+def test_ml_evaluate_grades_the_same_games(warehouse_copy):
+    path, _ = warehouse_copy
+    with duckdb.connect(str(path), read_only=True) as con:
         graded = evaluate.settled_predictions(con)
     dashboard = predictions.settled_predictions()[graded.columns]
     pd.testing.assert_frame_equal(graded, dashboard)
-
-
-def test_dashboard_and_model_agree_on_the_warehouse(con):
-    """On the real warehouse (or CI's fixture one), the dbt-built model and
-    the dashboard's copy return the same frame."""
-    with data_core.use_warehouse(paths.warehouse_path()):
-        pd.testing.assert_frame_equal(
-            predictions.settled_predictions(), _the_model(paths.warehouse_path())
-        )

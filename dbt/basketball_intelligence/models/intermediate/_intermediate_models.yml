@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: int_team_game_opponent
+    description: >
+      Team game logs joined to the opponent's row for the same game: two rows
+      per game, one per team, each with both sides' points. fct_team_game and
+      mart_team_standings build on it, and the dashboard reads it directly
+      (dashboard/lib/data/teams.py, team_game_log, for the Teams page's
+      splits and margins chart), so its columns are a public contract:
+      add columns freely, but never drop or rename one the dashboard on main
+      reads (game_id, game_date, matchup, is_away_game, is_win, points,
+      opp_points, opp_team_abbreviation, team_id, season).

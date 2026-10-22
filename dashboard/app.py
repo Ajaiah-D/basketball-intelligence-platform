@@ -26,10 +26,6 @@ st.set_page_config(
 theme.inject(st)
 
 
-WAREHOUSE_PATH = paths.warehouse_path()
-VERSION_PATH = paths.warehouse_version_path()
-
-
 def _remote_version(url: str) -> str | None:
     import requests
 
@@ -58,29 +54,33 @@ def bootstrap_warehouse() -> None:
     if not url:
         return
 
+    # The data layer decides where the warehouse is, so the download lands
+    # in the file every page reads.
+    warehouse = data_core.warehouse_path()
+    version_path = paths.warehouse_version_path(warehouse)
     remote_version = _remote_version(url)
-    local_version = VERSION_PATH.read_text().strip() if VERSION_PATH.exists() else None
-    if WAREHOUSE_PATH.exists() and (remote_version is None or remote_version == local_version):
+    local_version = version_path.read_text().strip() if version_path.exists() else None
+    if warehouse.exists() and (remote_version is None or remote_version == local_version):
         return
 
     import os
 
     import requests
 
-    WAREHOUSE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = WAREHOUSE_PATH.with_suffix(f".download{os.getpid()}")
+    warehouse.parent.mkdir(parents=True, exist_ok=True)
+    tmp = warehouse.with_suffix(f".download{os.getpid()}")
     try:
         with requests.get(url, stream=True, timeout=300) as r:
             r.raise_for_status()
             with tmp.open("wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
-        tmp.replace(WAREHOUSE_PATH)
+        tmp.replace(warehouse)
         # Drop cached results from the old file. The data layer keys its
         # cache on the file's mtime as well, so this is belt and braces.
         data_core.clear_caches()
         if remote_version:
-            VERSION_PATH.write_text(remote_version)
+            version_path.write_text(remote_version)
     finally:
         tmp.unlink(missing_ok=True)
 
