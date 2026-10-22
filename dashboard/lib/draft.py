@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .sim import ROSTER_SIZE, rotation_weights
+from core.constants import ARCADE_BUDGET, MAX_COST
 
-# Tuned with ml.player_impact.COST_QUANTILES; see the targets there.
-BUDGET = 36
+from .sim import ROSTER_SIZE, rotation_weights
 
 
 def validate_build(picks: pd.DataFrame) -> list[str]:
@@ -36,8 +35,8 @@ def validate_build(picks: pd.DataFrame) -> list[str]:
     if len(picks) != ROSTER_SIZE:
         problems.append(f"Pick {ROSTER_SIZE} players (you have {len(picks)}).")
     spent = int(picks["cost"].sum()) if len(picks) else 0
-    if spent > BUDGET:
-        problems.append(f"Over budget: {spent} of {BUDGET} credits.")
+    if spent > ARCADE_BUDGET:
+        problems.append(f"Over budget: {spent} of {ARCADE_BUDGET} credits.")
     if len(picks) and picks.duplicated(subset=["player_id", "season"]).any():
         problems.append("The same player can't appear twice.")
     return problems
@@ -50,7 +49,6 @@ OPTIONS = 3
 OPTION_SPREAD = 3  # credits between the pricier, middle and cheaper option
 LUCKY_CHANCE = 0.15  # chance a round's top option is a bigger star than usual
 LUCKY_BONUS = 3  # extra credits on that lucky top option
-MAX_COST = 12
 
 
 def new_pick_draft(rng) -> dict:

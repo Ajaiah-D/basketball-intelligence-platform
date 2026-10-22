@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from core.fmt import money, ordinal
+
 from . import theme as T
 
 # Over the cap is normal, so it gets a quiet gray: in a season where all 30
@@ -62,17 +64,6 @@ def bracket(row) -> tuple[str, str]:
         if _true(row[flag]):
             return label, _COLOR[col]
     return "Under cap", T.GOOD
-
-
-def money(value: float) -> str:
-    if abs(value) >= 1_000_000:
-        return f"${value / 1e6:,.1f}M"
-    return f"${value / 1e3:,.0f}K"
-
-
-def ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 def _join(items: list[str]) -> str:

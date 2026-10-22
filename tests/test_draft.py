@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.constants import ARCADE_BUDGET, COST_QUANTILES, MAX_COST
 from dashboard.lib import draft, sim
 from dashboard.lib.data import arcade as arcade_data
 
@@ -50,9 +51,11 @@ def _pool(n=100, seed=0):
 # --- validate_build ------------------------------------------------------------
 
 
-def test_constants_come_from_sim():
-    assert draft.BUDGET == 36
+def test_constants_come_from_sim_and_core():
+    assert ARCADE_BUDGET == 36
     assert draft.ROSTER_SIZE == sim.ROSTER_SIZE == 8
+    # One price per gap between the cost quantiles, 1 to 12.
+    assert draft.MAX_COST == MAX_COST == len(COST_QUANTILES) + 1 == 12
 
 
 def test_validate_build_valid_roster_has_no_problems():

@@ -13,21 +13,17 @@ import pandas as pd
 from scipy.stats import norm
 from sklearn.metrics import brier_score_loss, log_loss
 
+from core.constants import PREDICTION_MARGIN_SD
 from ml.features import FEATURE_COLUMNS
 
-# Margin residuals are close to normal with a standard deviation near this.
-# Turning a predicted margin into a win probability needs a spread; refit it
-# from the residuals once a real model exists.
+# Turning a predicted margin into a win probability needs a spread:
+# core.constants.PREDICTION_MARGIN_SD, with its measurements there.
 #
-# Refit from the RESIDUALS (margin - predicted_margin), not from the raw
-# spread of margin itself. They are different numbers and the raw one is
-# larger, so reaching for it makes calibration worse. Measured on the
-# 2005-06 onward ridge backtest: residual SD 12.71, log-loss-optimal 11.24,
-# Brier-optimal 11.23, against a raw target SD of 13.97. Moving this
-# constant to 13.97 pushes log loss from 0.6113 up to 0.6121, while 11.24
-# pulls it down to 0.6092. Accuracy and margin MAE do not depend on this
-# constant at all; only the probability metrics move with it.
-MARGIN_SD = 13.5
+# Refit it from the RESIDUALS (margin - predicted_margin) or, better, as the
+# log-loss-optimal spread on this backtest - not from the raw spread of margin
+# itself, which is larger (13.97 from 2005-06) and makes calibration worse.
+# Accuracy and margin MAE do not depend on the spread at all; only the
+# probability metrics move with it.
 
 # Columns every result frame carries, including the empty one, so a caller
 # can select on them without special-casing "no seasons qualified".
@@ -41,7 +37,7 @@ RESULT_COLUMNS = [
 ]
 
 
-def margin_to_win_probability(margin, sd: float = MARGIN_SD) -> np.ndarray:
+def margin_to_win_probability(margin, sd: float = PREDICTION_MARGIN_SD) -> np.ndarray:
     """P(home wins) = P(margin > 0) under a normal centred on the prediction."""
     return norm.cdf(np.asarray(margin, dtype=float) / sd)
 

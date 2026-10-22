@@ -28,16 +28,17 @@ FEATURE_COLUMNS = [
 ]
 
 
-def build_feature_frame(con) -> pd.DataFrame:
-    """One row per game: features, plus margin and home_won as targets."""
-    features = con.execute(
-        "select * from main_marts.mart_game_features order by game_date, game_id"
-    ).df()
-    # Same no-contest exclusion as mart_game_features.sql's valid_games CTE
-    # (a cancelled game recorded as a 0-0 final must not feed Elo either),
-    # and is_neutral_site is included so compute_elo can suppress the
-    # home-court term for the games fct_team_game flagged as neutral.
-    games = con.execute(
+def load_played_games(con) -> pd.DataFrame:
+    """Every played game, oldest first, in the shape compute_elo and
+    current_ratings take: game_id, season, game_date, home_team_id,
+    away_team_id, home_won and is_neutral_site.
+
+    The same no-contest exclusion as mart_game_features.sql's valid_games
+    CTE: a cancelled game recorded as a 0-0 final must not feed Elo either.
+    is_neutral_site is there so Elo can drop the home-court term for the
+    games fct_team_game flagged as neutral.
+    """
+    return con.execute(
         """
         select game_id, season, game_date, home_team_id, away_team_id,
                home_won, is_neutral_site
@@ -46,7 +47,14 @@ def build_feature_frame(con) -> pd.DataFrame:
         order by game_date, game_id
         """
     ).df()
-    elo = compute_elo(games)
+
+
+def build_feature_frame(con) -> pd.DataFrame:
+    """One row per game: features, plus margin and home_won as targets."""
+    features = con.execute(
+        "select * from main_marts.mart_game_features order by game_date, game_id"
+    ).df()
+    elo = compute_elo(load_played_games(con))
     merged = features.merge(elo, on="game_id", how="left")
     merged["elo_diff"] = merged["home_elo_pre"] - merged["away_elo_pre"]
     for column in ("home_days_rest", "away_days_rest"):

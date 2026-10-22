@@ -23,6 +23,13 @@ import duckdb
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from core import paths
+from core.constants import (
+    LAST_RUN_MAX_AGE_DAYS,
+    LATEST_GAME_MAX_AGE_DAYS,
+    OFFSEASON_AFTER,
+    OFFSEASON_BEFORE,
+    WAREHOUSE_MAX_AGE_DAYS,
+)
 
 DB_PATH = paths.warehouse_path()
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
@@ -37,12 +44,12 @@ def ok(msg: str) -> None:
 
 
 def in_offseason(today: date | None = None) -> bool:
-    """Roughly mid-April to mid-October, when no regular season games are
-    played. Stale data and an idle refresh job are the correct state then,
-    not a problem, and a check that cries wolf all summer is a check nobody
-    reads by the time the season starts."""
+    """Roughly mid-April to mid-October (OFFSEASON_AFTER to OFFSEASON_BEFORE),
+    when no regular season games are played. Stale data and an idle refresh
+    job are the correct state then, not a problem, and a check that cries
+    wolf all summer is a check nobody reads by the time the season starts."""
     today = today or date.today()
-    return (today.month, today.day) > (4, 20) and (today.month, today.day) < (10, 15)
+    return OFFSEASON_AFTER < (today.month, today.day) < OFFSEASON_BEFORE
 
 
 def fail(msg: str) -> None:
@@ -58,8 +65,11 @@ def check_warehouse_file() -> None:
     size_mb = DB_PATH.stat().st_size / (1024 * 1024)
     ok(f"{DB_PATH.name} exists ({size_mb:.1f} MB)")
     age = datetime.now() - datetime.fromtimestamp(DB_PATH.stat().st_mtime)
-    if age.days > 14:
-        fail(f"warehouse file is {age.days} days old (last built more than 2 weeks ago)")
+    if age.days > WAREHOUSE_MAX_AGE_DAYS:
+        fail(
+            f"warehouse file is {age.days} days old "
+            f"(last built more than {WAREHOUSE_MAX_AGE_DAYS} days ago)"
+        )
     else:
         ok(f"warehouse file is {age.days} day(s) old")
 
@@ -111,10 +121,11 @@ def check_freshness() -> None:
         return
     days_old = (datetime.now().date() - latest).days
     # During the regular season new games land every 1-3 days; give it a
-    # generous week of slack before flagging the pipeline as stalled.
+    # generous week (LATEST_GAME_MAX_AGE_DAYS) before flagging the pipeline
+    # as stalled.
     if in_offseason():
         ok(f"most recent game is {latest} ({days_old} days ago), expected in the offseason")
-    elif days_old > 7:
+    elif days_old > LATEST_GAME_MAX_AGE_DAYS:
         fail(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
     else:
         ok(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
@@ -169,7 +180,7 @@ def check_last_run() -> None:
             f"last run {last['run_at']} ({age_days}d ago) succeeded; the weekly job "
             "is idle until the season starts"
         )
-    elif age_days > 10:
+    elif age_days > LAST_RUN_MAX_AGE_DAYS:
         fail(
             f"last successful run was {last['run_at']} ({age_days}d ago) - "
             "the scheduled job may have stopped running"

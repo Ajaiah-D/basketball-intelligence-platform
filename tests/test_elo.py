@@ -1,10 +1,30 @@
 """Elo is the model's baseline and its only real signal in week one, so its
 arithmetic is pinned directly rather than only through the pipeline."""
 
+import inspect
+
 import pandas as pd
 import pytest
 
+from core.constants import ELO_HOME_ADVANTAGE, ELO_K, ELO_SEASON_CARRY
 from ml.elo import compute_elo, current_ratings, expected_score
+
+
+def _defaults(fn) -> dict:
+    return {
+        name: p.default
+        for name, p in inspect.signature(fn).parameters.items()
+        if p.default is not inspect.Parameter.empty
+    }
+
+
+def test_compute_elo_and_current_ratings_share_their_defaults():
+    """predict.py serves current_ratings() to a model fit on compute_elo()'s
+    ratings; different defaults would serve ratings the model never saw."""
+    expected = {"k": ELO_K, "home_advantage": ELO_HOME_ADVANTAGE, "carry": ELO_SEASON_CARRY}
+    assert _defaults(compute_elo) == expected
+    assert _defaults(current_ratings) == expected
+    assert (ELO_K, ELO_HOME_ADVANTAGE, ELO_SEASON_CARRY) == (20.0, 100.0, 0.75)
 
 
 def test_equal_ratings_are_a_coin_flip():

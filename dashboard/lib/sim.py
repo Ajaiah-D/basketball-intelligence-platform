@@ -9,7 +9,8 @@ from the numpy Generator the caller passes in; seed it (see roster_seed)
 and the same roster always gets the same projection.
 
 The model is deliberately simple. A game margin is Normal(net difference
-plus home edge, GAME_SD), which is the usual NBA approximation, and the
+plus HOME_EDGE_POINTS, GAME_MARGIN_SD), which is the usual NBA
+approximation (both in core.constants, with how they were measured), and the
 roster's net rating comes from the offline impact model's calibration
 (net ~ offset + scale * weighted impact).
 """
@@ -21,12 +22,12 @@ import math
 
 import numpy as np
 
+from core.constants import GAME_MARGIN_SD, HOME_EDGE_POINTS, PLAYERS_ON_FLOOR
+
 STARTER_MINUTES = 36
 BENCH_MINUTES = 20  # 5 x 36 + 3 x 20 = 240, a real game's player-minutes
 ROSTER_SIZE = 8
-STARTERS = 5
-GAME_SD = 12.7  # points; standard deviation of an NBA game margin
-HOME_EDGE = 2.5  # points added to the home side's expected margin
+STARTERS = PLAYERS_ON_FLOOR
 SEASON_GAMES = 82
 N_SIMS = 1000
 # How much of the usage a roster has beyond a league-average lineup it
@@ -40,7 +41,7 @@ ABS_NET_CAP = 16.0
 
 
 def rotation_weights() -> np.ndarray:
-    """Minutes share of each rotation slot, scaled to sum to five.
+    """Minutes share of each rotation slot, scaled to sum to PLAYERS_ON_FLOOR.
 
     Starters play 36 and bench players 20, which fills a game's 240
     player-minutes. Shares are minutes over that total, times 5 (five
@@ -51,7 +52,7 @@ def rotation_weights() -> np.ndarray:
     minutes = np.asarray(
         [STARTER_MINUTES] * STARTERS + [BENCH_MINUTES] * (ROSTER_SIZE - STARTERS), dtype=float
     )
-    return minutes / minutes.sum() * 5.0
+    return minutes / minutes.sum() * PLAYERS_ON_FLOOR
 
 
 def team_net_rating(
@@ -59,13 +60,14 @@ def team_net_rating(
     usages,
     scale: float,
     offset: float,
-    usage_league_total: float = 5.0,
+    usage_league_total: float = PLAYERS_ON_FLOOR,
 ) -> float:
     """Expected net rating (points per 100 vs. an average team) of a roster.
 
     impacts and usages are in rotation order, starters first. Usage beyond
     what a league-average lineup carries costs a share of the roster's
     positive impact: too many ball-dominant players cannot all use the ball.
+    Pass usage_league_total from the impact model's meta table.
     """
     impacts = np.asarray(impacts, dtype=float)
     usages = np.asarray(usages, dtype=float)
@@ -113,8 +115,8 @@ _erf = np.vectorize(math.erf, otypes=[float])
 
 
 def win_prob(net_a: float, net_b: float, home_edge: float = 0.0) -> float:
-    """Chance A beats B: P(margin > 0), margin ~ Normal(a - b + edge, GAME_SD)."""
-    z = (float(net_a) - float(net_b) + home_edge) / GAME_SD
+    """Chance A beats B: P(margin > 0), margin ~ Normal(a - b + edge, GAME_MARGIN_SD)."""
+    z = (float(net_a) - float(net_b) + home_edge) / GAME_MARGIN_SD
     return float(_norm_cdf(z))
 
 
@@ -150,11 +152,11 @@ def simulate_vs_league(
     """
     opps = np.asarray(opponent_nets, dtype=float)
     idx, home = _vs_league_schedule(len(opps), rng)
-    mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE, -HOME_EDGE)
-    margins = rng.normal(mean_margin, GAME_SD, size=(n_sims, SEASON_GAMES))
+    mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE_POINTS, -HOME_EDGE_POINTS)
+    margins = rng.normal(mean_margin, GAME_MARGIN_SD, size=(n_sims, SEASON_GAMES))
     wins = (margins > 0).sum(axis=1)
 
-    p_opp = _norm_cdf((opps - opps.mean()) / GAME_SD)
+    p_opp = _norm_cdf((opps - opps.mean()) / GAME_MARGIN_SD)
     opp_wins = rng.binomial(SEASON_GAMES, p_opp, size=(n_sims, len(opps)))
     best_record = float(np.mean(wins >= opp_wins.max(axis=1)))
 
@@ -175,8 +177,8 @@ def simulate_season_once(team_net: float, opponent_nets, rng: np.random.Generato
     """
     opps = np.asarray(opponent_nets, dtype=float)
     idx, home = _vs_league_schedule(len(opps), rng)
-    mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE, -HOME_EDGE)
-    margins = rng.normal(mean_margin, GAME_SD)
+    mean_margin = team_net - opps[idx] + np.where(home, HOME_EDGE_POINTS, -HOME_EDGE_POINTS)
+    margins = rng.normal(mean_margin, GAME_MARGIN_SD)
     games = [
         (int(idx[k]), bool(home[k]), float(margins[k]), bool(margins[k] > 0))
         for k in range(SEASON_GAMES)

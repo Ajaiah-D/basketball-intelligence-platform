@@ -13,6 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.constants import HOME_EDGE_POINTS
 from dashboard.lib import sim
 
 
@@ -63,7 +64,7 @@ def test_win_prob_basics():
     assert sim.win_prob(0, 0) == pytest.approx(0.5)
     assert sim.win_prob(5, 0) > 0.6
     assert sim.win_prob(0, 5) < 0.4
-    assert sim.win_prob(0, 0, home_edge=sim.HOME_EDGE) > 0.5
+    assert sim.win_prob(0, 0, home_edge=HOME_EDGE_POINTS) > 0.5
     assert sim.win_prob(3, 1) + sim.win_prob(1, 3) == pytest.approx(1.0)
 
 

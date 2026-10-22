@@ -5,12 +5,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .core import objects_exist, q
+from core.constants import COMPLETE_BOX_SCORE_FIRST_SEASON
 
-# The first season with complete box scores, where the impact pool and the
-# team builder's all-time opponents start. (Task 14 moves this to
-# core/constants.py.)
-COMPLETE_BOX_SCORE_FIRST_SEASON = "1985-86"
+from .core import objects_exist, q
 
 
 def arcade_pool(min_gp: int = 50, min_ppg: float = 14.0) -> pd.DataFrame:
@@ -85,9 +82,10 @@ def player_impact_meta() -> dict:
 
 
 def all_team_net_ratings() -> pd.DataFrame:
-    """Every team-season's net rating from 1985-86 on (season, team,
-    net_rating), oldest first. The Arcade's all-time Build mode draws its
-    opponents from these; 1985-86 is where the impact pool starts too."""
+    """Every team-season's net rating from COMPLETE_BOX_SCORE_FIRST_SEASON
+    (1985-86) on (season, team, net_rating), oldest first. The Arcade's
+    all-time Build mode draws its opponents from these; the impact pool
+    starts there too."""
     return q(
         """
         select season, team_abbreviation as team, net_rating

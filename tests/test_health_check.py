@@ -3,7 +3,10 @@ skipping the git_push lines and --no-publish dry runs written after it."""
 
 import json
 import sys
+from datetime import date
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -89,3 +92,19 @@ def test_check_last_run_is_quiet_without_dbt_warnings(tmp_path, monkeypatch, cap
     zero = _check_last_run(tmp_path / "zero", monkeypatch, capsys, {**RUN, "dbt_warnings": 0})
     older = _check_last_run(tmp_path / "older", monkeypatch, capsys, RUN)  # no key at all
     assert "dbt finished" not in zero + older
+
+
+@pytest.mark.parametrize(
+    ("day", "offseason"),
+    [
+        (date(2026, 4, 20), False),  # the last days of the regular season
+        (date(2026, 4, 21), True),
+        (date(2026, 7, 1), True),
+        (date(2026, 10, 1), True),  # the new season is current, no games yet
+        (date(2026, 10, 14), True),
+        (date(2026, 10, 15), False),  # the checks expect games again
+        (date(2027, 1, 15), False),
+    ],
+)
+def test_offseason_bounds(day, offseason):
+    assert health_check.in_offseason(day) is offseason

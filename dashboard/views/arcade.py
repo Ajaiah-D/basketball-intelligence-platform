@@ -38,6 +38,14 @@ import pandas as pd
 import streamlit as st
 
 from core import teams
+from core.constants import (
+    ARCADE_BUDGET,
+    COMPLETE_BOX_SCORE_FIRST_SEASON,
+    GAME_MARGIN_SD,
+    HOME_EDGE_POINTS,
+    MAX_COST,
+    PLAYERS_ON_FLOOR,
+)
 from core.text import fold
 from dashboard.lib import draft, glossary, media, sim
 from dashboard.lib import theme as T
@@ -378,7 +386,7 @@ def _meta() -> tuple[float, float, float]:
     return (
         float(m.get("team_scale", 1.0)),
         float(m.get("team_offset", 0.0)),
-        float(m.get("usage_league_total", 5.0)),
+        float(m.get("usage_league_total", PLAYERS_ON_FLOOR)),
     )
 
 
@@ -533,7 +541,7 @@ def _pool_table(pool: pd.DataFrame, exclude):
             "AST": cc.NumberColumn(format="%.1f", help="Assists per game."),
             "Impact": cc.NumberColumn(format="%+.2f", **glossary.marked("Impact")),
             "Cost": cc.NumberColumn(
-                format="%d", help="Credits he costs in Build mode, 1-12 by impact."
+                format="%d", help=f"Credits he costs in Build mode, 1-{MAX_COST} by impact."
             ),
         },
     )
@@ -754,7 +762,7 @@ def _build_results(
         lead = f"{season} has no team ratings, so it's " if season is not None else ""
         against = (
             f"{lead}82 games against {len(opp_nets)} real team-seasons drawn "
-            f"from 1985-86 on, each at its real net rating."
+            f"from {COMPLETE_BOX_SCORE_FIRST_SEASON} on, each at its real net rating."
         )
     else:
         against = (
@@ -808,19 +816,19 @@ def _render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
     others = problems[1:] if count_msg else problems
 
     st.caption(
-        f"Pick {sim.ROSTER_SIZE} player-seasons with {draft.BUDGET} credits to "
-        f"spend; better players cost more (1-12). The top row starts "
+        f"Pick {sim.ROSTER_SIZE} player-seasons with {ARCADE_BUDGET} credits to "
+        f"spend; better players cost more (1-{MAX_COST}). The top row starts "
         f"({sim.STARTER_MINUTES} minutes each) and the bottom row comes off the "
         f"bench ({sim.BENCH_MINUTES}). Each pick fills the highlighted spot; "
         f"choose another with its button, or remove a player to replace him."
     )
     used = int(rows["cost"].sum()) if len(rows) else 0
-    left = draft.BUDGET - used
+    left = ARCADE_BUDGET - used
     k1, k2, _ = st.columns([1, 1, 3])
     k1.markdown(
         T.kpi(
             "Credits used",
-            f"{used} / {draft.BUDGET}",
+            f"{used} / {ARCADE_BUDGET}",
             sub=f"{left} left" if left >= 0 else f"{-left} over",
         ),
         unsafe_allow_html=True,
@@ -971,7 +979,7 @@ def _render_draft(pool: pd.DataFrame, season: str | None, choice: str, meta) -> 
         f"Your hidden budget was **{state['budget']} credits** (every draft "
         f"draws {draft.DRAFT_BUDGET_MIN}-{draft.DRAFT_BUDGET_MAX}); this team "
         f"cost {state['spent']}. Build mode prices every player and gives "
-        f"everyone {draft.BUDGET}."
+        f"everyone {ARCADE_BUDGET}."
     )
     st.button("Draft again", key="tb_pick_again", on_click=_tb_reset)
     if len(rows) == sim.ROSTER_SIZE:
@@ -989,10 +997,10 @@ def _explainer(meta_row: dict) -> None:
     with st.expander("How the simulation works"):
         st.markdown(
             f"""
-**Impact.** Every player-season since 1985-86 gets one number: points, rebounds,
-assists, steals, blocks, turnovers, shots and fouls per 36 minutes, each weighed by
-a model fit to how much players' teams outscored opponents while they were on the
-court. 0 is a typical rotation player; the best seasons ever reach about +5 to +6.
+**Impact.** Every player-season since {COMPLETE_BOX_SCORE_FIRST_SEASON} gets one number:
+points, rebounds, assists, steals, blocks, turnovers, shots and fouls per 36
+minutes, each weighed by a model fit to how much players' teams outscored
+opponents while they were on the court. 0 is a typical rotation player; the best seasons ever reach about +5 to +6.
 
 **Era adjustment.** Every rate is compared with that season's league average
 before it's weighed, so a 1988 rebounder and a 2024 shooter are rated on the same
@@ -1007,8 +1015,8 @@ those minutes becomes the team rating.{fit}
 free throws and turnovers) runs past what a normal lineup carries, part of its
 positive impact is lost. This rule is a rough heuristic, not fitted to data.
 
-**Game randomness.** Each game's margin is the rating gap, plus {sim.HOME_EDGE}
-points for the home team, plus random noise of ±{sim.GAME_SD} points (one standard
+**Game randomness.** Each game's margin is the rating gap, plus {HOME_EDGE_POINTS}
+points for the home team, plus random noise of ±{GAME_MARGIN_SD} points (one standard
 deviation, as measured on real NBA games). Good teams lose plenty of single games.
 
 **A ceiling.** Real teams top out around +13 (the 1995-96 Bulls). A rating up to
@@ -1017,7 +1025,7 @@ rating bends smoothly toward a +{sim.ABS_NET_CAP:.0f} ceiling instead of running
 the chart. Projections can shift slightly when the weekly data refresh updates the
 current season.
 
-**Draft mode's hidden budget.** Every player-season has a price, 1 to 12 credits
+**Draft mode's hidden budget.** Every player-season has a price, 1 to {MAX_COST} credits
 by impact (Build mode shows it). A draft secretly gets
 {draft.DRAFT_BUDGET_MIN}-{draft.DRAFT_BUDGET_MAX} credits, and each round offers one
 pricier, one fair and one cheaper player for that spot, so whatever you pick, the
