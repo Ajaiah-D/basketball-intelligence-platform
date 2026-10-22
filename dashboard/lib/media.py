@@ -13,6 +13,8 @@ import base64
 import requests
 import streamlit as st
 
+from . import theme as T
+
 HEADSHOT_URL = "https://cdn.nba.com/headshots/nba/latest/260x190/{pid}.png"
 LOGO_URL = "https://cdn.nba.com/logos/nba/{tid}/global/L/logo.svg"
 
@@ -44,7 +46,7 @@ def team_logo_data_uri(team_id: int) -> str | None:
         return None
 
 
-def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = "#3987e5") -> str:
+def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = T.ACCENT) -> str:
     """Team logo; a team-color disc with the abbreviation if the CDN has none."""
     uri = team_logo_data_uri(team_id)
     if uri:
@@ -60,7 +62,7 @@ def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = "#3987e
     )
 
 
-def avatar_html(player_id: int, name: str, size: int = 72, ring: str = "#3987e5") -> str:
+def avatar_html(player_id: int, name: str, size: int = 72, ring: str = T.ACCENT) -> str:
     """Circular headshot with a team-color ring; initials disc fallback."""
     uri = headshot_data_uri(player_id)
     if uri:

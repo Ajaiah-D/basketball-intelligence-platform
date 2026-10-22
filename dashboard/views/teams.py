@@ -88,7 +88,7 @@ def _cards(items: list[tuple]) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get("season") or seasons.latest_season()
+    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
     st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     standings = team_data.standings(season)
 
@@ -115,28 +115,8 @@ def render() -> None:
         _render_team(season, standings)
 
 
-def _render_team(season: str, standings: pd.DataFrame) -> None:
-    pick: str | None = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
-    row = standings[standings.team_name == pick].iloc[0]
-    games = team_data.team_game_log(int(row.team_id), season)
-
-    conf_table = standings[standings.conf == row.conf].reset_index(drop=True)
-    seed = int(conf_table.index[conf_table.team == row.team][0]) + 1
-    st.markdown(f"### {T.team_dot(row.team, 14)}{row.team_name}", unsafe_allow_html=True)
-
-    # --- Ratings: record, efficiency with league ranks, payroll ------------------
-    # The efficiency cards need mart_team_season; an older warehouse without
-    # it falls back to per-game scoring from the standings row. (Standings
-    # themselves need mart_team_standings, which every published warehouse
-    # has.)
-    adv = advanced.team_advanced(season) if advanced.marts_available() else pd.DataFrame()
-    match = adv[adv.team_id == row.team_id] if not adv.empty else adv
-    a = (
-        match.iloc[0]
-        if len(match) and match.iloc[0].offensive_rating == match.iloc[0].offensive_rating
-        else None
-    )
-
+def _ratings(season: str, row, seed: int, adv: pd.DataFrame, a) -> None:
+    """Record, efficiency with league ranks, payroll."""
     cards = [("Record", f"{row.w}-{row.l}", f"{ordinal(seed)} in the {row.conf}", "", "")]
     if a is not None:
         for label, field, high, fmt in [
@@ -158,60 +138,61 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
         cards.append(("Payroll", pay[0], pay[1], "", ""))
     _cards(cards)
 
-    # --- Splits and form -------------------------------------------------------------
-    if len(games):
-        sp = tm.splits(games, standings)
-        section("Splits and form")
-        _cards(
-            [
-                ("Home", sp["home"], "", "", ""),
-                ("Away", sp["away"], "", "", ""),
-                ("Last 10", sp["last10"], "", "", ""),
-                ("Streak", sp["streak"], "", "", ""),
-                ("Close games", sp["close"], "", "&le;5 pts", ""),
-                ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
-            ]
-        )
 
-    # --- Four Factors --------------------------------------------------------------------
-    if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
-        section("Four Factors", glossary.TERMS["Four Factors"])
-        ff = tm.four_factors(adv, row.team)
-        pct = "%.1f"
-        st.dataframe(
-            ff,
-            hide_index=True,
-            width="stretch",
-            row_height=ROW_HEIGHT,
-            column_order=[
-                "factor",
-                "offense",
-                "league_offense",
-                "offense_rank",
-                "defense",
-                "league_defense",
-                "defense_rank",
-            ],
-            column_config={
-                "factor": st.column_config.TextColumn("Factor"),
-                "offense": st.column_config.NumberColumn(
-                    "Offense", help="This team's own value", format=pct
-                ),
-                "league_offense": st.column_config.NumberColumn("League avg", format=pct),
-                "offense_rank": st.column_config.TextColumn(
-                    "Off. rank", help="1st is the best offense in the league"
-                ),
-                "defense": st.column_config.NumberColumn(
-                    "Defense", help="What opponents managed against this team", format=pct
-                ),
-                "league_defense": st.column_config.NumberColumn("League avg", format=pct),
-                "defense_rank": st.column_config.TextColumn(
-                    "Def. rank", help="1st is the best defense in the league"
-                ),
-            },
-        )
+def _splits(games: pd.DataFrame, standings: pd.DataFrame) -> None:
+    sp = tm.splits(games, standings)
+    section("Splits and form")
+    _cards(
+        [
+            ("Home", sp["home"], "", "", ""),
+            ("Away", sp["away"], "", "", ""),
+            ("Last 10", sp["last10"], "", "", ""),
+            ("Streak", sp["streak"], "", "", ""),
+            ("Close games", sp["close"], "", "&le;5 pts", ""),
+            ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
+        ]
+    )
 
-    # --- Charts ------------------------------------------------------------------------------
+
+def _four_factors(adv: pd.DataFrame, team: str) -> None:
+    section("Four Factors", glossary.TERMS["Four Factors"])
+    ff = tm.four_factors(adv, team)
+    pct = "%.1f"
+    st.dataframe(
+        ff,
+        hide_index=True,
+        width="stretch",
+        row_height=ROW_HEIGHT,
+        column_order=[
+            "factor",
+            "offense",
+            "league_offense",
+            "offense_rank",
+            "defense",
+            "league_defense",
+            "defense_rank",
+        ],
+        column_config={
+            "factor": st.column_config.TextColumn("Factor"),
+            "offense": st.column_config.NumberColumn(
+                "Offense", help="This team's own value", format=pct
+            ),
+            "league_offense": st.column_config.NumberColumn("League avg", format=pct),
+            "offense_rank": st.column_config.TextColumn(
+                "Off. rank", help="1st is the best offense in the league"
+            ),
+            "defense": st.column_config.NumberColumn(
+                "Defense", help="What opponents managed against this team", format=pct
+            ),
+            "league_defense": st.column_config.NumberColumn("League avg", format=pct),
+            "defense_rank": st.column_config.TextColumn(
+                "Def. rank", help="1st is the best defense in the league"
+            ),
+        },
+    )
+
+
+def _charts(games: pd.DataFrame, adv: pd.DataFrame, team: str, has_ratings: bool) -> None:
     left, right = st.columns(2)
     if len(games):
         with left:
@@ -219,17 +200,18 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
             fig = viz.team_margins(games)
             fig.update_layout(height=CHART_HEIGHT)
             st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
-    if a is not None:
+    if has_ratings:
         with right:
             section("Offense vs defense")
-            fig = viz.rating_quadrant(adv, highlight=row.team)
+            fig = viz.rating_quadrant(adv, highlight=team)
             fig.update_layout(height=CHART_HEIGHT)
             st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
 
-    # --- Roster ------------------------------------------------------------------------------
+
+def _roster(season: str, team: str) -> None:
     section("Roster")
-    roster = players.team_roster(season, row.team, min_games=5)
-    roster["note"] = [tm.move_note(p, row.team) for p in roster["team_label"]]
+    roster = players.team_roster(season, team, min_games=5)
+    roster["note"] = [tm.move_note(p, team) for p in roster["team_label"]]
     roster = roster.sort_values("ppg", ascending=False).head(10)
     st.dataframe(
         roster[["player", "note", "gp", "mpg", "ppg", "rpg", "apg", "fg_pct", "plus_minus"]],
@@ -253,7 +235,9 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
         },
     )
 
-    # One footnote for the whole tab instead of a caption under every block.
+
+def _footnote(a) -> None:
+    """One footnote for the whole tab instead of a caption under every block."""
     notes = [
         "Ranks are out of every team that season, 1st = best (fewest points "
         "allowed for defensive rating, fastest for pace)."
@@ -266,3 +250,34 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
         "Payroll detail is on the Finances page."
     )
     st.caption(" ".join(notes))
+
+
+def _render_team(season: str, standings: pd.DataFrame) -> None:
+    pick: str | None = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
+    row = standings[standings.team_name == pick].iloc[0]
+    games = team_data.team_game_log(int(row.team_id), season)
+
+    conf_table = standings[standings.conf == row.conf].reset_index(drop=True)
+    seed = int(conf_table.index[conf_table.team == row.team][0]) + 1
+    st.markdown(f"### {T.team_dot(row.team, 14)}{row.team_name}", unsafe_allow_html=True)
+
+    # The efficiency cards need mart_team_season; an older warehouse without
+    # it falls back to per-game scoring from the standings row. (Standings
+    # themselves need mart_team_standings, which every published warehouse
+    # has.)
+    adv = advanced.team_advanced(season) if advanced.marts_available() else pd.DataFrame()
+    match = adv[adv.team_id == row.team_id] if not adv.empty else adv
+    a = (
+        match.iloc[0]
+        if len(match) and match.iloc[0].offensive_rating == match.iloc[0].offensive_rating
+        else None
+    )
+
+    _ratings(season, row, seed, adv, a)
+    if len(games):
+        _splits(games, standings)
+    if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
+        _four_factors(adv, row.team)
+    _charts(games, adv, row.team, a is not None)
+    _roster(season, row.team)
+    _footnote(a)

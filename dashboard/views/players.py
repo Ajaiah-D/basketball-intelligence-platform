@@ -10,6 +10,8 @@ didn't play that season is still found, at his most recent season, marked
 by a Season column (data.players.player_latest_seasons).
 """
 
+from typing import NamedTuple
+
 import pandas as pd
 import streamlit as st
 
@@ -77,15 +79,30 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
     return out
 
 
+# Session-state keys. The season box mirrors the sidebar's (seasons.SEASON_KEY).
+PLAYERS_SEASON_KEY = "players_season"
+PLAYERS_SEASON_ALL_KEY = "players_season_all"
+PLAYERS_PICK_KEY = "players_pick"
+
+
 def _sync_season() -> None:
-    """The page's season box drives the sidebar's (key "season"), which every
-    season-scoped page reads."""
-    st.session_state["season"] = st.session_state["players_season"]
+    """The page's season box drives the sidebar's, which every season-scoped
+    page reads."""
+    st.session_state[seasons.SEASON_KEY] = st.session_state[PLAYERS_SEASON_KEY]
 
 
-def render() -> None:
-    season = st.session_state.get("season") or seasons.latest_season()
+class Filters(NamedTuple):
+    """What the filter bar chose, with the stats it chose from."""
 
+    career: bool
+    stats: pd.DataFrame
+    min_gp: int
+    team: str
+    search: str
+
+
+def _filter_bar(season: str) -> Filters:
+    """Title, scope toggle, season / team / min-games / search controls."""
     head = st.container()  # title renders here once the scope toggle is known
     f0, fs, f1, f2, f3 = st.columns([2, 2, 2, 2, 3])
     scope = (
@@ -102,15 +119,15 @@ def render() -> None:
             ["All seasons"],
             disabled=True,
             label_visibility="collapsed",
-            key="players_season_all",
+            key=PLAYERS_SEASON_ALL_KEY,
         )
     else:
         # Follow the sidebar, so the two boxes always show the same season.
-        st.session_state["players_season"] = season
+        st.session_state[PLAYERS_SEASON_KEY] = season
         fs.selectbox(
             "Season",
             seasons.seasons(),
-            key="players_season",
+            key=PLAYERS_SEASON_KEY,
             label_visibility="collapsed",
             on_change=_sync_season,
             help="Same as the sidebar's season picker",
@@ -142,32 +159,76 @@ def render() -> None:
         help="Career scope: a player's most recent team",
     )
     search = f3.text_input("Search", placeholder="Search players...", label_visibility="collapsed")
+    return Filters(career, stats, min_gp, team, search)
 
-    view = stats[stats.gp >= min_gp]
-    if team != "All teams":
+
+def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(rows to list, searched players who didn't play this season). The
+    second frame is already appended to the first."""
+    view = f.stats[f.stats.gp >= f.min_gp]
+    if f.team != "All teams":
         # A traded player is listed under every team he played for.
-        view = view[view.team_label.str.contains(team, regex=False)]
-    if search:
-        view = view[view.player.map(fold).str.contains(fold(search).strip(), regex=False)]
+        view = view[view.team_label.str.contains(f.team, regex=False)]
+    if f.search:
+        view = view[view.player.map(fold).str.contains(fold(f.search).strip(), regex=False)]
     view = view.sort_values("ppg", ascending=False)
 
     # Season scope: a searched player who didn't play this season shows at
     # his most recent season instead, after this season's matches.
     others = pd.DataFrame()
-    if search.strip() and not career:
-        others = players.player_latest_seasons(search, min_gp)
+    if f.search.strip() and not f.career:
+        others = players.player_latest_seasons(f.search, f.min_gp)
         others = others[~others.player_id.isin(view.player_id)]
-        if team != "All teams":
-            others = others[others.team_label.str.contains(team, regex=False)]
+        if f.team != "All teams":
+            others = others[others.team_label.str.contains(f.team, regex=False)]
         others = others.sort_values("ppg", ascending=False)
-    if not career:
+    if not f.career:
         view = view.assign(season=season, pick=view.player)
     if len(others):
         others = others.assign(pick=others.player + " (" + others.season + ")")
         view = pd.concat([view, others], ignore_index=True)
+    return view, others
 
+
+def _column_config(ppg_max: float) -> dict:
+    return {
+        "player": st.column_config.TextColumn("Player", width="medium"),
+        "team_label": st.column_config.TextColumn(
+            "Team",
+            width="small",
+            help="Two teams (CHI → BOS) means traded mid-season; the line covers both",
+        ),
+        "seasons": st.column_config.NumberColumn("Yrs"),
+        "season": st.column_config.TextColumn(
+            "Season",
+            width="small",
+            help="Players who didn't play the selected season show their most recent one",
+        ),
+        "span": st.column_config.TextColumn("Span", width="medium"),
+        "gp": st.column_config.NumberColumn(**glossary.described("GP")),
+        "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
+        "ppg": st.column_config.ProgressColumn(
+            "PTS", format="%.1f", min_value=0, max_value=ppg_max, color=T.ACCENT, width="medium"
+        ),
+        "rpg": st.column_config.NumberColumn("REB", format="%.1f"),
+        "apg": st.column_config.NumberColumn("AST", format="%.1f"),
+        "spg": st.column_config.NumberColumn("STL", format="%.1f"),
+        "bpg": st.column_config.NumberColumn("BLK", format="%.1f"),
+        "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
+        "fga_pg": st.column_config.NumberColumn(**glossary.described("FGA"), format="%.1f"),
+        "tpg": st.column_config.NumberColumn(**glossary.described("3PM"), format="%.1f"),
+        "tpa_pg": st.column_config.NumberColumn(**glossary.described("3PA"), format="%.1f"),
+        "fg3_pct": st.column_config.NumberColumn(**glossary.described("3P%"), format="%.1f"),
+        "ft_pct": st.column_config.NumberColumn(**glossary.described("FT%"), format="%.1f"),
+        "fta_pg": st.column_config.NumberColumn(**glossary.described("FTA"), format="%.1f"),
+        "ts_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
+        "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
+    }
+
+
+def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: str) -> None:
     table_cols = TABLE_COLS.copy()
-    if career:
+    if f.career:
         table_cols[2:2] = ["seasons", "span"]
     elif len(others):
         table_cols[1:1] = ["season"]
@@ -182,81 +243,58 @@ def render() -> None:
         hide_index=True,
         height=430,
         row_height=38,
-        column_config={
-            "player": st.column_config.TextColumn("Player", width="medium"),
-            "team_label": st.column_config.TextColumn(
-                "Team",
-                width="small",
-                help="Two teams (CHI → BOS) means traded mid-season; the line covers both",
-            ),
-            "seasons": st.column_config.NumberColumn("Yrs"),
-            "season": st.column_config.TextColumn(
-                "Season",
-                width="small",
-                help="Players who didn't play the selected season show their most recent one",
-            ),
-            "span": st.column_config.TextColumn("Span", width="medium"),
-            "gp": st.column_config.NumberColumn(**glossary.described("GP")),
-            "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
-            "ppg": st.column_config.ProgressColumn(
-                "PTS", format="%.1f", min_value=0, max_value=ppg_max, color=T.ACCENT, width="medium"
-            ),
-            "rpg": st.column_config.NumberColumn("REB", format="%.1f"),
-            "apg": st.column_config.NumberColumn("AST", format="%.1f"),
-            "spg": st.column_config.NumberColumn("STL", format="%.1f"),
-            "bpg": st.column_config.NumberColumn("BLK", format="%.1f"),
-            "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
-            "fga_pg": st.column_config.NumberColumn(**glossary.described("FGA"), format="%.1f"),
-            "tpg": st.column_config.NumberColumn(**glossary.described("3PM"), format="%.1f"),
-            "tpa_pg": st.column_config.NumberColumn(**glossary.described("3PA"), format="%.1f"),
-            "fg3_pct": st.column_config.NumberColumn(**glossary.described("3P%"), format="%.1f"),
-            "ft_pct": st.column_config.NumberColumn(**glossary.described("FT%"), format="%.1f"),
-            "fta_pg": st.column_config.NumberColumn(**glossary.described("FTA"), format="%.1f"),
-            "ts_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
-            "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
-        },
+        column_config=_column_config(ppg_max),
     )
-    if career:
+    if f.career:
         st.caption(
             "Career view pools every ingested season (1979-80 onward) - "
             "the sidebar season selector does not apply here. Percentages "
             "are computed from career totals, shown next to attempt volume."
         )
-    else:
-        if len(others):
-            n = len(others)
-            st.caption(
-                f'{n} player{"s" if n > 1 else ""} matching "{search.strip()}" '
-                f"didn't play {season}: shown at their most recent season "
-                f"(the Season column), after {season}'s players."
-            )
+        return
+    if len(others):
+        n = len(others)
         st.caption(
-            "Click a column header to sort. Per-game averages; percentages are "
-            "season totals, shown next to their attempt volume (FGA / 3PA / FTA)."
+            f'{n} player{"s" if n > 1 else ""} matching "{f.search.strip()}" '
+            f"didn't play {season}: shown at their most recent season "
+            f"(the Season column), after {season}'s players."
         )
+    st.caption(
+        "Click a column header to sort. Per-game averages; percentages are "
+        "season totals, shown next to their attempt volume (FGA / 3PA / FTA)."
+    )
 
+
+def _pick_player(view: pd.DataFrame, f: Filters, season: str):
+    """The Player detail selector; the picked row, or None."""
     st.markdown("#### Player detail")
-    if career:
-        options = (view if len(view) else stats).sort_values("ppg", ascending=False)
+    if f.career:
+        options = (view if len(view) else f.stats).sort_values("ppg", ascending=False)
         options = options.assign(pick=options.player)
     else:
         options = (
             view
             if len(view)
             else (
-                stats.assign(season=season, pick=stats.player).sort_values("ppg", ascending=False)
+                f.stats.assign(season=season, pick=f.stats.player).sort_values(
+                    "ppg", ascending=False
+                )
             )
         )
     pick: str | None = st.selectbox(
-        "Player", options["pick"], label_visibility="collapsed", key="players_pick"
+        "Player", options["pick"], label_visibility="collapsed", key=PLAYERS_PICK_KEY
     )
     if not pick:
-        return
-    row = options[options["pick"] == pick].iloc[0]
-    # The season this row is from: the selected one, or a searched player's
-    # most recent one.
-    row_season = season if career else row.season
+        return None
+    return options[options["pick"] == pick].iloc[0]
 
+
+def _fmt(v, suffix=""):
+    return f"{v:.1f}{suffix}" if v == v else "-"
+
+
+def _player_header(row, career: bool, season: str, row_season: str) -> None:
+    """Avatar, name and team chip, the six KPI tiles and the small-sample note."""
     tc = T.team_color(row.team)
     chip_text = (
         f"{row.team} &middot; {row.seasons} seasons &middot; {row.gp} GP"
@@ -274,19 +312,15 @@ def render() -> None:
         unsafe_allow_html=True,
     )
     tiles = st.columns(6)
-
-    def fmt(v, suffix=""):
-        return f"{v:.1f}{suffix}" if v == v else "-"
-
     for col, (label, val, sub) in zip(
         tiles,
         [
-            ("PPG", fmt(row.ppg), f"{row.pts_total:,} career pts" if career else ""),
-            ("RPG", fmt(row.rpg), ""),
-            ("APG", fmt(row.apg), ""),
-            ("FG%", fmt(row.fg_pct), f"on {fmt(row.fga_pg)} FGA/g"),
-            ("3P%", fmt(row.fg3_pct), f"on {fmt(row.tpa_pg)} 3PA/g ({row.tpa_total} total)"),
-            ("TS%", fmt(row.ts_pct), "true shooting"),
+            ("PPG", _fmt(row.ppg), f"{row.pts_total:,} career pts" if career else ""),
+            ("RPG", _fmt(row.rpg), ""),
+            ("APG", _fmt(row.apg), ""),
+            ("FG%", _fmt(row.fg_pct), f"on {_fmt(row.fga_pg)} FGA/g"),
+            ("3P%", _fmt(row.fg3_pct), f"on {_fmt(row.tpa_pg)} 3PA/g ({row.tpa_total} total)"),
+            ("TS%", _fmt(row.ts_pct), "true shooting"),
         ],
         strict=True,
     ):
@@ -301,43 +335,40 @@ def render() -> None:
             f"attempts {when} - treat it as noise, not a skill signal."
         )
 
-    if career:
-        bk = players.player_season_breakdown(int(row.player_id))
-        st.markdown(
-            "**Career trajectory** - bars are season averages, "
-            "the line is the career average to date"
-        )
-        stat_label = (
-            st.segmented_control(
-                "Stat", list(TREND_STATS), default="PPG", label_visibility="collapsed"
-            )
-            or "PPG"
-        )
-        stat_col, weight_col, is_rate = TREND_STATS[stat_label]
-        st.plotly_chart(
-            viz.career_trend(bk, stat_col, stat_label, weight=weight_col, as_rate=is_rate),
-            config=viz.PLOTLY_CONFIG,
-            width="stretch",
-        )
-        if stat_label == "TS%":
-            st.caption(
-                "True shooting weights the running average by shot volume, "
-                "so a short season does not count the same as a full one. "
-                "Any season the source has no attempt totals for is left "
-                "out rather than drawn as zero."
-            )
 
-        s1, s2, s3, s4 = st.columns(4)
-        s1.markdown(
-            T.kpi("Career high", f"{row.career_high}", "points in a game"), unsafe_allow_html=True
+def _career_detail(row) -> None:
+    bk = players.player_season_breakdown(int(row.player_id))
+    st.markdown(
+        "**Career trajectory** - bars are season averages, the line is the career average to date"
+    )
+    stat_label = (
+        st.segmented_control("Stat", list(TREND_STATS), default="PPG", label_visibility="collapsed")
+        or "PPG"
+    )
+    stat_col, weight_col, is_rate = TREND_STATS[stat_label]
+    st.plotly_chart(
+        viz.career_trend(bk, stat_col, stat_label, weight=weight_col, as_rate=is_rate),
+        config=viz.PLOTLY_CONFIG,
+        width="stretch",
+    )
+    if stat_label == "TS%":
+        st.caption(
+            "True shooting weights the running average by shot volume, "
+            "so a short season does not count the same as a full one. "
+            "Any season the source has no attempt totals for is left "
+            "out rather than drawn as zero."
         )
-        s2.markdown(T.kpi("Seasons", f"{row.seasons}", row.span), unsafe_allow_html=True)
-        s3.markdown(T.kpi("Total points", f"{row.pts_total:,}"), unsafe_allow_html=True)
-        s4.markdown(
-            T.kpi("Record in games", f"{row.wins}-{row.gp - row.wins}"), unsafe_allow_html=True
-        )
-        return
 
+    s1, s2, s3, s4 = st.columns(4)
+    s1.markdown(
+        T.kpi("Career high", f"{row.career_high}", "points in a game"), unsafe_allow_html=True
+    )
+    s2.markdown(T.kpi("Seasons", f"{row.seasons}", row.span), unsafe_allow_html=True)
+    s3.markdown(T.kpi("Total points", f"{row.pts_total:,}"), unsafe_allow_html=True)
+    s4.markdown(T.kpi("Record in games", f"{row.wins}-{row.gp - row.wins}"), unsafe_allow_html=True)
+
+
+def _season_detail(row, row_season: str) -> None:
     games = players.player_game_log(int(row.player_id), row_season)
     c1, c2 = st.columns([3, 2])
     with c1:
@@ -377,3 +408,23 @@ def render() -> None:
         T.kpi("Record in games", f"{int(games.is_win.sum())}-{int((~games.is_win).sum())}"),
         unsafe_allow_html=True,
     )
+
+
+def render() -> None:
+    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+
+    f = _filter_bar(season)
+    view, others = _filter_rows(f, season)
+    _stats_table(view, others, f, season)
+
+    row = _pick_player(view, f, season)
+    if row is None:
+        return
+    # The season this row is from: the selected one, or a searched player's
+    # most recent one.
+    row_season = season if f.career else row.season
+    _player_header(row, f.career, season, row_season)
+    if f.career:
+        _career_detail(row)
+    else:
+        _season_detail(row, row_season)

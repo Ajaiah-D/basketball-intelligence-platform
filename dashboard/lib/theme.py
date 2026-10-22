@@ -50,6 +50,14 @@ def team_color(abbr: str) -> str:
         return ACCENT
 
 
+def rgba(hex_color: str, alpha: float) -> str:
+    """A "#rrggbb" token as a CSS rgba() string at the given opacity, so a
+    translucent tint is derived from its token instead of retyped as RGB."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha:g})"
+
+
 def team_dot(abbr: str, size: int = 9) -> str:
     return (
         f'<span style="display:inline-block;width:{size}px;height:{size}px;'

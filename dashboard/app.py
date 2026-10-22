@@ -143,13 +143,13 @@ with st.sidebar:
     st.markdown(
         '<div style="padding:.2rem 0 .8rem 0"><span style="font-size:1.15rem;'
         'font-weight:800;letter-spacing:-.02em">🏀 Basketball IQ</span><br>'
-        '<span style="font-size:.72rem;color:#898781">INTELLIGENCE PLATFORM</span></div>',
+        f'<span style="font-size:.72rem;color:{theme.MUTED}">INTELLIGENCE PLATFORM</span></div>',
         unsafe_allow_html=True,
     )
     st.selectbox(
         "Season",
         seasons.seasons(),
-        key="season",
+        key=seasons.SEASON_KEY,
         help="Applies to Overview, Players, Teams, and Games",
     )
 

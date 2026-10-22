@@ -18,7 +18,7 @@ from core import teams
 from core.fmt import money, ordinal
 from dashboard.lib import franchises, payroll, viz
 from dashboard.lib import theme as T
-from dashboard.lib.data import finances
+from dashboard.lib.data import finances, seasons
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
 # acknowledged by them to be partly extrapolated/minimum-filled
@@ -132,25 +132,14 @@ def _render_team_season(
         st.markdown(_contracts_card(contracts), unsafe_allow_html=True)
 
 
-def render() -> None:
-    if not finances.team_finances_available():
-        st.markdown("## Finances", unsafe_allow_html=True)
-        st.info("Payroll data hasn't been loaded into this warehouse yet.")
-        return
-
-    all_seasons = finances.team_payroll_history()
-    if all_seasons.empty:
-        st.markdown("## Finances", unsafe_allow_html=True)
-        st.info("No payroll data available.")
-        return
-    all_seasons = franchises.annotate(all_seasons)
-    cap_df = finances.salary_cap_history()
-
+def _page_header(all_seasons: pd.DataFrame, cap_df: pd.DataFrame) -> str:
+    """Title, freshness line and a note when the picked season has no salary
+    data; returns the season the page shows."""
     # The sidebar's season, like every other page - a second season picker
     # here would disagree with it. Payroll starts in 1984-85 while games go
     # back to 1979-80, so an earlier pick falls back to the latest season.
     latest = all_seasons["season"].max()
-    picked = st.session_state.get("season") or latest
+    picked = st.session_state.get(seasons.SEASON_KEY) or latest
     season = picked if picked in set(all_seasons["season"]) else latest
 
     st.markdown(f"## Finances &nbsp;{T.chip(season)}", unsafe_allow_html=True)
@@ -165,19 +154,11 @@ def render() -> None:
             f"No salary data for {picked} (it starts in "
             f"{all_seasons['season'].min()}), so this shows {season}."
         )
+    return season
 
-    franchise_ids = sorted(all_seasons["franchise"].unique(), key=teams.franchise_name)
-    team = st.selectbox(
-        "Team",
-        franchise_ids,
-        index=franchise_ids.index("BOS") if "BOS" in franchise_ids else 0,
-        format_func=teams.franchise_name,
-    )
-    team_name = teams.franchise_name(team)
-    team_df = all_seasons[all_seasons["franchise"] == team].sort_values("season")
-    league = all_seasons[all_seasons["season"] == season]
 
-    # --- The league that season ---------------------------------------------
+def _league_section(league: pd.DataFrame, team_df: pd.DataFrame, season: str) -> None:
+    """The league that season: summary, payroll snapshot, how to read it."""
     st.markdown(f"### The league in {season}")
     st.markdown(_prose(payroll.league_summary(league, season)))
     snapshot = payroll.reliable(league).copy()
@@ -203,27 +184,8 @@ def render() -> None:
     with st.expander("How to read this", expanded=True):
         st.markdown(_prose(payroll.HOW_TO_READ))
 
-    # --- The team -------------------------------------------------------------
-    st.markdown(f"### {team_name}")
-    note = franchises.FRANCHISE_NOTES.get(team)
-    if note:
-        st.caption(note)
-    _render_team_season(team_df, league, team_name, season)
 
-    st.markdown("#### Payroll history")
-    if (team_df["season"] < EARLY_ERA_CUTOFF).any():
-        st.caption(
-            "Seasons before 1996-97 use payroll figures Basketball-Reference "
-            "itself notes are partly reconstructed for players with missing "
-            "records - treat early-era numbers as directionally right, not exact."
-        )
-    st.plotly_chart(
-        viz.team_finances_trend(team_df, cap_df, eras=franchises.era_spans(team_df)),
-        width="stretch",
-        config=viz.PLOTLY_CONFIG,
-    )
-    _render_incomplete_caption(team_df)
-
+def _payroll_table(team_df: pd.DataFrame) -> None:
     display_df = team_df[
         [
             "season",
@@ -269,4 +231,64 @@ def render() -> None:
             },
         )
 
+
+def _team_section(
+    team: str,
+    team_name: str,
+    team_df: pd.DataFrame,
+    league: pd.DataFrame,
+    cap_df: pd.DataFrame,
+    season: str,
+) -> None:
+    """One franchise: this season's position, then its whole history."""
+    st.markdown(f"### {team_name}")
+    note = franchises.FRANCHISE_NOTES.get(team)
+    if note:
+        st.caption(note)
+    _render_team_season(team_df, league, team_name, season)
+
+    st.markdown("#### Payroll history")
+    if (team_df["season"] < EARLY_ERA_CUTOFF).any():
+        st.caption(
+            "Seasons before 1996-97 use payroll figures Basketball-Reference "
+            "itself notes are partly reconstructed for players with missing "
+            "records - treat early-era numbers as directionally right, not exact."
+        )
+    st.plotly_chart(
+        viz.team_finances_trend(team_df, cap_df, eras=franchises.era_spans(team_df)),
+        width="stretch",
+        config=viz.PLOTLY_CONFIG,
+    )
+    _render_incomplete_caption(team_df)
+    _payroll_table(team_df)
+
+
+def render() -> None:
+    if not finances.team_finances_available():
+        st.markdown("## Finances", unsafe_allow_html=True)
+        st.info("Payroll data hasn't been loaded into this warehouse yet.")
+        return
+
+    all_seasons = finances.team_payroll_history()
+    if all_seasons.empty:
+        st.markdown("## Finances", unsafe_allow_html=True)
+        st.info("No payroll data available.")
+        return
+    all_seasons = franchises.annotate(all_seasons)
+    cap_df = finances.salary_cap_history()
+
+    season = _page_header(all_seasons, cap_df)
+
+    franchise_ids = sorted(all_seasons["franchise"].unique(), key=teams.franchise_name)
+    team = st.selectbox(
+        "Team",
+        franchise_ids,
+        index=franchise_ids.index("BOS") if "BOS" in franchise_ids else 0,
+        format_func=teams.franchise_name,
+    )
+    team_df = all_seasons[all_seasons["franchise"] == team].sort_values("season")
+    league = all_seasons[all_seasons["season"] == season]
+
+    _league_section(league, team_df, season)
+    _team_section(team, teams.franchise_name(team), team_df, league, cap_df, season)
     st.caption(payroll.METHOD_NOTE)
