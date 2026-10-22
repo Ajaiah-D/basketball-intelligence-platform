@@ -1,7 +1,8 @@
 -- Recompute features from scratch with an explicit date filter and compare.
 -- If the window frames in mart_game_features ever stop excluding the current
 -- row, the stored value starts including the game's own result and these
--- diverge. Sampled to keep the test cheap.
+-- diverge. Sampled to keep the test cheap, with a fixed seed so a failure
+-- names the same games on every run and can be reproduced.
 --
 -- The re-derivations deliberately share no machinery with the model: no
 -- window function, no shared CTE, just correlated aggregates over an
@@ -39,7 +40,7 @@ with sample as (
         where home_games_played >= 5
           and away_games_played >= 5
           and season >= '2015-16'
-    ) using sample 500 rows
+    ) using sample 500 rows (reservoir, 42)
 ),
 
 valid_games as (
@@ -106,3 +107,11 @@ select feature, game_id, stored, independent
 from checks
 where independent is null
    or abs(stored - independent) > 0.001
+
+union all
+
+-- An empty sample checks nothing and would pass. If the filters above ever
+-- match no game (the mart emptied, or a fixture set without a modern
+-- season), that is a failure, not a clean bill.
+select 'empty sample', null, null, null
+where not exists (select 1 from sample)

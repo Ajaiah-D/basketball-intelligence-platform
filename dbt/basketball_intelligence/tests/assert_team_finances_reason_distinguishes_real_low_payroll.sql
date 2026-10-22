@@ -11,13 +11,18 @@
 -- come out 'below_half_cap' and never 'sparse_source_data'/'no_source_data',
 -- so the page can say "unusually low" instead of "missing".
 --
--- CI note: CI builds from a reduced fixture set covering only 1984-85 and
--- 2024-25, so this row does not exist there and this test passes vacuously
--- in CI - same caveat as assert_team_finances_flags_incomplete_payroll. It
--- earns its keep against a full local warehouse.
-select season, team_abbreviation, player_count, payroll_pct_of_cap,
-       payroll_incomplete_reason
-from {{ ref('mart_team_finances') }}
-where season = '1988-89'
-  and team_abbreviation = 'MIA'
-  and (payroll_incomplete_reason is distinct from 'below_half_cap')
+-- The expected row is left-joined to the mart, so the row going missing
+-- fails too. It is in CI's fixtures (data/fixtures/team_payroll/1988-89).
+with expected as (
+    select * from (values
+        ('1988-89', 'MIA', 13, 'below_half_cap')
+    ) t(season, team_abbreviation, player_count, payroll_incomplete_reason)
+)
+
+select e.season, e.team_abbreviation, f.player_count, f.payroll_pct_of_cap,
+       f.payroll_incomplete_reason,
+       case when f.season is null then 'missing from the mart' else 'wrong' end as problem
+from expected e
+left join {{ ref('mart_team_finances') }} f using (season, team_abbreviation)
+where f.payroll_incomplete_reason is distinct from e.payroll_incomplete_reason
+   or f.player_count is distinct from e.player_count
