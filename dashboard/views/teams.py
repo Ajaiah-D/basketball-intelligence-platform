@@ -8,6 +8,7 @@ import streamlit as st
 from dashboard.lib import db, glossary, payroll, viz
 from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
+from dashboard.lib.data import players, seasons
 
 
 def form_dots(form: str) -> str:
@@ -85,7 +86,7 @@ def _cards(items: list[tuple]) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get("season") or db.latest_season()
+    season = st.session_state.get("season") or seasons.latest_season()
     st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     standings = db.standings(season)
 
@@ -223,10 +224,8 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
 
     # --- Roster ------------------------------------------------------------------------------
     section("Roster")
-    roster = db.team_roster(season, row.team, min_games=5)
-    paths = db.player_team_paths(season)
-    roster = roster.merge(paths[["player_id", "team_path"]], on="player_id", how="left")
-    roster["note"] = [tm.move_note(p, row.team) for p in roster["team_path"]]
+    roster = players.team_roster(season, row.team, min_games=5)
+    roster["note"] = [tm.move_note(p, row.team) for p in roster["team_label"]]
     roster = roster.sort_values("ppg", ascending=False).head(10)
     st.dataframe(
         roster[["player", "note", "gp", "mpg", "ppg", "rpg", "apg", "fg_pct", "plus_minus"]],

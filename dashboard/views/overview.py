@@ -5,6 +5,8 @@ import streamlit as st
 
 from dashboard.lib import db, glossary, media
 from dashboard.lib import theme as T
+from dashboard.lib.data import players, seasons
+from dashboard.lib.stats import qualification_threshold
 
 # Assist-to-turnover only means something for players who actually run an
 # offense: a center with 40 assists and 8 turnovers would otherwise lead.
@@ -95,15 +97,15 @@ def game_card(r) -> str:
 
 
 def render() -> None:
-    season = st.session_state.get("season") or db.latest_season()
+    season = st.session_state.get("season") or seasons.latest_season()
 
     games = db.games_list(season)
-    stats = db.player_season_stats(season)
+    stats = players.player_season_stats(season)
     pbp_n = len(db.pbp_game_ids())
 
     # Early in a live season nobody has played enough games for a fixed cut,
-    # so the threshold scales with the season's progress (see db).
-    min_gp = db.qualification_threshold(stats)
+    # so the threshold scales with the season's progress.
+    min_gp = qualification_threshold(stats)
     qualified = stats[stats.gp >= min_gp]
 
     standings = db.standings(season)

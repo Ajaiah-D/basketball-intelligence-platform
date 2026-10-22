@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import paths
 from dashboard.lib import config, db, theme
+from dashboard.lib.data import core as data_core
+from dashboard.lib.data import seasons
 
 st.set_page_config(
     page_title="Basketball Intelligence",
@@ -73,7 +75,10 @@ def bootstrap_warehouse() -> None:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
         tmp.replace(db.DB_PATH)
-        db.q.clear()  # drop cached query results from the old file
+        # Drop cached results from the old file. data_core keys its cache on
+        # the file's mtime as well, so this is belt and braces there.
+        db.q.clear()
+        data_core.clear_caches()
         if remote_version:
             VERSION_PATH.write_text(remote_version)
     finally:
@@ -142,7 +147,10 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.selectbox(
-        "Season", db.seasons(), key="season", help="Applies to Overview, Players, Teams, and Games"
+        "Season",
+        seasons.seasons(),
+        key="season",
+        help="Applies to Overview, Players, Teams, and Games",
     )
 
 pages.run()

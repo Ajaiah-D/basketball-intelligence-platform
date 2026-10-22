@@ -15,6 +15,8 @@ import duckdb
 from streamlit.testing.v1 import AppTest
 
 from dashboard.lib import db, draft, media, sim
+from dashboard.lib.data import arcade as arcade_data
+from dashboard.lib.data import core as data_core
 
 SCRIPT = """
 from dashboard.views import arcade
@@ -24,6 +26,15 @@ arcade.render_build_team()
 SEASON = "2024-25"
 # Player ids 3..10 cost 8+7+...+1 = 36 credits: a valid 8-man roster.
 VALID_PICKS = [(pid, SEASON) for pid in range(3, 11)]
+
+
+def _warehouse_changed() -> None:
+    """After a test edits the fixture warehouse in place. The data layer
+    keys its cache on the file's mtime, but the edit can land in the same
+    clock tick as the fixture's last write; db.py (team_advanced) has no
+    such key at all."""
+    db.q.clear()
+    data_core.clear_caches()
 
 
 def _app(monkeypatch=None, **state) -> AppTest:
@@ -249,7 +260,7 @@ def test_changing_the_pool_restarts_the_draft(warehouse_for_team_builder, monkey
 
 
 def test_all_team_net_ratings(warehouse_for_team_builder):
-    df = db.all_team_net_ratings()
+    df = arcade_data.all_team_net_ratings()
     assert list(df.columns) == ["season", "team", "net_rating"]
     assert df["net_rating"].notna().all()
     assert set(df["season"]) == {"2023-24", "2024-25"}  # 1984-85 left out
@@ -278,7 +289,7 @@ def test_build_superteam_rating_stays_under_the_ceiling(warehouse_for_team_build
     con.execute("update main.player_impact set cost = 1")
     con.execute("update main.player_impact_meta set team_scale = 5.0, team_offset = 0.0")
     con.close()
-    db.q.clear()
+    _warehouse_changed()
     picks = [(pid, SEASON) for pid in range(1, 9)]
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=picks)
     rating = float(_kpi_value(at, "Team rating"))
@@ -361,7 +372,7 @@ def test_season_without_team_ratings_falls_back_and_says_so(
     con = duckdb.connect(str(warehouse_for_team_builder))
     con.execute("delete from main_marts.mart_team_season where season = '2024-25'")
     con.close()
-    db.q.clear()
+    _warehouse_changed()
     at = _app(monkeypatch, tb_pool=SEASON, tb_build_slots=list(VALID_PICKS))
     captions = " ".join(c.value for c in at.caption)
     assert "2024-25 has no team ratings" in captions

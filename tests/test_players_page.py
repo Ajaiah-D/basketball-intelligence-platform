@@ -8,24 +8,24 @@ the real warehouse via the `con` fixture, like test_db_metrics.py.
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from dashboard.lib import db
+from dashboard.lib.data import players, seasons
 
 # The sidebar box from dashboard/app.py, then the page.
 SCRIPT = """
 import streamlit as st
-from dashboard.lib import db
+from dashboard.lib.data import seasons
 from dashboard.views import players
 with st.sidebar:
-    st.selectbox("Season", db.seasons(), key="season")
+    st.selectbox("Season", seasons.seasons(), key="season")
 players.render()
 """
 
 
 def _two_seasons() -> tuple[str, str]:
-    seasons = db.seasons()
-    if len(seasons) < 2:
+    every = seasons.seasons()
+    if len(every) < 2:
         pytest.skip("needs a warehouse with two seasons")
-    return seasons[0], seasons[1]
+    return every[0], every[1]
 
 
 def _app() -> AppTest:
@@ -138,5 +138,5 @@ def test_latest_seasons_search_ignores_case_and_accents(con):
         pytest.skip("no accented names in this warehouse")
     player_id, name = row
     plain = con.execute("select upper(strip_accents(?))", [name]).fetchone()[0]
-    found = db.player_latest_seasons(plain, 25)  # "VALANCIUNAS" for "Valančiūnas"
+    found = players.player_latest_seasons(plain, 25)  # "VALANCIUNAS" for "Valančiūnas"
     assert player_id in set(found["player_id"])
