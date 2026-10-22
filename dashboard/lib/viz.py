@@ -320,7 +320,7 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         mode="lines",
         line={"width": 0},
         fill="tozeroy",
-        fillcolor="rgba(57,135,229,0.45)",
+        fillcolor=T.rgba(T.DIVERGE_POS, 0.45),
         hoverinfo="skip",
     )
     fig.add_scatter(
@@ -330,7 +330,7 @@ def game_worm(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
         mode="lines",
         line={"width": 0},
         fill="tozeroy",
-        fillcolor="rgba(230,103,103,0.45)",
+        fillcolor=T.rgba(T.DIVERGE_NEG, 0.45),
         hoverinfo="skip",
     )
     fig.add_scatter(
@@ -674,12 +674,12 @@ _ZONE_COLS = ["salary_cap", "luxury_tax", "first_apron", "second_apron"]
 # the cap green, cap-to-tax neutral (over the cap is normal), then tax,
 # first apron and second apron in their line colors.
 _ZONE_COLORS = [
-    "rgba(12,163,12,0.10)",
-    "rgba(195,194,183,0.06)",
-    "rgba(201,133,0,0.14)",
-    "rgba(217,89,38,0.16)",
+    T.rgba(T.GOOD, 0.10),
+    T.rgba(T.INK_2, 0.06),
+    T.rgba(T.SERIES[3], 0.14),
+    T.rgba(T.SERIES[1], 0.16),
 ]
-_ZONE_CEILING_COLOR = "rgba(208,59,59,0.20)"
+_ZONE_CEILING_COLOR = T.rgba(T.CRITICAL, 0.20)
 
 
 def team_finances_trend(

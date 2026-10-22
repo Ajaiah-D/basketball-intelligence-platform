@@ -5,6 +5,7 @@ import streamlit as st
 
 from dashboard.lib import glossary, media
 from dashboard.lib import theme as T
+from dashboard.lib.cards import game_card
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import games as game_data
 from dashboard.lib.data import teams as team_data
@@ -83,34 +84,7 @@ def standings_mini(df) -> str:
     return "".join(rows)
 
 
-def game_card(r) -> str:
-    home_win = r.home_pts > r.away_pts
-    aw = "" if home_win else " winner"
-    hw = " winner" if home_win else ""
-    return (
-        f'<div class="bip-game">'
-        f'<div class="bip-game-date">{r.game_date:%a, %b %d}</div>'
-        f'<div class="bip-game-line"><span class="tm{aw}">{T.team_dot(r.away)}{r.away}</span>'
-        f'<span class="sc{aw}">{r.away_pts}</span></div>'
-        f'<div class="bip-game-line"><span class="tm{hw}">{T.team_dot(r.home)}{r.home}</span>'
-        f'<span class="sc{hw}">{r.home_pts}</span></div>'
-        f"</div>"
-    )
-
-
-def render() -> None:
-    season = st.session_state.get("season") or seasons.latest_season()
-
-    games = game_data.games_list(season)
-    stats = players.player_season_stats(season)
-    pbp_n = len(game_data.pbp_game_ids())
-
-    # Early in a live season nobody has played enough games for a fixed cut,
-    # so the threshold scales with the season's progress.
-    min_gp = qualification_threshold(stats)
-    qualified = stats[stats.gp >= min_gp]
-
-    standings = team_data.standings(season)
+def _hero(season: str, games, stats, standings) -> None:
     st.markdown(
         f'<div class="bip-hero">'
         f'<div><div class="bip-hero-title">{season} Regular Season</div>'
@@ -120,6 +94,8 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
+
+def _kpis(games, stats, pbp_n: int) -> None:
     # One accent color for all four - matching every other page's KPI row
     # (Players, Teams, Finances) instead of a different color per tile with
     # no meaning behind the assignment.
@@ -139,6 +115,8 @@ def render() -> None:
         T.kpi("Play-by-play games", f"{pbp_n}", note="latest season only"), unsafe_allow_html=True
     )
 
+
+def _league_leaders(qualified, min_gp: int) -> None:
     st.markdown("#### League leaders")
     l1, l2, l3, l4 = st.columns(4)
     l1.markdown(leaders_card("Points", qualified.nlargest(5, "ppg"), "ppg"), unsafe_allow_html=True)
@@ -153,49 +131,55 @@ def render() -> None:
     )
     st.caption(f"Per-game averages, minimum {min_gp} games played.")
 
+
+def _efficiency_leaders(season: str, qualified) -> None:
     # Counting stats alone reward volume, so give efficiency its own row.
     # Skipped silently on an older warehouse without mart_player_season:
     # this is a bonus section, not a reason for the landing page to fail.
     # (The games and standings above need their marts regardless.)
     adv = advanced.player_advanced(season) if advanced.marts_available() else pd.DataFrame()
-    if not adv.empty:
-        floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
-        eff = adv[adv.minutes >= floor]
-        if len(eff) >= 5:
-            st.markdown("#### Efficiency leaders")
-            e1, e2, e3, e4 = st.columns(4)
-            e1.markdown(
-                adv_leaders_card(
-                    "True shooting", eff.nlargest(5, "true_shooting_pct"), "true_shooting_pct"
-                ),
-                unsafe_allow_html=True,
-            )
-            e2.markdown(
-                adv_leaders_card("Usage", eff.nlargest(5, "usage_pct"), "usage_pct"),
-                unsafe_allow_html=True,
-            )
-            e3.markdown(
-                adv_leaders_card("Game score", eff.nlargest(5, "game_score"), "game_score"),
-                unsafe_allow_html=True,
-            )
-            # Assist-to-turnover replaces rebound rate here: a playmaking
-            # efficiency most fans already read, where rebound rate was jargon.
-            e4.markdown(
-                leaders_card(
-                    "AST/TO",
-                    ast_to_leaders(qualified),
-                    "ast_to",
-                    help=glossary.TERMS["AST/TO"],
-                    fmt="{:.2f}",
-                ),
-                unsafe_allow_html=True,
-            )
-            st.caption(
-                f"True shooting, usage and game score: minimum {floor} minutes. "
-                f"AST/TO: players averaging {AST_TO_MIN_APG:.0f}+ assists. "
-                "Full detail on the Advanced page."
-            )
+    if adv.empty:
+        return
+    floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
+    eff = adv[adv.minutes >= floor]
+    if len(eff) < 5:
+        return
+    st.markdown("#### Efficiency leaders")
+    e1, e2, e3, e4 = st.columns(4)
+    e1.markdown(
+        adv_leaders_card(
+            "True shooting", eff.nlargest(5, "true_shooting_pct"), "true_shooting_pct"
+        ),
+        unsafe_allow_html=True,
+    )
+    e2.markdown(
+        adv_leaders_card("Usage", eff.nlargest(5, "usage_pct"), "usage_pct"),
+        unsafe_allow_html=True,
+    )
+    e3.markdown(
+        adv_leaders_card("Game score", eff.nlargest(5, "game_score"), "game_score"),
+        unsafe_allow_html=True,
+    )
+    # Assist-to-turnover replaces rebound rate here: a playmaking
+    # efficiency most fans already read, where rebound rate was jargon.
+    e4.markdown(
+        leaders_card(
+            "AST/TO",
+            ast_to_leaders(qualified),
+            "ast_to",
+            help=glossary.TERMS["AST/TO"],
+            fmt="{:.2f}",
+        ),
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        f"True shooting, usage and game score: minimum {floor} minutes. "
+        f"AST/TO: players averaging {AST_TO_MIN_APG:.0f}+ assists. "
+        "Full detail on the Advanced page."
+    )
 
+
+def _standings(standings) -> None:
     st.markdown("#### Standings")
     e, w = st.columns(2)
     with e:
@@ -208,8 +192,31 @@ def render() -> None:
         )
     st.caption("Full standings with form and scoring splits on the Teams page.")
 
+
+def _latest_games(games) -> None:
     st.markdown("#### Latest games")
     recent = games.head(9)
     cols = st.columns(3)
     for i, r in enumerate(recent.itertuples()):
         cols[i % 3].markdown(game_card(r), unsafe_allow_html=True)
+
+
+def render() -> None:
+    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+
+    games = game_data.games_list(season)
+    stats = players.player_season_stats(season)
+    pbp_n = len(game_data.pbp_game_ids())
+
+    # Early in a live season nobody has played enough games for a fixed cut,
+    # so the threshold scales with the season's progress.
+    min_gp = qualification_threshold(stats)
+    qualified = stats[stats.gp >= min_gp]
+    standings = team_data.standings(season)
+
+    _hero(season, games, stats, standings)
+    _kpis(games, stats, pbp_n)
+    _league_leaders(qualified, min_gp)
+    _efficiency_leaders(season, qualified)
+    _standings(standings)
+    _latest_games(games)

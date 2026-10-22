@@ -9,6 +9,7 @@ on the season is a 150% true shooting percentage), so every view here is
 gated on minutes played rather than showing the whole league.
 """
 
+import pandas as pd
 import streamlit as st
 
 from core.constants import ADVANCED_STATS_FIRST_SEASON, COMPLETE_BOX_SCORE_FIRST_SEASON
@@ -149,11 +150,9 @@ def leader_card(title: str, df, col: str, fmt: str = "{:.1f}") -> str:
     return T.card_html(title, "".join(rows), glossary.TERMS.get(title, ""))
 
 
-def render() -> None:
-    season = st.session_state.get("season") or seasons.latest_season()
-
-    st.markdown(f"## Advanced &nbsp;{T.chip(season)}", unsafe_allow_html=True)
-
+def _season_stats(season: str) -> pd.DataFrame | None:
+    """The season's advanced rows, or None after saying why the page has
+    nothing to show."""
     # The warehouse can predate these models (an older published copy, or a
     # local build where dbt has not run). Say so here rather than letting a
     # catalog error escape and take down every other page with it.
@@ -164,7 +163,7 @@ def render() -> None:
             "`dbt/basketball_intelligence`, or, on a cloud deploy, wait for "
             "the next refresh to publish an updated warehouse."
         )
-        return
+        return None
 
     available = advanced.advanced_seasons()
 
@@ -176,14 +175,20 @@ def render() -> None:
             "metric needs. "
             f"Pick {available[-1]} or later in the sidebar."
         )
-        return
+        return None
 
     # The mart carries team_label ("CHI → BOS" for a traded player).
     stats = advanced.player_advanced(season)
     if stats.empty:
         st.info("No player data for this season yet.")
-        return
+        return None
+    return stats
 
+
+def _filters(stats: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, int, bool]:
+    """The minutes floor, metric toggle and search box. Returns (rows to
+    show, the qualified pool percentiles are measured against, the floor,
+    whether the extra columns are on)."""
     # A rate stat on 40 minutes is noise, so the floor scales with how much
     # of the season has been played rather than sitting at a fixed number.
     max_min = int(stats["minutes"].max())
@@ -200,7 +205,16 @@ def render() -> None:
     if search:
         view = view[view.player_name.str.contains(search, case=False, na=False)]
     view = view.sort_values("game_score", ascending=False, na_position="last")
+    return view, qualified, min_minutes, show_all
 
+
+def _table(
+    view: pd.DataFrame,
+    qualified: pd.DataFrame,
+    min_minutes: int,
+    show_all: bool,
+    has_official: bool,
+) -> None:
     cols = CORE_COLS + (EXTRA_COLS if show_all else [])
     # Bar the sort column, matching the Players grid. Scaled to the rows
     # actually in view so it stays a comparison after the minutes filter or a
@@ -227,7 +241,6 @@ def render() -> None:
         view[cols], hide_index=True, height=400, row_height=38, column_config=column_config
     )
 
-    has_official = bool(stats["has_official_advanced"].any())
     source_note = (
         "Net rating and PIE are official NBA figures; everything else is computed from box scores."
         if has_official
@@ -238,7 +251,8 @@ def render() -> None:
         f"{len(qualified)} players with {min_minutes}+ minutes. Sorted by game score. {source_note}"
     )
 
-    # --- Leaders ---------------------------------------------------------
+
+def _leaders(qualified: pd.DataFrame, min_minutes: int, has_official: bool) -> None:
     st.markdown("#### Efficiency leaders")
     l1, l2, l3, l4 = st.columns(4)
     l1.markdown(
@@ -271,12 +285,15 @@ def render() -> None:
         )
     st.caption(f"Among players with {min_minutes}+ minutes.")
 
-    # --- Player profile --------------------------------------------------
+
+def _profile(stats: pd.DataFrame, view: pd.DataFrame, qualified: pd.DataFrame) -> bool:
+    """One player's header and percentile bars. False when there is nobody
+    to pick, so the page stops before the comparison."""
     st.markdown("#### Player profile")
     options = view if len(view) else qualified
     pick: str | None = st.selectbox("Player", options["player_name"], label_visibility="collapsed")
     if not pick:
-        return
+        return False
     match = qualified[qualified.player_name == pick]
     if match.empty:
         match = stats[stats.player_name == pick]
@@ -312,8 +329,11 @@ def render() -> None:
         "Bars are percentile rank against the qualified pool; the number in "
         "front is the raw value. TOV% is inverted so longer is always better."
     )
+    return True
 
-    # --- Head to head ----------------------------------------------------
+
+def _compare(qualified: pd.DataFrame) -> None:
+    """Head to head: two players across the comparison metrics."""
     st.markdown("#### Compare two players")
     c1, c2 = st.columns(2)
     names = qualified.sort_values("game_score", ascending=False, na_position="last")[
@@ -344,3 +364,20 @@ def render() -> None:
         config=viz.PLOTLY_CONFIG,
         width="stretch",
     )
+
+
+def render() -> None:
+    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+
+    st.markdown(f"## Advanced &nbsp;{T.chip(season)}", unsafe_allow_html=True)
+
+    stats = _season_stats(season)
+    if stats is None:
+        return
+    view, qualified, min_minutes, show_all = _filters(stats)
+    has_official = bool(stats["has_official_advanced"].any())
+    _table(view, qualified, min_minutes, show_all, has_official)
+    _leaders(qualified, min_minutes, has_official)
+    if not _profile(stats, view, qualified):
+        return
+    _compare(qualified)
