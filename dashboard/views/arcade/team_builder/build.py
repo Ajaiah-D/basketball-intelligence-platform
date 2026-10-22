@@ -1,11 +1,9 @@
 """Build mode: eight spots (five starters, three bench) filled from a
 searchable pool grid under a credit budget, then the shared projection.
 
-Also owns the roster grid and slot cards that Draft mode shows read-only,
-and the helpers that map a roster of (player_id, season) pairs onto the pool.
+The roster grid it fills lives in roster.py, shared with Draft mode.
 """
 
-import html
 import zlib
 
 import pandas as pd
@@ -13,17 +11,13 @@ import streamlit as st
 
 from core.constants import ARCADE_BUDGET, MAX_COST
 from core.text import fold
-from dashboard.lib import draft, glossary, media, sim
+from dashboard.lib import draft, glossary, sim
 from dashboard.lib import theme as T
 from dashboard.views.arcade.team_builder import state as tb_state
 from dashboard.views.arcade.team_builder.results import build_results
+from dashboard.views.arcade.team_builder.roster import roster_grid, slot_label, slot_labels
 
 POOL_ROWS = 200  # the pool grid shows the best 200 matches by impact
-
-
-def last_team(path: str) -> str:
-    """'CHI → BOS' -> 'BOS', the team he finished the season with."""
-    return str(path).split("→")[-1].strip()
 
 
 def _pool_table(pool: pd.DataFrame, exclude):
@@ -63,7 +57,7 @@ def _pool_table(pool: pd.DataFrame, exclude):
         }
     )
     cc = st.column_config
-    key = f"tb_table_{st.session_state.get('tb_nonce', 0)}_{zlib.crc32(query.encode('utf-8'))}"
+    key = f"tb_table_{st.session_state.get(tb_state.NONCE, 0)}_{zlib.crc32(query.encode('utf-8'))}"
     event = st.dataframe(
         view,
         key=key,
@@ -92,77 +86,6 @@ def _pool_table(pool: pd.DataFrame, exclude):
     return None, bar
 
 
-def slot_label(i: int) -> str:
-    """'Starter 1'..'Starter 5', then 'Bench 1'..'Bench 3'."""
-    if i < sim.STARTERS:
-        return f"Starter {i + 1}"
-    return f"Bench {i - sim.STARTERS + 1}"
-
-
-def _slot_html(label: str, r, target: bool = False, show_cost: bool = True) -> str:
-    if r is None:
-        text, color = ("Next pick goes here", T.ACCENT) if target else ("Empty", T.MUTED)
-        body = (
-            f'<div style="min-height:76px;display:flex;align-items:center;'
-            f'color:{color};font-size:.85rem">{text}</div>'
-        )
-        style = f"border:1px dashed {T.ACCENT}" if target else ""
-        return T.card_html(label, body, style=style)
-    team = last_team(r.team)
-    tc = T.team_color(team)
-    # Draft mode keeps prices hidden, like its budget.
-    cost = f'<span>Cost <b style="color:{T.INK}">{int(r.cost)}</b></span>' if show_cost else ""
-    body = (
-        f'<div style="min-height:76px">'
-        f'<div style="display:flex;gap:.7rem;align-items:center">'
-        f"{media.avatar_html(int(r.player_id), r.player, size=46, ring=tc)}"
-        f'<div style="min-width:0">'
-        f'<div class="bip-name" style="font-size:.95rem">{html.escape(r.player)}</div>'
-        f'<div class="bip-kpi-sub">{r.season} &middot; '
-        f'<span style="color:{tc};font-weight:700">{html.escape(team)}</span></div>'
-        f"</div></div>"
-        f'<div style="display:flex;justify-content:space-between;margin-top:.5rem;'
-        f'font-size:.8rem;color:{T.INK_2}">'
-        f'<span>Impact <b style="color:{T.INK}">{r.impact:+.2f}</b></span>'
-        f"{cost}</div></div>"
-    )
-    return T.card_html(label, body)
-
-
-def roster_grid(
-    pool: pd.DataFrame, labels: list, target: int | None, editable: bool = True
-) -> None:
-    """The eight spots, five starters over three bench. Editable (Build
-    mode): each spot has one button, Remove when filled, or pick that spot
-    for the next player."""
-    for start, count in ((0, sim.STARTERS), (sim.STARTERS, sim.ROSTER_SIZE - sim.STARTERS)):
-        cols = st.columns(sim.STARTERS)
-        for i in range(start, start + count):
-            label = labels[i]
-            r = pool.loc[label] if label is not None else None
-            with cols[i - start]:
-                st.markdown(
-                    _slot_html(slot_label(i), r, target=i == target, show_cost=editable),
-                    unsafe_allow_html=True,
-                )
-                if not editable:
-                    continue
-                if r is not None:
-                    st.button(
-                        "Remove", key=f"tb_rm_{i}", width="stretch", on_click=_tb_remove, args=(i,)
-                    )
-                elif i == target:
-                    st.button("Picking here", key=f"tb_slot_{i}", width="stretch", disabled=True)
-                else:
-                    st.button(
-                        "Pick for this spot",
-                        key=f"tb_slot_{i}",
-                        width="stretch",
-                        on_click=_tb_target,
-                        args=(i,),
-                    )
-
-
 def _slots() -> list[tuple[int, str] | None]:
     """The eight Build spots in order; None is an empty spot."""
     raw = list(st.session_state.get(tb_state.BUILD_SLOTS) or [])
@@ -177,18 +100,6 @@ def _target(slots: list) -> int | None:
     if chosen is not None and 0 <= chosen < len(slots) and slots[chosen] is None:
         return chosen
     return next((i for i, s in enumerate(slots) if s is None), None)
-
-
-def slot_labels(pool: pd.DataFrame, slots: list) -> list:
-    """Pool index label per spot (None for an empty spot, or for a pick the
-    pool no longer has)."""
-    ids = [s[0] for s in slots if s is not None]
-    cand = pool[pool["player_id"].isin(ids)]
-    found = {
-        (int(p), str(s)): label
-        for label, p, s in zip(cand.index, cand["player_id"], cand["season"], strict=True)
-    }
-    return [None if s is None else found.get(s) for s in slots]
 
 
 def _tb_add(key: tuple[int, str]) -> None:
@@ -246,7 +157,7 @@ def render_build(pool: pd.DataFrame, season: str | None, choice: str, meta) -> N
         T.kpi("Players", f"{len(rows)} / {sim.ROSTER_SIZE}", sub="5 starters, 3 bench"),
         unsafe_allow_html=True,
     )
-    roster_grid(pool, labels, target)
+    roster_grid(pool, labels, target, on_remove=_tb_remove, on_target=_tb_target)
     for msg in others:
         st.warning(msg)
 
