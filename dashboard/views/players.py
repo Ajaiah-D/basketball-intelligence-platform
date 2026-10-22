@@ -10,11 +10,10 @@ didn't play that season is still found, at his most recent season, marked
 by a Season column (data.players.player_latest_seasons).
 """
 
-import unicodedata
-
 import pandas as pd
 import streamlit as st
 
+from core.text import fold
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
@@ -76,11 +75,6 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
         if rank is not None:
             out.append((label, rank, value))
     return out
-
-
-def _fold(text) -> str:
-    """Lower-case, accents dropped, so "jokic" finds "Jokić"."""
-    return unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().lower()
 
 
 def _sync_season() -> None:
@@ -154,7 +148,7 @@ def render() -> None:
         # A traded player is listed under every team he played for.
         view = view[view.team_label.str.contains(team, regex=False)]
     if search:
-        view = view[view.player.map(_fold).str.contains(_fold(search).strip(), regex=False)]
+        view = view[view.player.map(fold).str.contains(fold(search).strip(), regex=False)]
     view = view.sort_values("ppg", ascending=False)
 
     # Season scope: a searched player who didn't play this season shows at

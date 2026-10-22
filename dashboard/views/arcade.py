@@ -31,7 +31,6 @@ keys (tb_build_*, tb_slot, tb_pick, tb_proj) and the search.
 
 import html
 import random
-import unicodedata
 import zlib
 
 import numpy as np
@@ -39,6 +38,7 @@ import pandas as pd
 import streamlit as st
 
 from core import teams
+from core.text import fold
 from dashboard.lib import draft, glossary, media, sim
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, seasons
@@ -343,11 +343,6 @@ def _tb_reset() -> None:
     _tb_bump()
 
 
-def _fold(text) -> str:
-    """Lower-case, accents dropped, so "jokic" finds "Jokić"."""
-    return unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().lower()
-
-
 def _last_team(path: str) -> str:
     """'CHI → BOS' -> 'BOS', the team he finished the season with."""
     return str(path).split("→")[-1].strip()
@@ -496,9 +491,9 @@ def _pool_table(pool: pd.DataFrame, exclude):
     )
     bar = st.container()
     avail = pool.loc[~pool.index.isin(list(exclude))]
-    tokens = _fold(query).split()
+    tokens = fold(query).split()
     if tokens:
-        hay = (avail["player"] + " " + avail["season"] + " " + avail["team"]).map(_fold)
+        hay = (avail["player"] + " " + avail["season"] + " " + avail["team"]).map(fold)
         mask = pd.Series(True, index=avail.index)
         for tok in tokens:
             mask &= hay.str.contains(tok, regex=False)
