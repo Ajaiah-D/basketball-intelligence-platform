@@ -124,8 +124,10 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     st.markdown(f"### {T.team_dot(row.team, 14)}{row.team_name}", unsafe_allow_html=True)
 
     # --- Ratings: record, efficiency with league ranks, payroll ------------------
-    # The efficiency cards need the marts; a warehouse without them falls back
-    # to per-game scoring, which every published warehouse has.
+    # The efficiency cards need mart_team_season; an older warehouse without
+    # it falls back to per-game scoring from the standings row. (Standings
+    # themselves need mart_team_standings, which every published warehouse
+    # has.)
     adv = advanced.team_advanced(season) if advanced.marts_available() else pd.DataFrame()
     match = adv[adv.team_id == row.team_id] if not adv.empty else adv
     a = (

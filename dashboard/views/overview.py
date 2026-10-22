@@ -154,8 +154,9 @@ def render() -> None:
     st.caption(f"Per-game averages, minimum {min_gp} games played.")
 
     # Counting stats alone reward volume, so give efficiency its own row.
-    # Skipped silently when the warehouse has no marts: this is a bonus
-    # section, not a reason for the landing page to fail.
+    # Skipped silently on an older warehouse without mart_player_season:
+    # this is a bonus section, not a reason for the landing page to fail.
+    # (The games and standings above need their marts regardless.)
     adv = advanced.player_advanced(season) if advanced.marts_available() else pd.DataFrame()
     if not adv.empty:
         floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))

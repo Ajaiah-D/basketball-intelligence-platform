@@ -58,9 +58,10 @@ def warehouse_path() -> Path:
     return base / "warehouse" / "basketball.duckdb"
 
 
-def warehouse_version_path() -> Path:
-    """Marker the dashboard writes beside a warehouse it downloaded."""
-    return warehouse_path().with_suffix(".version")
+def warehouse_version_path(warehouse: Path | None = None) -> Path:
+    """Marker the dashboard writes beside a warehouse it downloaded: beside
+    `warehouse`, or beside warehouse_path() when none is given."""
+    return (warehouse or warehouse_path()).with_suffix(".version")
 
 
 def release_version_path() -> Path:

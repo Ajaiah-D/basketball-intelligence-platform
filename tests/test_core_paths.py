@@ -105,3 +105,8 @@ def test_absolute_env_values_are_used_as_given(monkeypatch, tmp_path):
     monkeypatch.setenv("BIP_WAREHOUSE", str(tmp_path / "wh.duckdb"))
     assert paths.data_home() == tmp_path / "home"
     assert paths.warehouse_path() == tmp_path / "wh.duckdb"
+
+
+def test_the_version_marker_can_follow_a_given_warehouse(tmp_path):
+    # The dashboard passes the data layer's warehouse, which tests can move.
+    assert paths.warehouse_version_path(tmp_path / "w.duckdb") == tmp_path / "w.version"
