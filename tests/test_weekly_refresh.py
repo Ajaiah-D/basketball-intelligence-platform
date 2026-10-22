@@ -195,6 +195,43 @@ def test_dbt_runs_as_one_build_step(fake_run):
     assert out["calls"]["dbt_build"]["cmd"][1:] == ["build", "--profiles-dir", "."]
 
 
+# What dbt build writes to dbt_build.log when a test warns, colour codes
+# and all (trimmed from a real run).
+DBT_WARN_OUTPUT = (
+    "\x1b[0m11:37:18  1 of 3 START test assert_marts_not_empty ..... [RUN]\n"
+    "\x1b[0m11:37:18  2 of 3 WARN 2 assert_player_season_matches_game_logs ..... "
+    "[\x1b[33mWARN 2\x1b[0m in 0.03s]\n"
+    "\x1b[0m11:37:18  1 of 3 PASS assert_marts_not_empty ..... [\x1b[32mPASS\x1b[0m in 0.04s]\n"
+    "\x1b[0m11:37:18  [\x1b[33mWARNING\x1b[0m]: in test assert_player_season_matches_game_logs\n"
+    "\x1b[0m11:37:18  Done. PASS=2 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=3\n"
+)
+
+
+def test_dbt_warnings_reads_the_summary_and_the_warning_tests():
+    assert wr.dbt_warnings(DBT_WARN_OUTPUT) == (1, ["assert_player_season_matches_game_logs"])
+    clean = "Done. PASS=131 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=131\n"
+    assert wr.dbt_warnings(clean) == (0, [])
+    assert wr.dbt_warnings("Compilation Error in model foo\n") is None
+
+
+def test_dbt_warnings_go_on_the_run_line(fake_run):
+    out = fake_run(output={"dbt_build": DBT_WARN_OUTPUT})
+    assert out["exit"] == 0, "a warning does not fail the run"
+    assert out["run"]["dbt_warnings"] == 1
+    assert out["run"]["dbt_warning_tests"] == ["assert_player_season_matches_game_logs"]
+
+
+def test_a_clean_dbt_build_records_zero_warnings(fake_run):
+    out = fake_run(output={"dbt_build": "Done. PASS=131 WARN=0 ERROR=0 SKIP=0 TOTAL=131\n"})
+    assert out["run"]["dbt_warnings"] == 0
+    assert "dbt_warning_tests" not in out["run"]
+
+
+def test_a_dbt_log_without_a_summary_records_nothing(fake_run):
+    out = fake_run("dbt_build", output={"dbt_build": "Compilation Error in model foo\n"})
+    assert "dbt_warnings" not in out["run"]
+
+
 def test_the_ingest_step_passes_the_shared_play_by_play_cap(fake_run):
     from core.constants import PBP_MAX_NEW_GAMES_PER_RUN
 

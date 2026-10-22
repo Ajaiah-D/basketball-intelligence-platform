@@ -189,6 +189,13 @@ def check_last_run() -> None:
                     f"  NOTE step '{step['step']}' failed but did not block the "
                     f"run; the warehouse is carrying last week's data for it"
                 )
+    # A dbt test configured to warn (assert_player_season_matches_game_logs
+    # below its error threshold) passes the build, so the run is "ok" and
+    # the warning would otherwise sit unread in that run's dbt_build.log.
+    warnings = last.get("dbt_warnings") or 0
+    if warnings:
+        tests = ", ".join(last.get("dbt_warning_tests") or []) or "see dbt_build.log"
+        print(f"  NOTE dbt finished that run with {warnings} warning(s): {tests}")
     # The release is already published by the time the run log is pushed,
     # so a failed push is not a failed refresh - but it does mean GitHub's
     # copy of this log is behind until the next run pushes it.

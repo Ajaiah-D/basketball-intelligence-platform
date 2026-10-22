@@ -3,6 +3,7 @@ means in a given season - franchise, era name, conference, colour and
 Basketball-Reference code. dbt joins the same CSV, so these tests also pin
 the Python reading of it to the mart's."""
 
+import collections
 import itertools
 import re
 
@@ -78,10 +79,41 @@ def test_conference(code, season, expected):
     assert teams.conference(code, season) == expected
 
 
+# Every code era in the seed and its conference, written out by hand rather
+# than read back from the seed, so a mistyped conference there fails here.
+# One line per era: the code, then "@first_season" for a code with more
+# than one era. As in the seed, a code keeps one conference for all its
+# seasons (see _seeds.yml for the realignments that are not modelled).
+EAST = """
+    ATL BOS BKN CHA CHA@2014-15 CHI CLE DET IND MIA MIL NYK ORL PHI TOR
+    WAS WAS@1997-98 CAP CHH NJN PHL WSB
+"""
+WEST = """
+    DAL DEN GSW HOU LAC LAL MEM MIN NOP OKC PHX POR SAC SAS UTA
+    GOS KCK NOH NOK SAN SDC SEA UTH VAN
+"""
+
+
+def _era_key(era: teams.TeamEra, multi_era: set[str]) -> str:
+    if era.team_code in multi_era and era.first_season is not None:
+        return f"{era.team_code}@{era.first_season}"
+    return era.team_code
+
+
+def test_every_code_era_has_the_conference_written_here():
+    expected = dict.fromkeys(EAST.split(), "East") | dict.fromkeys(WEST.split(), "West")
+    counts = collections.Counter(era.team_code for era in teams.eras())
+    multi_era = {code for code, n in counts.items() if n > 1}
+    actual = {_era_key(era, multi_era): era.conference for era in teams.eras()}
+    assert sorted(actual) == sorted(expected), "seed eras and this table list different eras"
+    wrong = {key: (actual[key], want) for key, want in expected.items() if actual[key] != want}
+    assert not wrong, f"seed conference differs (seed, expected): {wrong}"
+
+
 @pytest.mark.parametrize("code,season", [("XXX", "2020-21"), ("SEA", "2028-29")])
 def test_conference_never_defaults(code, season):
     """No era covers these, so there is no answer - not a guess at West."""
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError, match="no team_codes era for"):
         teams.conference(code, season)
 
 
@@ -89,7 +121,7 @@ def test_colour_is_per_code_and_unknown_codes_raise():
     assert teams.color("BOS") == "#00B25A"
     assert teams.color("SEA") == "#2DA05A"
     assert teams.color("CAP") == "#E31837"
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError, match="XXX"):
         teams.color("XXX")
 
 
@@ -111,7 +143,7 @@ def test_bbref_code(code, season, expected):
 
 
 def test_bbref_code_raises_for_an_unknown_code():
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError, match="no team_codes era for 'XXX' in 2020-21"):
         teams.bbref_code("XXX", "2020-21")
 
 
