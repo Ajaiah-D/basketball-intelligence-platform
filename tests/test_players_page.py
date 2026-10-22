@@ -118,10 +118,23 @@ def test_search_finds_a_retired_player_at_his_latest_season(con):
     assert last in " ".join(m.value for m in at.markdown)
 
 
+def _established_season(con) -> str:
+    """The newest season in which someone has played 25+ games (the page's
+    default minimum): early in a season the newest one has nobody yet."""
+    row = con.execute(
+        "select max(season) from main_marts.mart_player_season where games_played >= 25"
+    ).fetchone()
+    if row is None or row[0] is None:
+        pytest.skip("no season with a 25-game player in this warehouse")
+    return str(row[0])
+
+
 def test_search_keeps_the_selected_season_for_players_in_it(con):
-    newest, _ = _two_seasons()
-    name, _last = _unique_name(con, "season = ?", (newest,))
+    season = _established_season(con)
+    name, _last = _unique_name(con, "season = ?", (season,))
     at = _app()
+    at.selectbox(key="players_season").select(season).run()
+    assert not at.exception, at.exception
     at.text_input[0].input(name).run()
     assert not at.exception, at.exception
     table = at.dataframe[0].value

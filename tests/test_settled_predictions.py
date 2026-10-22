@@ -114,6 +114,15 @@ def warehouse_copy(con, tmp_path_factory):
     source = paths.warehouse_path()
     path = tmp_path_factory.mktemp("settled") / source.name
     shutil.copyfile(source, path)
+    with duckdb.connect(str(path), read_only=True) as ro:
+        built = ro.execute(
+            "select count(*) from information_schema.tables "
+            "where table_schema = 'main_marts' and table_name = 'mart_settled_predictions'"
+        ).fetchone()
+    if not built or not built[0]:
+        # A local warehouse published before the model existed. CI always
+        # builds dbt fresh, and its skip guard fails any skip there.
+        pytest.skip("this warehouse predates mart_settled_predictions; run dbt build")
     with duckdb.connect(str(path)) as rw:
         games = rw.execute(
             """
