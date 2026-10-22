@@ -33,8 +33,17 @@ seeds:
       range) and by core/teams.py, which the dashboard and the payroll
       ingest use without touching the warehouse - so this file is the one
       place these facts live. Every code in the team game logs or the
-      payroll must be covered; assert_standings_conference_is_assigned
-      fails the build otherwise.
+      payroll must be covered: assert_standings_conference_is_assigned
+      fails the build for an uncovered game-log code and
+      assert_payroll_codes_have_a_team_era for an uncovered payroll code.
+
+      The unique test below only stops two rows starting the same era; it
+      does not catch two eras of one code that overlap (SEA through
+      2007-08 and again from 2005-06, say). That is guarded twice
+      elsewhere: tests/test_core_teams.py checks no code's eras overlap,
+      and an overlap on a season in the data would double the code's rows in
+      mart_team_standings, which its grain test (assert_mart_grain_is_unique)
+      fails.
 
       Decisions where the old copies disagreed. Era bounds follow the
       franchise lineage the Finances page used: only SEA (through 2007-08,

@@ -56,6 +56,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -247,6 +248,49 @@ def kill_tree(proc: subprocess.Popen) -> None:
         log.warning("   pid %s did not exit after being killed: %s", proc.pid, exc)
 
 
+# dbt's colour codes reach the log file too; they sit inside the lines the
+# patterns below read.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# "Done. PASS=125 WARN=1 ERROR=0 SKIP=0 ... TOTAL=126", the build's last word.
+_DBT_SUMMARY = re.compile(r"Done\. PASS=\d+ WARN=(\d+)")
+# "12 of 131 WARN 3 assert_player_season_matches_game_logs ..... [WARN 3 in 0.1s]"
+_DBT_WARN_LINE = re.compile(r"\d+ of \d+ WARN \d+ (\S+)")
+
+
+def dbt_warnings(log_text: str) -> tuple[int, list[str]] | None:
+    """(warning count, names of the warning tests) from a dbt build's output,
+    or None when it has no summary line (the build died before the end).
+
+    A test configured to warn passes the build, so its result is only ever
+    in dbt_build.log. The count goes on the run's line so the health check
+    can say so.
+    """
+    text = _ANSI.sub("", log_text)
+    summaries = _DBT_SUMMARY.findall(text)
+    if not summaries:
+        return None
+    names = list(dict.fromkeys(_DBT_WARN_LINE.findall(text)))
+    return int(summaries[-1]), names
+
+
+def record_dbt_warnings(run: dict, log_dir: Path) -> None:
+    """Put the dbt_build step's warnings on the run: "dbt_warnings" (count)
+    and, when there are any, "dbt_warning_tests". Nothing if the log has no
+    summary."""
+    log_path = log_dir / "dbt_build.log"
+    try:
+        found = dbt_warnings(log_path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return
+    if found is None:
+        return
+    count, names = found
+    run["dbt_warnings"] = count
+    if count:
+        run["dbt_warning_tests"] = names
+        log.warning("   dbt finished with %s warning(s): %s", count, ", ".join(names) or "?")
+
+
 def run_steps(
     run: dict, steps: list[tuple], *, warehouse: Path, log_dir: Path, dry_run: bool = False
 ) -> bool:
@@ -359,6 +403,7 @@ def build(run: dict, warehouse: Path, log_dir: Path, *, dry_run: bool = False) -
         ok = run_steps(
             run, [("dbt_build", [DBT, "build", "--profiles-dir", "."], dbt_dir)], **where
         )
+        record_dbt_warnings(run, log_dir)
 
     # The player-impact refit is NON-FATAL too, for the same reason as
     # payroll. It only feeds the Arcade team builder; the predictions and
