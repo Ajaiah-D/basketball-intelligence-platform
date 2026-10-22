@@ -13,7 +13,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import paths
-from dashboard.lib import config, db, theme
+from dashboard.lib import config, theme
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import seasons
 
@@ -26,6 +26,7 @@ st.set_page_config(
 theme.inject(st)
 
 
+WAREHOUSE_PATH = paths.warehouse_path()
 VERSION_PATH = paths.warehouse_version_path()
 
 
@@ -59,25 +60,24 @@ def bootstrap_warehouse() -> None:
 
     remote_version = _remote_version(url)
     local_version = VERSION_PATH.read_text().strip() if VERSION_PATH.exists() else None
-    if db.DB_PATH.exists() and (remote_version is None or remote_version == local_version):
+    if WAREHOUSE_PATH.exists() and (remote_version is None or remote_version == local_version):
         return
 
     import os
 
     import requests
 
-    db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = db.DB_PATH.with_suffix(f".download{os.getpid()}")
+    WAREHOUSE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = WAREHOUSE_PATH.with_suffix(f".download{os.getpid()}")
     try:
         with requests.get(url, stream=True, timeout=300) as r:
             r.raise_for_status()
             with tmp.open("wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     f.write(chunk)
-        tmp.replace(db.DB_PATH)
-        # Drop cached results from the old file. data_core keys its cache on
-        # the file's mtime as well, so this is belt and braces there.
-        db.q.clear()
+        tmp.replace(WAREHOUSE_PATH)
+        # Drop cached results from the old file. The data layer keys its
+        # cache on the file's mtime as well, so this is belt and braces.
         data_core.clear_caches()
         if remote_version:
             VERSION_PATH.write_text(remote_version)
@@ -90,7 +90,7 @@ try:
 except Exception as exc:
     st.error(f"Warehouse download failed: {exc}")
 
-if not db.warehouse_exists():
+if not data_core.warehouse_exists():
     st.error(
         "Warehouse not found. Run the pipeline first (see README):\n\n"
         "1. `python ingestion/nba_ingest.py`\n"

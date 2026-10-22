@@ -8,8 +8,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, viz
+from dashboard.lib import glossary, stats, viz
 from dashboard.lib import theme as T
+from dashboard.lib.data import predictions
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -45,7 +46,7 @@ def prediction_card(r, tip: str) -> str:
     home, away = r.home_team_abbreviation, r.away_team_abbreviation
     home_pct, away_pct = _split(r.win_probability)
     # Trust the probability over the margin's sign if they ever disagree.
-    home_fav = float(r.win_probability) >= 0.5
+    home_fav = float(r.win_probability) >= predictions.HOME_PICK_THRESHOLD
     fav, fav_pct = (home, home_pct) if home_fav else (away, away_pct)
     # Never "by 0": a pick that is a coin flip is still a pick by a point.
     by = max(1, round(abs(float(r.predicted_margin))))
@@ -125,8 +126,8 @@ def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
     r: Any
     for r in recent.itertuples():
         # A coin flip is a home pick - the card's favorite and the accuracy
-        # KPI (db.prediction_track_record) use the same >= 0.5 rule.
-        home_pick = float(r.win_probability) >= 0.5
+        # KPI (predictions.prediction_track_record) use the same rule.
+        home_pick = float(r.win_probability) >= predictions.HOME_PICK_THRESHOLD
         pick = r.home if home_pick else r.away
         pick_pct = _split(r.win_probability)[0 if home_pick else 1]
         home_won = r.home_pts > r.away_pts
@@ -146,7 +147,7 @@ def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
 
 def _track_record(upcoming: pd.DataFrame) -> None:
     st.markdown("#### Track record", unsafe_allow_html=True)
-    record = db.prediction_track_record()
+    record = predictions.prediction_track_record()
     if record.get("n", 0) == 0:
         if upcoming.empty:
             st.info(
@@ -186,7 +187,7 @@ def _track_record(upcoming: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    bins = db.calibration_bins()
+    bins = stats.calibration_bins(predictions.settled_predictions())
     if not bins.empty:
         st.markdown(
             f"#### Calibration{T.tip(glossary.TERMS['Calibration'])}", unsafe_allow_html=True
@@ -194,7 +195,7 @@ def _track_record(upcoming: pd.DataFrame) -> None:
         st.caption("When the model gave the home team a chance, how often it won.")
         st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG, width="stretch")
 
-    recent = db.recent_settled_predictions()
+    recent = predictions.recent_settled_predictions()
     if not recent.empty:
         st.markdown("#### Recent results")
         grid = _recent_results(recent)
@@ -212,7 +213,7 @@ def _track_record(upcoming: pd.DataFrame) -> None:
 def render() -> None:
     st.markdown("## Predictions", unsafe_allow_html=True)
 
-    if not db.predictions_available():
+    if not predictions.predictions_available():
         st.info(
             "No predictions have been published yet. They are written once a "
             "week, before the games are played."
@@ -224,7 +225,7 @@ def render() -> None:
         "margin it expects the favorite to win by."
     )
 
-    upcoming = db.upcoming_predictions()
+    upcoming = predictions.upcoming_predictions()
     if upcoming.empty:
         st.info("No upcoming games on the schedule right now.")
     else:

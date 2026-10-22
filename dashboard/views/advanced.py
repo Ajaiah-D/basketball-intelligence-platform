@@ -11,9 +11,9 @@ gated on minutes played rather than showing the whole league.
 
 import streamlit as st
 
-from dashboard.lib import db, glossary, media, viz
+from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
-from dashboard.lib.data import seasons
+from dashboard.lib.data import advanced, seasons
 from dashboard.lib.stats import percentile_of
 
 # The default table: enough to answer "who is efficient and how involved
@@ -45,6 +45,62 @@ EXTRA_COLS = [
 # Percentile comparison uses metrics that exist for every complete season,
 # so the head-to-head still works for pre-1997 players.
 COMPARE_METRICS = ["TS%", "USG%", "AST%", "REB%", "STL%", "BLK%", "Game score"]
+
+# Label -> (column, higher_is_better, help text). Drives the Advanced page so
+# the metric list lives in one place instead of being restated per widget.
+ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
+    "TS%": (
+        "true_shooting_pct",
+        True,
+        "True shooting: points per shooting possession, counting 3s and free throws",
+    ),
+    "eFG%": (
+        "effective_fg_pct",
+        True,
+        "Effective FG%: field goal percentage with 3-pointers weighted 1.5x",
+    ),
+    "USG%": (
+        "usage_pct",
+        True,
+        "Usage: share of team possessions a player ends while on the floor",
+    ),
+    "AST%": (
+        "assist_pct",
+        True,
+        "Assist rate: share of teammate field goals a player assisted while on the floor",
+    ),
+    "REB%": (
+        "rebound_pct",
+        True,
+        "Rebound rate: share of available rebounds a player grabbed while on the floor",
+    ),
+    "TOV%": (
+        "turnover_pct",
+        False,
+        "Turnover rate: turnovers per 100 individual plays (lower is better)",
+    ),
+    "STL%": ("steal_pct", True, "Steals per opponent possession while on the floor"),
+    "BLK%": ("block_pct", True, "Share of opponent 2-point attempts blocked"),
+    "PTS/36": ("points_per_36", True, "Points per 36 minutes, pace of a starter's night"),
+    "PTS/100": ("points_per_100", True, "Points per 100 team possessions on the floor"),
+    "Game score": (
+        "game_score",
+        True,
+        "Hollinger game score: one-number box score summary, ~10 is average",
+    ),
+    "Net rating": (
+        "net_rating",
+        True,
+        "Team point differential per 100 possessions with the player on the floor "
+        "(official NBA figure, 1996-97 on)",
+    ),
+    "PIE": (
+        "player_impact_estimate",
+        True,
+        "Player impact estimate: share of the game's total production "
+        "(official NBA figure, 1996-97 on)",
+    ),
+}
 
 COLUMN_CONFIG = {
     "player_name": st.column_config.TextColumn("Player", width="medium"),
@@ -100,7 +156,7 @@ def render() -> None:
     # The warehouse can predate these models (an older published copy, or a
     # local build where dbt has not run). Say so here rather than letting a
     # catalog error escape and take down every other page with it.
-    if not db.marts_available():
+    if not advanced.marts_available():
         st.info(
             "Advanced metrics are not in this copy of the warehouse yet. "
             "Rebuild it with `dbt run --profiles-dir .` from "
@@ -109,7 +165,7 @@ def render() -> None:
         )
         return
 
-    available = db.advanced_seasons()
+    available = advanced.advanced_seasons()
 
     if season not in available:
         st.info(
@@ -121,7 +177,7 @@ def render() -> None:
         return
 
     # The mart carries team_label ("CHI → BOS" for a traded player).
-    stats = db.player_advanced(season)
+    stats = advanced.player_advanced(season)
     if stats.empty:
         st.info("No player data for this season yet.")
         return
@@ -242,7 +298,7 @@ def render() -> None:
 
     rows = []
     for label in COMPARE_METRICS:
-        col, higher_better, _ = db.ADVANCED_METRICS[label]
+        col, higher_better, _ = ADVANCED_METRICS[label]
         val = row.get(col)
         if val is None or val != val:
             continue
@@ -274,7 +330,7 @@ def render() -> None:
     b = qualified[qualified.player_name == b_name].iloc[0]
     labels, a_pcts, b_pcts = [], [], []
     for label in COMPARE_METRICS:
-        col, higher_better, _ = db.ADVANCED_METRICS[label]
+        col, higher_better, _ = ADVANCED_METRICS[label]
         pa = percentile_of(qualified[col], a.get(col), higher_better)
         pb = percentile_of(qualified[col], b.get(col), higher_better)
         if pa is not None and pb is not None:

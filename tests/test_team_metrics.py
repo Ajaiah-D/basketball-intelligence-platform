@@ -46,7 +46,7 @@ def test_four_factors_table_ranks_offense_and_defense():
 
 
 def _games():
-    # Oldest first, as db.team_game_log returns it.
+    # Oldest first, as data.teams.team_game_log returns it.
     return pd.DataFrame(
         {
             "game_date": pd.date_range("2026-01-01", periods=6),

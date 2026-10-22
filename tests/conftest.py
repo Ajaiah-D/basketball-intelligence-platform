@@ -4,8 +4,6 @@ on every refresh."""
 
 import os
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
@@ -18,7 +16,6 @@ sys.path.insert(0, str(ROOT))
 # repo root on the path in the first place, so a top-of-file import here
 # would not resolve.
 from core import paths
-from dashboard.lib import db
 from dashboard.lib.data import core as data_core
 
 DB_PATH = paths.warehouse_path()
@@ -76,46 +73,31 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 #
 # Same isolated-tmp-warehouse pattern as test_predictions_page.py's
 # no_predictions_db/with_predictions_db: a fresh DuckDB file per fixture,
-# with the whole dashboard pointed at it - dashboard/lib/data through
-# use_warehouse(), and the domains still in db.py through db.DB_PATH until
-# they move too. The caches are cleared before and after so a stale hit from
-# one test's warehouse can't leak into the next test's assertions against a
-# different one.
+# with the whole dashboard pointed at it through use_warehouse(), which
+# clears the caches on the way in and out so a stale hit from one test's
+# warehouse can't leak into the next test's assertions against a different
+# one.
 
 
 def _reset_caches() -> None:
-    """Clear every cache that could hold another warehouse's results. A
-    fixture or test that changes a warehouse file in place calls this too:
-    data_core's cache follows the file's mtime, but two writes can land in
+    """For a fixture or test that changes a warehouse file in place: the
+    data layer's cache follows the file's mtime, but two writes can land in
     one tick of the filesystem clock."""
-    db.q.clear()
-    db.team_finances_available.clear()
-    db.team_contracts_available.clear()
     data_core.clear_caches()
 
 
-@contextmanager
-def _dashboard_reads(path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Point the dashboard's data access at `path` for a fixture's lifetime."""
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_caches()
-    with data_core.use_warehouse(path):
-        yield path
-    _reset_caches()
-
-
 @pytest.fixture
-def tmp_warehouse_without_marts(tmp_path, monkeypatch):
+def tmp_warehouse_without_marts(tmp_path):
     """A warehouse file with no main_marts schema at all - the state of a
     warehouse published before mart_team_finances existed."""
     path = tmp_path / "no_marts.duckdb"
     duckdb.connect(str(path)).close()
-    with _dashboard_reads(path, monkeypatch):
+    with data_core.use_warehouse(path):
         yield path
 
 
 @pytest.fixture
-def warehouse_with_finances_mart(tmp_path, monkeypatch):
+def warehouse_with_finances_mart(tmp_path):
     """A warehouse with a minimal main_marts.mart_team_finances and
     main.salary_cap_history - enough to exercise team_payroll_history(),
     salary_cap_history() and the whole Finances page without touching the
@@ -204,7 +186,7 @@ def warehouse_with_finances_mart(tmp_path, monkeypatch):
             salary_rank, share_of_payroll)
     """)
     con.close()
-    with _dashboard_reads(path, monkeypatch):
+    with data_core.use_warehouse(path):
         yield path
 
 
@@ -222,7 +204,7 @@ def legacy_finances_warehouse(warehouse_with_finances_mart):
 
 
 @pytest.fixture
-def warehouse_with_player_impact(tmp_path, monkeypatch):
+def warehouse_with_player_impact(tmp_path):
     """A tiny warehouse holding main.player_impact (20 synthetic rows, 10 in
     each of 2023-24 and 2024-25) and its one-row main.player_impact_meta, the
     tables ml/player_impact.py writes. Player ids 1..10 appear in both seasons
@@ -273,7 +255,7 @@ def warehouse_with_player_impact(tmp_path, monkeypatch):
         (timestamp '2026-10-01 12:00:00', 5000, 0.62, 1.9, -0.4, 0.71, 2.3, 5.0, '{}')
     """)
     con.close()
-    with _dashboard_reads(path, monkeypatch):
+    with data_core.use_warehouse(path):
         yield path
 
 

@@ -4,17 +4,16 @@ The player pages read the dbt player marts through dashboard/lib/data;
 until Task 12 they ran their own queries over the game logs. The tests
 below keep those queries as the reference and pin the new functions to
 them, frame for frame. Also here: the true-shooting null rule, and the
-finances queries still in dashboard/lib/db.py.
+finances and advanced queries.
 """
 
 import duckdb
 import pandas as pd
 import pytest
 
-from dashboard.lib import db
+from dashboard.lib.data import advanced, finances, players, seasons
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.lib.data import core as data_core
-from dashboard.lib.data import players, seasons
 
 # Seasons where a meaningful share of player-game rows have a null in one
 # of the three columns the true-shooting ratio sums. Not every player in
@@ -142,11 +141,11 @@ def test_true_shooting_matches_mart_when_box_score_complete(con):
 
 
 def test_team_finances_available_false_before_mart_exists(tmp_warehouse_without_marts):
-    assert db.team_finances_available() is False
+    assert finances.team_finances_available() is False
 
 
 def test_team_payroll_history_filters_by_team(warehouse_with_finances_mart):
-    df = db.team_payroll_history(franchise="BOS")
+    df = finances.team_payroll_history(franchise="BOS")
     assert (df["team_abbreviation"] == "BOS").all()
     assert len(df) > 0
 
@@ -160,7 +159,7 @@ def test_team_payroll_history_merges_a_renamed_franchise(warehouse_with_finances
     started the Warriors chart in 1996-97. Asserting both codes come back
     (not just a row count) is what would catch a regression that resolved
     the franchise but then filtered them back apart."""
-    df = db.team_payroll_history(franchise="GSW")
+    df = finances.team_payroll_history(franchise="GSW")
     assert set(df["team_abbreviation"]) == {"GOS", "GSW"}, (
         "GSW must return both of this franchise's abbreviations"
     )
@@ -172,25 +171,25 @@ def test_team_payroll_history_merges_a_renamed_franchise(warehouse_with_finances
 def test_team_payroll_history_does_not_merge_an_unrelated_team(warehouse_with_finances_mart):
     """Folding eras into a franchise must not pull in another team's rows."""
     for code in ("BOS", "NYK", "MIA", "DEN"):
-        df = db.team_payroll_history(franchise=code)
+        df = finances.team_payroll_history(franchise=code)
         assert set(df["team_abbreviation"]) == {code}, code
 
 
 def test_salary_cap_history_has_no_apron_before_2023_24(warehouse_with_finances_mart):
-    df = db.salary_cap_history()
+    df = finances.salary_cap_history()
     pre_apron = df[df["season"] < "2023-24"]
     assert pre_apron["first_apron"].isna().all()
 
 
 def test_team_contracts(warehouse_with_finances_mart):
-    assert db.team_contracts_available() is True
-    df = db.team_contracts("2023-24", "BOS")
+    assert finances.team_contracts_available() is True
+    df = finances.team_contracts("2023-24", "BOS")
     assert df["salary_rank"].tolist() == [1, 2, 3]
     assert df["player"].iloc[0] == "Player One"
 
 
 def test_team_contracts_unavailable_on_an_old_warehouse(legacy_finances_warehouse):
-    assert db.team_contracts_available() is False
+    assert finances.team_contracts_available() is False
 
 
 def test_a_traded_player_is_split_across_both_rosters(con):
@@ -509,18 +508,14 @@ def player_snapshot(con, tmp_path_factory):
             out.register("rows", con.execute(f"select * from {table}").to_arrow_table())
             out.execute(f"create table {table} as select * from rows")
             out.unregister("rows")
-    with pytest.MonkeyPatch.context() as mp, data_core.use_warehouse(path):
-        # db.player_advanced (the Advanced page) still reads through db.py.
-        mp.setattr(db, "DB_PATH", path)
-        db.q.clear()
+    with data_core.use_warehouse(path):
         snap = duckdb.connect(str(path), read_only=True)
         yield snap
         snap.close()
-    db.q.clear()
 
 
 def _old(snap, sql, *params):
-    """An old query's frame, run on the snapshot as db.q() ran it."""
+    """An old query's frame, run on the snapshot the way the old db.py ran it."""
     return snap.execute(sql, list(params)).df()
 
 
@@ -943,7 +938,7 @@ def test_the_advanced_page_reads_team_label_from_the_mart(player_snapshot):
     to merge one on). Every row needs one, and it must be the label the
     Players page shows."""
     season = _seasons(player_snapshot)[-1]
-    stats = db.player_advanced(season)
+    stats = advanced.player_advanced(season)
     assert len(stats) and stats["team_label"].notna().all()
     labels = players.player_season_stats(season).set_index("player_id")["team_label"]
     assert (stats["team_label"].to_numpy() == labels.loc[stats["player_id"]].to_numpy()).all()

@@ -14,7 +14,7 @@ import re
 import duckdb
 from streamlit.testing.v1 import AppTest
 
-from dashboard.lib import db, draft, media, sim
+from dashboard.lib import draft, media, sim
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.lib.data import core as data_core
 
@@ -31,9 +31,7 @@ VALID_PICKS = [(pid, SEASON) for pid in range(3, 11)]
 def _warehouse_changed() -> None:
     """After a test edits the fixture warehouse in place. The data layer
     keys its cache on the file's mtime, but the edit can land in the same
-    clock tick as the fixture's last write; db.py (team_advanced) has no
-    such key at all."""
-    db.q.clear()
+    clock tick as the fixture's last write."""
     data_core.clear_caches()
 
 

@@ -860,7 +860,7 @@ def league_payroll_snapshot(df: pd.DataFrame, highlight: str | None = None) -> g
 
 def calibration_chart(df: pd.DataFrame) -> go.Figure:
     """Predicted home-win chance against how often the home team really won,
-    one dot per probability bin (db.calibration_bins). A well-calibrated model
+    one dot per probability bin (stats.calibration_bins). A well-calibrated model
     sits on the dashed y = x line; dot area carries the number of games behind
     the bin, so a lonely extreme bin does not read as loudly as a crowded one."""
     if df.empty:

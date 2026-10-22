@@ -3,9 +3,11 @@
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, media
+from dashboard.lib import glossary, media
 from dashboard.lib import theme as T
-from dashboard.lib.data import players, seasons
+from dashboard.lib.data import advanced, players, seasons
+from dashboard.lib.data import games as game_data
+from dashboard.lib.data import teams as team_data
 from dashboard.lib.stats import qualification_threshold
 
 # Assist-to-turnover only means something for players who actually run an
@@ -31,7 +33,7 @@ def best_record_spot(standings) -> str:
     """The banner's right side: the team with the league's best record."""
     if standings.empty:
         return ""
-    top = standings.iloc[0]  # db.standings() is already ordered best record first
+    top = standings.iloc[0]  # team_data.standings() is already ordered best record first
     color = T.team_color(top.team)
     return (
         f'<div class="bip-hero-spot">'
@@ -99,16 +101,16 @@ def game_card(r) -> str:
 def render() -> None:
     season = st.session_state.get("season") or seasons.latest_season()
 
-    games = db.games_list(season)
+    games = game_data.games_list(season)
     stats = players.player_season_stats(season)
-    pbp_n = len(db.pbp_game_ids())
+    pbp_n = len(game_data.pbp_game_ids())
 
     # Early in a live season nobody has played enough games for a fixed cut,
     # so the threshold scales with the season's progress.
     min_gp = qualification_threshold(stats)
     qualified = stats[stats.gp >= min_gp]
 
-    standings = db.standings(season)
+    standings = team_data.standings(season)
     st.markdown(
         f'<div class="bip-hero">'
         f'<div><div class="bip-hero-title">{season} Regular Season</div>'
@@ -154,7 +156,7 @@ def render() -> None:
     # Counting stats alone reward volume, so give efficiency its own row.
     # Skipped silently when the warehouse has no marts: this is a bonus
     # section, not a reason for the landing page to fail.
-    adv = db.player_advanced(season) if db.marts_available() else pd.DataFrame()
+    adv = advanced.player_advanced(season) if advanced.marts_available() else pd.DataFrame()
     if not adv.empty:
         floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
         eff = adv[adv.minutes >= floor]

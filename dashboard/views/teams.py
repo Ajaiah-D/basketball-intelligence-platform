@@ -5,10 +5,11 @@ so the table doesn't crowd out the team view."""
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import db, glossary, payroll, viz
+from dashboard.lib import glossary, payroll, viz
 from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
-from dashboard.lib.data import players, seasons
+from dashboard.lib.data import advanced, finances, players, seasons
+from dashboard.lib.data import teams as team_data
 
 
 def form_dots(form: str) -> str:
@@ -62,9 +63,9 @@ def _payroll_card(season: str, team: str) -> tuple[str, str] | None:
     """(value, sub-line) for the Payroll card, or None when the warehouse has
     no reliable salary figure for this team-season (before 1984-85, a source
     gap, or a new season the salary scrape hasn't reached yet)."""
-    if not db.team_finances_available():
+    if not finances.team_finances_available():
         return None
-    league = db.team_payroll_history()
+    league = finances.team_payroll_history()
     league = league[league["season"] == season]
     row = league[league["team_abbreviation"] == team]
     if row.empty:
@@ -88,7 +89,7 @@ def _cards(items: list[tuple]) -> None:
 def render() -> None:
     season = st.session_state.get("season") or seasons.latest_season()
     st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
-    standings = db.standings(season)
+    standings = team_data.standings(season)
 
     tab_team, tab_standings = st.tabs(["Team", "Standings"])
     with tab_standings:
@@ -116,7 +117,7 @@ def render() -> None:
 def _render_team(season: str, standings: pd.DataFrame) -> None:
     pick: str | None = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
     row = standings[standings.team_name == pick].iloc[0]
-    games = db.team_game_log(int(row.team_id), season)
+    games = team_data.team_game_log(int(row.team_id), season)
 
     conf_table = standings[standings.conf == row.conf].reset_index(drop=True)
     seed = int(conf_table.index[conf_table.team == row.team][0]) + 1
@@ -125,7 +126,7 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     # --- Ratings: record, efficiency with league ranks, payroll ------------------
     # The efficiency cards need the marts; a warehouse without them falls back
     # to per-game scoring, which every published warehouse has.
-    adv = db.team_advanced(season) if db.marts_available() else pd.DataFrame()
+    adv = advanced.team_advanced(season) if advanced.marts_available() else pd.DataFrame()
     match = adv[adv.team_id == row.team_id] if not adv.empty else adv
     a = (
         match.iloc[0]

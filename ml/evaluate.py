@@ -2,7 +2,8 @@
 
 Only the earliest prediction per game counts. Later re-runs for the same
 game exist in the table, but grading the latest one would let a model be
-scored on a prediction made after the result was known.
+scored on a prediction made after the result was known. That rule lives in
+dbt's mart_settled_predictions, which this reads.
 """
 
 from __future__ import annotations
@@ -17,28 +18,20 @@ from ml.train import evaluate
 
 log = logging.getLogger(__name__)
 
+# dbt's mart_settled_predictions does the grading join (earliest prediction
+# per game, the no-contest 0-0 game left out), so this module and the
+# dashboard's track record grade the same games. It is a view, so it sees
+# the predictions ml.predict appended after dbt ran.
 SETTLED_SQL = """
-with first_prediction as (
-    select *, row_number() over (
-        partition by game_id order by predicted_at
-    ) as attempt
-    from predictions
-)
-select p.game_id, p.model_version, p.game_date, p.predicted_margin,
-       p.win_probability, f.margin, f.home_won
-from first_prediction p
-join main_marts.fct_team_game f on f.game_id = p.game_id
-where p.attempt = 1
-  -- Same no-contest exclusion as mart_game_features.sql, ml/features.py
-  -- and ml/predict.py: a cancelled game recorded as a 0-0 final is not a
-  -- result. Without this, a real pre-tipoff prediction for a game that
-  -- never happened would be graded as a definite miss against a 0 actual
-  -- margin, quietly penalizing the public track record for it.
-  and not (f.home_points = 0 and f.away_points = 0)
+select game_id, model_version, game_date, predicted_margin, win_probability,
+       margin, home_won
+from main_marts.mart_settled_predictions
+order by game_id
 """
 
 
 def settled_predictions(con) -> pd.DataFrame:
+    """Every graded prediction, by game."""
     return con.execute(SETTLED_SQL).df()
 
 
@@ -70,10 +63,9 @@ def main() -> None:
     """Log the track record of every settled prediction in the warehouse."""
     import duckdb
 
-    # predictions and/or the marts it joins against may not exist yet (a
-    # fresh warehouse, or a week where ml.predict wrote nothing because the
-    # slate was empty) - that is a normal state, not a failure, so a missing
-    # table degrades to "nothing to score" instead of crashing the refresh.
+    # The mart may not exist yet (a warehouse dbt has not built) - that is
+    # a normal state, not a failure, so a missing table degrades to
+    # "nothing to score" instead of crashing the refresh.
     db_path = paths.warehouse_path()
     con = duckdb.connect(str(db_path))
     try:

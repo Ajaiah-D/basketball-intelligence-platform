@@ -11,7 +11,8 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import config, db, viz
+from dashboard.lib import config, viz
+from dashboard.lib.data import core as data_core
 
 EXAMPLE_QUERY = """\
 -- Example: top 10 scorers (min 40 games)
@@ -46,7 +47,7 @@ def _gate() -> bool:
 
 def _schema_browser() -> None:
     with st.expander("Schema browser", expanded=False):
-        cols = db.q(
+        cols = data_core.q(
             """
             select table_schema || '.' || table_name as "table",
                    string_agg(column_name || ' ' || lower(data_type), ', '
@@ -64,7 +65,7 @@ def _schema_browser() -> None:
 def _run_query(sql: str) -> None:
     t0 = time.perf_counter()
     try:
-        with duckdb.connect(str(db.DB_PATH), read_only=True) as con:
+        with duckdb.connect(str(data_core.warehouse_path()), read_only=True) as con:
             result = con.execute(sql).df()
     except Exception as exc:
         st.error(f"Query failed: {exc}")

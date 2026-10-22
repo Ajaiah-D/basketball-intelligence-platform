@@ -426,3 +426,19 @@ models:
         tests: [not_null]
       - name: salary_rank
         tests: [not_null]
+
+  - name: mart_settled_predictions
+    description: >
+      One row per played game that has a prediction: the earliest
+      prediction for it (later re-runs are never graded) beside the result
+      from fct_team_game. The no-contest 0-0 game is left out. A view, so it
+      always reflects the predictions ml/predict.py appended after dbt ran;
+      ml/evaluate.py scores it. Empty before the season's first result, and
+      when main.predictions does not exist yet.
+    columns:
+      - name: game_id
+        tests: [not_null, unique]
+      - name: win_probability
+        tests: [not_null]
+      - name: home_won
+        tests: [not_null]

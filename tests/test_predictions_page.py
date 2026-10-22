@@ -12,20 +12,14 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from dashboard.lib import db
+from dashboard.lib import stats
+from dashboard.lib.data import core as data_core
+from dashboard.lib.data import predictions
 
 SCRIPT = """
 from dashboard.views import predictions
 predictions.render()
 """
-
-
-def _reset_cache() -> None:
-    # q() and predictions_available() cache on their arguments alone, not on
-    # DB_PATH, so a stale hit from one test's warehouse would otherwise leak
-    # into the next test's assertions against a different one.
-    db.q.clear()
-    db.predictions_available.clear()
 
 
 def _build_warehouse(path, settled: bool = True) -> None:
@@ -96,39 +90,31 @@ def _build_warehouse(path, settled: bool = True) -> None:
     con.close()
 
 
-def _point_db_at(path, monkeypatch) -> None:
-    monkeypatch.setattr(db, "DB_PATH", path)
-    _reset_cache()
-
-
 @pytest.fixture
-def no_predictions_db(tmp_path, monkeypatch):
+def no_predictions_db(tmp_path):
     """A warehouse with no `predictions` table at all."""
     path = tmp_path / "no_predictions.duckdb"
     duckdb.connect(str(path)).close()
-    _point_db_at(path, monkeypatch)
-    yield path
-    _reset_cache()
+    with data_core.use_warehouse(path):
+        yield path
 
 
 @pytest.fixture
-def with_predictions_db(tmp_path, monkeypatch):
+def with_predictions_db(tmp_path):
     """Upcoming games plus one settled prediction and one no-contest game."""
     path = tmp_path / "with_predictions.duckdb"
     _build_warehouse(path, settled=True)
-    _point_db_at(path, monkeypatch)
-    yield path
-    _reset_cache()
+    with data_core.use_warehouse(path):
+        yield path
 
 
 @pytest.fixture
-def upcoming_only_db(tmp_path, monkeypatch):
+def upcoming_only_db(tmp_path):
     """Predictions exist for future games but nothing has settled yet."""
     path = tmp_path / "upcoming_only.duckdb"
     _build_warehouse(path, settled=False)
-    _point_db_at(path, monkeypatch)
-    yield path
-    _reset_cache()
+    with data_core.use_warehouse(path):
+        yield path
 
 
 def _page_text(at) -> str:
@@ -164,7 +150,7 @@ def test_no_contest_game_is_not_scored_against_the_track_record(with_predictions
     which drags accuracy to 0.5 and inflates Brier on a game that was
     never played.
     """
-    record = db.prediction_track_record()
+    record = predictions.prediction_track_record()
     assert record["n"] == 1, (
         "g_no_contest (0-0, cancelled) was scored; the settled-predictions "
         "join is missing its no-contest exclusion"
@@ -241,13 +227,13 @@ def test_recent_results_grid_shows_check_or_cross(with_predictions_db):
 
 
 def test_calibration_bins_empty_below_fifty_settled_games(with_predictions_db):
-    out = db.calibration_bins()
+    out = stats.calibration_bins(predictions.settled_predictions())
     assert out.empty
     assert list(out.columns) == ["bin_mid", "predicted_mean", "actual_rate", "n"]
 
 
 def test_recent_settled_predictions_shape(with_predictions_db):
-    out = db.recent_settled_predictions()
+    out = predictions.recent_settled_predictions()
     assert list(out.columns) == [
         "game_date",
         "home",
@@ -263,12 +249,12 @@ def test_recent_settled_predictions_shape(with_predictions_db):
 
 
 def test_upcoming_predictions_carries_tipoff(with_predictions_db):
-    out = db.upcoming_predictions()
+    out = predictions.upcoming_predictions()
     assert "tipoff_utc" in out.columns
     assert out["tipoff_utc"].isna().sum() == 1
 
 
-def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path, monkeypatch):
+def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path):
     rng = np.random.default_rng(7)
     path = tmp_path / "sixty.duckdb"
     con = duckdb.connect(str(path))
@@ -301,16 +287,13 @@ def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path, monkeypatch):
             [f"g{i}", 10.0 if won else -10.0, won],
         )
     con.close()
-    _point_db_at(path, monkeypatch)
-    try:
-        out = db.calibration_bins()
-        assert int(out["n"].sum()) == 60
-        assert out["actual_rate"].between(0, 1).all()
-        assert out["predicted_mean"].between(0, 1).all()
-        assert out["bin_mid"].between(0, 1).all()
-        assert len(out) <= 10 and (out["n"] > 0).all()
-    finally:
-        _reset_cache()
+    with data_core.use_warehouse(path):
+        out = stats.calibration_bins(predictions.settled_predictions())
+    assert int(out["n"].sum()) == 60
+    assert out["actual_rate"].between(0, 1).all()
+    assert out["predicted_mean"].between(0, 1).all()
+    assert out["bin_mid"].between(0, 1).all()
+    assert len(out) <= 10 and (out["n"] > 0).all()
 
 
 def _add_settled_games(path, probs, home_won) -> None:
@@ -337,27 +320,25 @@ def _add_settled_games(path, probs, home_won) -> None:
 
 
 @pytest.fixture
-def sixty_settled_db(tmp_path, monkeypatch):
+def sixty_settled_db(tmp_path):
     """The standard warehouse plus 60 graded games: enough for calibration."""
     path = tmp_path / "sixty_settled.duckdb"
     _build_warehouse(path, settled=True)
     rng = np.random.default_rng(3)
     probs = rng.uniform(0.05, 0.95, 60)
     _add_settled_games(path, probs, rng.uniform(size=60) < probs)
-    _point_db_at(path, monkeypatch)
-    yield path
-    _reset_cache()
+    with data_core.use_warehouse(path):
+        yield path
 
 
 @pytest.fixture
-def coin_flip_db(tmp_path, monkeypatch):
+def coin_flip_db(tmp_path):
     """One graded game the model called at exactly 50%, won by the home team."""
     path = tmp_path / "coin_flip.duckdb"
     _build_warehouse(path, settled=False)
     _add_settled_games(path, [0.5], [True])
-    _point_db_at(path, monkeypatch)
-    yield path
-    _reset_cache()
+    with data_core.use_warehouse(path):
+        yield path
 
 
 def _main_elements(at) -> list[tuple[str, str | None]]:
@@ -408,10 +389,10 @@ def test_recent_results_grid_shows_every_row_without_scrolling(sixty_settled_db,
 def test_a_coin_flip_counts_as_a_home_pick_everywhere(coin_flip_db):
     # A 50% game is a home pick on the card and in the recent-results grid,
     # so the headline accuracy must grade it the same way.
-    record = db.prediction_track_record()
+    record = predictions.prediction_track_record()
     assert record["n"] == 1
     assert record["accuracy"] == 1.0
-    recent = db.recent_settled_predictions()
+    recent = predictions.recent_settled_predictions()
     assert bool(recent.iloc[0]["correct"]) is True
     at = AppTest.from_string(SCRIPT)
     at.run()
