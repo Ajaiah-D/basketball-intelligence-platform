@@ -6,7 +6,7 @@ import pytest
 
 from dashboard.lib import media
 from dashboard.lib.data import arcade as arcade_data
-from dashboard.views import arcade
+from dashboard.views.arcade import cards, mystery
 
 
 def _row(**kw) -> pd.Series:
@@ -27,7 +27,7 @@ def _no_headshots(monkeypatch):
 
 
 def test_card_puts_season_team_and_age_on_one_line_under_the_name():
-    out = arcade.player_card(_row())
+    out = cards.player_card(_row())
     meta = out[out.index('class="bip-pc-meta"') :]
     assert meta.index("1988-89") < meta.index("CHI") < meta.index("age <b>26</b>")
     assert "Ann &lt;Example&gt;" in out
@@ -35,11 +35,11 @@ def test_card_puts_season_team_and_age_on_one_line_under_the_name():
 
 @pytest.mark.parametrize("age", [None, pd.NA, float("nan")])
 def test_card_leaves_out_an_unknown_age(age):
-    assert "age" not in arcade.player_card(_row(age=age)).split('class="bip-pc-meta"')[1]
+    assert "age" not in cards.player_card(_row(age=age)).split('class="bip-pc-meta"')[1]
 
 
 def test_stat_html_shows_value_and_label():
-    out = arcade.stat_html("6.2", "RPG", "#0ca30c")
+    out = cards.stat_html("6.2", "RPG", "#0ca30c")
     assert ">6.2<" in out and ">RPG<" in out and "#0ca30c" in out
 
 
@@ -90,11 +90,11 @@ def _mystery_row(**kw) -> pd.Series:
 
 
 def test_mystery_first_clue_includes_the_age():
-    opener = arcade.my_clues(_mystery_row())[0]
+    opener = mystery.my_clues(_mystery_row())[0]
     assert opener.startswith("A <b>27-year-old</b> <b>1990s</b>")
 
 
 @pytest.mark.parametrize("age", [None, pd.NA])
 def test_mystery_first_clue_without_a_known_age(age):
-    opener = arcade.my_clues(_mystery_row(age=age))[0]
+    opener = mystery.my_clues(_mystery_row(age=age))[0]
     assert opener.startswith("A <b>1990s</b>") and "year-old" not in opener

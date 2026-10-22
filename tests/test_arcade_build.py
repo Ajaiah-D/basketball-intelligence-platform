@@ -1,11 +1,11 @@
-"""Headless checks for the Arcade's "Build a team" tab (dashboard/views/arcade.py).
+"""Headless checks for the Arcade's "Build a team" tab (dashboard/views/arcade/team_builder/).
 
 Same AppTest pattern as test_finances_page.py. The simulator and the draft
 rules are unit-tested in test_sim.py and test_draft.py; these tests cover
 the page wiring: the old-warehouse notice, the pool picker, a full Build
 roster turning into a stable projection, and a Draft reaching its results.
 
-The tab is rendered on its own (arcade.render_build_team) because the other
+The tab is rendered on its own (team_builder.render_build_team) because the other
 two Arcade games read tables the tiny fixture warehouse does not have.
 """
 
@@ -17,10 +17,11 @@ from streamlit.testing.v1 import AppTest
 from dashboard.lib import draft, media, sim
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.lib.data import core as data_core
+from dashboard.views.arcade.team_builder import results
 
 SCRIPT = """
-from dashboard.views import arcade
-arcade.render_build_team()
+from dashboard.views.arcade.team_builder import render_build_team
+render_build_team()
 """
 
 SEASON = "2024-25"
@@ -297,12 +298,14 @@ def test_build_superteam_rating_stays_under_the_ceiling(warehouse_for_team_build
 # Runs one of the page's callbacks inside a real script run, then renders
 # the tab: the callbacks read and write st.session_state, so they need one.
 HARNESS = """
+import importlib
 import streamlit as st
-from dashboard.views import arcade
+from dashboard.views.arcade.team_builder import render_build_team
 call = st.session_state.pop("test_call", None)
 if call is not None:
-    getattr(arcade, call[0])(*call[1])
-arcade.render_build_team()
+    module = importlib.import_module("dashboard.views.arcade.team_builder." + call[0])
+    getattr(module, call[1])(*call[2])
+render_build_team()
 """
 
 
@@ -316,8 +319,8 @@ def _harness(monkeypatch, **state) -> AppTest:
     return at
 
 
-def _call(at: AppTest, name: str, *args) -> None:
-    at.session_state["test_call"] = (name, args)
+def _call(at: AppTest, module: str, name: str, *args) -> None:
+    at.session_state["test_call"] = (module, name, args)
     at.run()
     assert not at.exception, at.exception
 
@@ -329,8 +332,8 @@ def _nonce(at: AppTest) -> int:
 def test_add_callback_adds_once_and_clears_the_selection(warehouse_for_team_builder, monkeypatch):
     at = _harness(monkeypatch, tb_pool=SEASON)
     nonce = _nonce(at)
-    _call(at, "_tb_add", (4, SEASON))
-    _call(at, "_tb_add", (4, SEASON))  # a second add of the same row is ignored
+    _call(at, "build", "_tb_add", (4, SEASON))
+    _call(at, "build", "_tb_add", (4, SEASON))  # a second add of the same row is ignored
     assert _filled(at) == [(4, SEASON)] + [None] * 7  # leftmost spot first
     assert _nonce(at) > nonce
     assert "Player 4" not in set(at.dataframe[0].value["Player"])
@@ -339,7 +342,7 @@ def test_add_callback_adds_once_and_clears_the_selection(warehouse_for_team_buil
 def test_remove_callback_clears_the_selection(warehouse_for_team_builder, monkeypatch):
     at = _harness(monkeypatch, tb_pool=SEASON, tb_build_slots=[(4, SEASON)])
     nonce = _nonce(at)
-    _call(at, "_tb_remove", 0)
+    _call(at, "build", "_tb_remove", 0)
     assert _filled(at) == [None] * 8
     assert _nonce(at) > nonce
 
@@ -349,8 +352,8 @@ def test_a_chosen_spot_gets_the_next_pick(warehouse_for_team_builder, monkeypatc
     at.button(key="tb_slot_6").click().run()  # Bench 2
     assert not at.exception, at.exception
     assert at.button(key="tb_slot_6").disabled
-    _call(at, "_tb_add", (4, SEASON))
-    _call(at, "_tb_add", (5, SEASON))  # the choice is used up: leftmost again
+    _call(at, "build", "_tb_add", (4, SEASON))
+    _call(at, "build", "_tb_add", (5, SEASON))  # the choice is used up: leftmost again
     slots = _filled(at)
     assert slots[6] == (4, SEASON)
     assert slots[0] == (5, SEASON)
@@ -360,7 +363,7 @@ def test_a_stale_pick_is_ignored(warehouse_for_team_builder, monkeypatch):
     at = _harness(monkeypatch, tb_mode="Draft", tb_pool=SEASON)
     offered = {tuple(o) for o in at.session_state["tb_pick"]["offer"]}
     stale = next((pid, SEASON) for pid in range(1, 61) if (pid, SEASON) not in offered)
-    _call(at, "_tb_pick", SEASON, stale)
+    _call(at, "draft", "_tb_pick", SEASON, stale)
     assert at.session_state["tb_pick"]["picks"] == []
 
 
@@ -378,10 +381,8 @@ def test_season_without_team_ratings_falls_back_and_says_so(
 
 
 def test_near_zero_ratings_never_show_as_minus_zero():
-    from dashboard.views import arcade
-
-    assert arcade._rating(-0.03) == 0.0
-    assert f"{arcade._rating(-0.03):+.1f}" == "+0.0"
-    assert f"{arcade._rating(-0.0):+.1f}" == "+0.0"
-    assert f"{arcade._rating(-0.06):+.1f}" == "-0.1"
-    assert arcade._rating(2.345) == 2.345
+    assert results._rating(-0.03) == 0.0
+    assert f"{results._rating(-0.03):+.1f}" == "+0.0"
+    assert f"{results._rating(-0.0):+.1f}" == "+0.0"
+    assert f"{results._rating(-0.06):+.1f}" == "-0.1"
+    assert results._rating(2.345) == 2.345
