@@ -54,7 +54,7 @@ def test_a_failed_load_rolls_back_every_table(raw):
     # a.parquet loads first and would replace raw.a; b.parquet is corrupt
     pd.DataFrame({"x": [1, 2, 3]}).to_parquet(raw_dir / "a.parquet")
     (raw_dir / "b.parquet").write_bytes(b"not a parquet file")
-    with pytest.raises(duckdb.Error):
+    with pytest.raises(duckdb.Error, match=r"b\.parquet"):
         load_to_duckdb.main()
 
     assert _rows(db, "raw.a") == [(1,)]

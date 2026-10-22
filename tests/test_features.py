@@ -21,6 +21,23 @@ def test_targets_are_not_features():
         assert target not in FEATURE_COLUMNS, f"{target} leaks the result"
 
 
+def test_the_feature_matrix_holds_no_target(frame):
+    """The frame carries margin and home_won for training; the matrix the
+    model is fit on (frame[FEATURE_COLUMNS], as ml.train does) must not -
+    under their own names or as a feature column that is the result under
+    another name."""
+    matrix = frame[FEATURE_COLUMNS]
+    assert "margin" in frame.columns and "home_won" in frame.columns
+    assert "margin" not in matrix.columns
+    assert "home_won" not in matrix.columns
+    numeric = matrix.astype(float)
+    for target in ("margin", "home_won"):
+        result = frame[target].astype(float)
+        correlations = numeric.corrwith(result).abs()
+        leaking = correlations[correlations > 0.95]
+        assert leaking.empty, f"{target} reappears as {list(leaking.index)}"
+
+
 def test_one_row_per_game(frame, con):
     """One row per real game - real meaning excluding the one known
     no-contest fixture (a cancelled game recorded as a 0-0 final), which

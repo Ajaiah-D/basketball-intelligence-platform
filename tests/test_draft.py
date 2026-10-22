@@ -209,7 +209,7 @@ def test_taking_the_cheap_option_leaves_better_options_later():
 
 
 def test_offer_options_rejects_a_full_roster():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="every spot is already filled"):
         draft.offer_options(_priced_pool(), [], 10, sim.ROSTER_SIZE, np.random.default_rng(0))
 
 
