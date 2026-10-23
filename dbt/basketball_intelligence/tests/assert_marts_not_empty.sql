@@ -30,6 +30,8 @@ with counts as (
     union all
     select 'mart_team_finances', count(*) from {{ ref('mart_team_finances') }}
     union all
+    select 'mart_team_profile', count(*) from {{ ref('mart_team_profile') }}
+    union all
     select 'mart_team_season', count(*) from {{ ref('mart_team_season') }}
     union all
     select 'mart_team_standings', count(*) from {{ ref('mart_team_standings') }}
