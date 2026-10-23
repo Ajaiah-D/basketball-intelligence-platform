@@ -6,12 +6,16 @@ season; these pin the same rules to named facts and recompute a percentile
 independently in pandas.
 """
 
+import re
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 from dashboard.lib.stats import qualification_threshold
 
 SEASON = "2024-25"
+DBT_TESTS = Path(__file__).resolve().parents[1] / "dbt" / "basketball_intelligence" / "tests"
 
 
 def _players(con, season):
@@ -23,7 +27,8 @@ def _players(con, season):
 def test_qualification_matches_the_dashboard_rule_in_every_season(con):
     """The mart ports dashboard/lib/stats.py::qualification_threshold into
     SQL; both must give the same threshold for each season in the warehouse
-    (the fixtures carry four, a full warehouse every one)."""
+    (the fixtures carry four, a full warehouse every one). Every finished
+    season is at the 25 cap; the scaled branch is covered by the next test."""
     games = con.execute("select season, games_played as gp from main_marts.mart_player_season").df()
     mart = con.execute(
         "select season, min(qualification_games) as lo, max(qualification_games) as hi"
@@ -35,11 +40,16 @@ def test_qualification_matches_the_dashboard_rule_in_every_season(con):
         assert row.lo == row.hi == expected, row.season
 
 
-def test_the_python_rule_scales_below_the_cap_like_the_sql():
-    """A season cut short (the live one) lowers the threshold; pin the
-    arithmetic the SQL repeats: 60% of the most games, rounded down."""
-    assert qualification_threshold(pd.DataFrame({"gp": [1, 30]})) == 18
-    assert qualification_threshold(pd.DataFrame({"gp": [1, 82]})) == 25
+def test_sql_rule_cases_equal_the_python_rule():
+    """assert_qualification_games_rule applies the SQL macro to made-up season
+    lengths (the real seasons are all at the 25 cap, so the scaled branch
+    would otherwise go untested). The expected answers it holds must be what
+    the Python rule gives, or the two have drifted apart."""
+    sql = (DBT_TESTS / "assert_qualification_games_rule.sql").read_text(encoding="utf-8")
+    cases = [(int(a), int(b)) for a, b in re.findall(r"\((\d+),\s*(\d+)\)", sql)]
+    assert [gp for gp, _ in cases] == [1, 3, 5, 9, 10, 30, 41, 42, 82]
+    for max_gp, expected in cases:
+        assert qualification_threshold(pd.DataFrame({"gp": [1, max_gp]})) == expected, max_gp
 
 
 def test_only_qualified_players_are_graded(con):
