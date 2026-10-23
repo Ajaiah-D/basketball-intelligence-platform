@@ -22,6 +22,10 @@ with counts as (
     union all
     select 'mart_player_career', count(*) from {{ ref('mart_player_career') }}
     union all
+    select 'mart_player_defense', count(*) from {{ ref('mart_player_defense') }}
+    union all
+    select 'mart_player_percentiles', count(*) from {{ ref('mart_player_percentiles') }}
+    union all
     select 'mart_player_season', count(*) from {{ ref('mart_player_season') }}
     union all
     select 'mart_player_team_season', count(*) from {{ ref('mart_player_team_season') }}

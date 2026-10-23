@@ -414,6 +414,157 @@ models:
       - name: opp_three_pt_rate_pctile
         description: Percentile 0-100 in the season (100 = the most).
 
+  - name: mart_player_percentiles
+    description: >
+      One row per player per season: the stats the player scatter and compare
+      views grade (all from mart_player_season) with each one's percentile
+      among that season's qualified players, 100 = best. Qualified follows
+      dashboard/lib/stats.py::qualification_threshold: 60% of the season's
+      most games played (rounded down), at least 1 and at most 25. Players
+      below it keep their row and values with null percentiles and
+      is_qualified false. Turnover rate is graded the other way (lower is
+      better). Grain checked by assert_mart_grain_is_unique; percentile
+      direction and range by assert_player_percentiles.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: player_name
+        tests: [not_null]
+      - name: team_abbreviation
+        description: Last team played for that season.
+      - name: team_label
+        description: Every team he played for that season, joined with an arrow when traded.
+      - name: games_played
+      - name: minutes
+        description: Total minutes played.
+      - name: qualification_games
+        description: The season's minimum games to qualify.
+        tests: [not_null]
+      - name: is_qualified
+        description: games_played >= qualification_games.
+        tests: [not_null]
+      - name: points_per_game
+        description: Points per game. As in mart_player_season.
+      - name: points_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: true_shooting_pct
+        description: True shooting %. As in mart_player_season.
+      - name: true_shooting_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: rebounds_per_game
+        description: Rebounds per game. As in mart_player_season.
+      - name: rebounds_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: assists_per_game
+        description: Assists per game. As in mart_player_season.
+      - name: assists_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: steals_per_game
+        description: Steals per game. As in mart_player_season.
+      - name: steals_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: blocks_per_game
+        description: Blocks per game. As in mart_player_season.
+      - name: blocks_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: threes_made_per_game
+        description: Three-pointers made per game. As in mart_player_season.
+      - name: threes_made_per_game_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: turnover_pct
+        description: Turnovers per 100 of his own possessions that end in a shot, free throw or turnover. As in mart_player_season.
+      - name: turnover_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Lower is better, so the lowest value is percentile 100. Null when not qualified or the stat is null.
+      - name: usage_pct
+        description: Share of team possessions he ends while on the floor. As in mart_player_season.
+      - name: usage_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: assist_pct
+        description: Share of teammates' field goals he assists while on the floor. As in mart_player_season.
+      - name: assist_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: rebound_pct
+        description: Share of available rebounds he grabs while on the floor. As in mart_player_season.
+      - name: rebound_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: offensive_rebound_pct
+        description: Share of available offensive rebounds he grabs while on the floor. As in mart_player_season.
+      - name: offensive_rebound_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: defensive_rebound_pct
+        description: Share of available defensive rebounds he grabs while on the floor. As in mart_player_season.
+      - name: defensive_rebound_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: steal_pct
+        description: Steals per 100 opponent possessions while on the floor. As in mart_player_season.
+      - name: steal_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: block_pct
+        description: Share of opponent two-point attempts he blocks while on the floor. As in mart_player_season.
+      - name: block_pct_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+      - name: free_throw_rate
+        description: Free throw attempts per field goal attempt. As in mart_player_season.
+      - name: free_throw_rate_pctile
+        description: >
+          Percentile 0-100 among the season's qualified players with a value (100 = best). Higher is better. Null when not qualified or the stat is null.
+
+  - name: mart_player_defense
+    description: >
+      One row per player per season: an estimated defensive on/off and how
+      often he fouls. The off-court rating is backed out of two published
+      numbers - the team's defensive rating over all its minutes and the
+      player's official on-court defensive rating - weighted by the share of
+      the team's 48-minute games he played. An estimate, not a lineup-based
+      on/off. The on/off columns (est_off_court_def_rating, def_on_minus_off)
+      are null unless he played for one team all season, 500+ minutes, in
+      1996-97 or later, with a minutes share under 0.95 (checked by
+      assert_player_defense_on_off_rules). fouls_per_36 is null below 100
+      minutes. Grain checked by assert_mart_grain_is_unique; the 0-15 range of
+      fouls_per_36 by assert_player_defense_on_off_rules.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: player_name
+      - name: team_abbreviation
+        description: Last team played for that season.
+      - name: minutes
+        description: Total minutes played.
+      - name: games_played
+      - name: on_court_def_rating
+        description: His official defensive rating (points allowed per 100 possessions while on the floor). Null before 1996-97.
+      - name: team_def_rating
+        description: The team's defensive rating over the season (mart_team_season).
+      - name: team_games
+        description: Games the team played that season.
+      - name: minutes_share
+        description: minutes / (team_games x 48).
+      - name: est_off_court_def_rating
+        description: (team_def_rating - minutes_share x on_court_def_rating) / (1 - minutes_share). Null unless the on/off rules hold.
+      - name: def_on_minus_off
+        description: on_court_def_rating - est_off_court_def_rating. Negative means the team defended better with him on the floor. Null unless the on/off rules hold.
+      - name: fouls_per_36
+        description: Personal fouls per 36 minutes, from the game logs. Null below 100 minutes.
+
   - name: fct_team_game
     description: >
       One row per game, oriented home versus away, with margin.
