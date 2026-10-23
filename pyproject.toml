@@ -20,19 +20,18 @@ ignore = ["RUF001", "RUF002", "RUF003", "E501", "N812"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "PTH"]
-# sys.path must be set before the imports.
+# E402: these put the repo root on sys.path before importing from it - the
+# app because `streamlit run dashboard/app.py` puts only dashboard/ there, the
+# ingesters and scripts because they run as `python <folder>/<file>.py`, and
+# conftest because it is what puts the root on the path for the tests.
 "dashboard/app.py" = ["E402"]
-# Run as scripts (`python ingestion/x.py`), so they put the repo root on sys.path
-# before importing core.
 "ingestion/nba_ingest.py" = ["E402"]
 "ingestion/team_payroll_ingest.py" = ["E402"]
+"scripts/backfill_team_payroll.py" = ["E402"]
 "scripts/health_check.py" = ["E402"]
 "scripts/load_to_duckdb.py" = ["E402"]
-"scripts/write_metadata.py" = ["E402"]
-# Same for the scripts and conftest, which put the repo root on sys.path
-# before importing from it.
-"scripts/backfill_team_payroll.py" = ["E402"]
 "scripts/weekly_refresh.py" = ["E402"]
+"scripts/write_metadata.py" = ["E402"]
 "tests/conftest.py" = ["E402"]
 # sklearn convention: X is the feature matrix, so N803/N806 do not apply.
 "ml/**" = ["N803", "N806"]

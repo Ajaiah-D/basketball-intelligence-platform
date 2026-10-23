@@ -53,8 +53,10 @@ diff before you do.
 
 Two rules:
 
-- **The dashboard never imports `ml/` or `scripts/`.** Their dependencies
-  (scikit-learn, scipy) are dev-only, so the deployed app doesn't have them.
+- **The dashboard never imports `ml/`, `scripts/` or `ingestion/`.** Their
+  dependencies (scikit-learn, scipy, nba_api) are dev-only, so the deployed
+  app doesn't have them. `tests/test_import_boundaries.py` fails on any such
+  import, including one inside a function.
 - **DuckDB stays below 2.0** (`requirements.in`). A major DuckDB version can
   change the file format the live app downloads, so that upgrade is its own
   change, not a side effect of a recompile.
@@ -106,7 +108,7 @@ python -m pytest -q                            # everything, against your local 
 python -m pytest -q -m "not full_warehouse"    # what CI runs
 ```
 
-The full run is 635 tests and takes about a minute. Tests read the real
+The full run is 657 tests and takes about a minute. Tests read the real
 warehouse and assert facts that are true of the data itself, not row counts
 that change every week.
 
@@ -157,7 +159,7 @@ checked, but nothing is forced to carry annotations.
 
 `core/` imports only the standard library and `python-dotenv` (plus pandas
 and pyarrow in `core/io.py`), so every part of the project can import it,
-the deployed dashboard included.
+the deployed dashboard included; the same test holds it to that.
 
 ## Changing the warehouse: expand, then contract
 

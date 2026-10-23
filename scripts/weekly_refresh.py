@@ -600,8 +600,10 @@ def publish(
     warehouse asset is up, whatever happens to the marker after.
     """
     where: dict[str, Any] = {"warehouse": warehouse, "log_dir": log_dir}
-    # The real path, never the copy: gh names the asset after the file, and
-    # the app downloads .../releases/download/data-v1/basketball.duckdb.
+    # Upload what was swapped in: the real path, the file running apps are
+    # about to be told about (by now the copy has been moved onto it). The
+    # copy's name is the same, basketball.duckdb, so the asset name gh gives
+    # it - the one the app downloads - does not depend on this.
     upload = ["gh", "release", "upload", RELEASE_TAG]
     if not run_steps(
         run, [("publish_release", [*upload, str(warehouse), "--clobber"], None)], **where

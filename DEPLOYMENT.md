@@ -151,7 +151,11 @@ To change it, delete and redeploy with the same address and secrets:
 
   New predictions go to `data/predictions/history.csv`, which the run
   commits with its log. Only a run that uploaded the warehouse keeps them:
-  any other ending puts the file back as the run found it.
+  any other ending puts the file back as the run found it. So if the swap
+  succeeds but `publish_release` fails, the local warehouse is already the
+  new one (with that run's predictions) while `history.csv` is rolled back;
+  the release still has last week's file. The next run's load rebuilds
+  `main.predictions` from the CSV, so it heals.
 
   Logs:
   - `logs/refresh_runs.jsonl`: one line per run (committed; see "Checking

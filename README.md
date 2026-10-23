@@ -320,7 +320,11 @@ then publishes. A Windows Scheduled Task runs it every Tuesday.
   charts.
 - **Predictions are kept in git.** New predictions are appended to
   `data/predictions/history.csv`, which is committed with the run log. A run
-  that doesn't publish puts the file back as it found it.
+  that doesn't publish puts the file back as it found it. One case is out
+  of step until the next run: if the swap succeeds but the upload fails,
+  the local warehouse is already the new one (with that run's predictions)
+  while the CSV is rolled back. The next run's load rebuilds the
+  predictions table from the CSV, so it heals.
 - **`--no-publish` is a dry run.** Every step runs against the copy, then
   the copy is deleted: nothing is swapped, uploaded or committed.
 - **Every run leaves a record.** `logs/refresh_runs.jsonl` gets one line
@@ -339,7 +343,7 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (10 models), intermediate (1) and marts (11), plus salary
-      cap history and team code seeds; 113 dbt tests and 635 pytest cases.
+      cap history and team code seeds; 113 dbt tests and 657 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
       era the tests check; the 6 tests that need all seasons are marked
@@ -352,7 +356,7 @@ explains why it works this way.
       lines (Basketball-Reference, 1984-85 on; Finances page)
 - [x] Game predictions: Elo ratings feeding a ridge model, evaluated with a
       walk-forward backtest (`ml/`; Predictions page). The public track record
-      starts with the 2026-27 season, so it has no settled games yet
+      starts with the 2026-27 season and grades each game once it is played
 - [x] Arcade team builder: a player impact model (ridge on on-court
       plus-minus, era-relative box-score rates) and a numpy season and playoff
       simulator

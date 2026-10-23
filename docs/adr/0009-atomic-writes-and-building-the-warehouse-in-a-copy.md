@@ -75,9 +75,14 @@ regenerated binary file with no history.
 
 ## Consequences
 
-A failed run leaves the warehouse, the release and the predictions
-history exactly as the last good run left them, and a dry run can be done
-at any time without touching anything published. The costs: the refresh
+A run that fails before the swap leaves the warehouse, the release and
+the predictions history exactly as the last good run left them, and a dry
+run can be done at any time without touching anything published. A run
+whose swap succeeds but whose `publish_release` fails is the exception:
+the release and the history are untouched, but the local warehouse is
+already the new one, with that run's predictions in its table, while
+`history.csv` is rolled back. The next run's load rebuilds
+`main.predictions` from the CSV, so the two agree again. The costs: the refresh
 needs disk for a second copy of the warehouse (about 90 MB); a local
 dashboard holding the warehouse open blocks the swap, and the run fails
 until it is closed; and if the warehouse uploads but `version.txt`
