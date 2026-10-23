@@ -10,6 +10,7 @@ from dashboard.lib import theme as T
 from dashboard.lib.cards import game_card
 from dashboard.lib.data import games as game_data
 from dashboard.lib.data import seasons
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.tables import Col
 
 
@@ -78,7 +79,7 @@ def box_score_html(rows: pd.DataFrame, team: str, side: str, pts: int, won: bool
 
 
 def render() -> None:
-    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
     st.markdown(
         f"## Games &nbsp;{T.chip(season)}",
         unsafe_allow_html=True,

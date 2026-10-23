@@ -16,6 +16,7 @@ from core.constants import ADVANCED_STATS_FIRST_SEASON, COMPLETE_BOX_SCORE_FIRST
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, seasons
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import percentile_of
 
 # The default table: enough to answer "who is efficient and how involved
@@ -367,7 +368,7 @@ def _compare(qualified: pd.DataFrame) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
 
     st.markdown(f"## Advanced &nbsp;{T.chip(season)}", unsafe_allow_html=True)
 

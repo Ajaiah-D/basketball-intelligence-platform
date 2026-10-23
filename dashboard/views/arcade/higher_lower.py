@@ -1,9 +1,8 @@
 """Higher or Lower: two player-seasons from any era, guess who averaged more.
 
-Session state: "hl" (the round: both rows, the stat, phase "guess" or
-"reveal", whether the guess was right), "hl_streak" and "hl_best" (the run
-of correct guesses and the best run this session); the pick buttons are
-"hl_a" and "hl_b".
+Session state: ROUND (both rows, the stat, phase "guess" or "reveal",
+whether the guess was right), STREAK and BEST (the run of correct guesses
+and the best run this session); the pick buttons are PICK_A and PICK_B.
 """
 
 import random
@@ -14,6 +13,13 @@ import streamlit as st
 from dashboard.lib import theme as T
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.views.arcade.cards import player_card, stat_html
+
+# Session-state keys.
+ROUND = "hl"
+STREAK = "hl_streak"
+BEST = "hl_best"
+PICK_A = "hl_a"
+PICK_B = "hl_b"
 
 STATS = {
     "ppg": ("points", "PPG"),
@@ -32,35 +38,33 @@ def hl_new_round() -> None:
         a, b = pair.iloc[0], pair.iloc[1]
         if abs(a[stat] - b[stat]) >= 0.6:
             break
-    st.session_state.hl = {"a": a, "b": b, "stat": stat, "phase": "guess", "correct": None}
+    st.session_state[ROUND] = {"a": a, "b": b, "stat": stat, "phase": "guess", "correct": None}
 
 
 def hl_pick(side: str) -> None:
-    g = st.session_state.hl
+    g = st.session_state[ROUND]
     a, b, stat = g["a"], g["b"], g["stat"]
     picked, other = (a, b) if side == "a" else (b, a)
     correct = picked[stat] >= other[stat]
     g["phase"] = "reveal"
     g["correct"] = correct
     if correct:
-        st.session_state.hl_streak = st.session_state.get("hl_streak", 0) + 1
-        st.session_state.hl_best = max(
-            st.session_state.get("hl_best", 0), st.session_state.hl_streak
-        )
+        st.session_state[STREAK] = st.session_state.get(STREAK, 0) + 1
+        st.session_state[BEST] = max(st.session_state.get(BEST, 0), st.session_state[STREAK])
     else:
-        st.session_state.hl_streak = 0
+        st.session_state[STREAK] = 0
 
 
 def render_higher_lower() -> None:
-    if "hl" not in st.session_state:
+    if ROUND not in st.session_state:
         hl_new_round()
-    g = st.session_state.hl
+    g = st.session_state[ROUND]
     a, b, stat = g["a"], g["b"], g["stat"]
     noun, label = STATS[stat]
 
     s1, s2, _ = st.columns([1, 1, 3])
-    s1.markdown(T.kpi("Streak", str(st.session_state.get("hl_streak", 0))), unsafe_allow_html=True)
-    s2.markdown(T.kpi("Best", str(st.session_state.get("hl_best", 0))), unsafe_allow_html=True)
+    s1.markdown(T.kpi("Streak", str(st.session_state.get(STREAK, 0))), unsafe_allow_html=True)
+    s2.markdown(T.kpi("Best", str(st.session_state.get(BEST, 0))), unsafe_allow_html=True)
 
     st.markdown(f"#### Who averaged more **{noun}** ({label})?")
     if pd.notna(a.get("age")) or pd.notna(b.get("age")):
@@ -72,12 +76,12 @@ def render_higher_lower() -> None:
         with c1:
             st.markdown(player_card(a, stat_html("?", label, T.MUTED)), unsafe_allow_html=True)
             st.button(
-                f"Pick {a.player}", key="hl_a", width="stretch", on_click=hl_pick, args=("a",)
+                f"Pick {a.player}", key=PICK_A, width="stretch", on_click=hl_pick, args=("a",)
             )
         with c2:
             st.markdown(player_card(b, stat_html("?", label, T.MUTED)), unsafe_allow_html=True)
             st.button(
-                f"Pick {b.player}", key="hl_b", width="stretch", on_click=hl_pick, args=("b",)
+                f"Pick {b.player}", key=PICK_B, width="stretch", on_click=hl_pick, args=("b",)
             )
     else:
         winner_is_a = a[stat] >= b[stat]
@@ -87,9 +91,7 @@ def render_higher_lower() -> None:
                 unsafe_allow_html=True,
             )
         if g["correct"]:
-            st.success(f"Correct! Streak: {st.session_state.hl_streak}")
+            st.success(f"Correct! Streak: {st.session_state[STREAK]}")
         else:
-            st.error(
-                f"Wrong - streak over. Best this session: {st.session_state.get('hl_best', 0)}"
-            )
+            st.error(f"Wrong - streak over. Best this session: {st.session_state.get(BEST, 0)}")
         st.button("Next matchup", type="primary", on_click=hl_new_round)

@@ -16,6 +16,7 @@ from core import paths
 from dashboard.lib import config, theme
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import seasons
+from dashboard.lib.state import SEASON_KEY
 
 st.set_page_config(
     page_title="Basketball Intelligence",
@@ -149,7 +150,7 @@ with st.sidebar:
     st.selectbox(
         "Season",
         seasons.seasons(),
-        key=seasons.SEASON_KEY,
+        key=SEASON_KEY,
         help="Applies to Overview, Players, Teams, and Games",
     )
 

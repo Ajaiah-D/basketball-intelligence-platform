@@ -2,7 +2,7 @@
 that clear them. The string values are the "tb_" keys the page has always
 used, so a test or a saved session can still set them directly.
 
-  MODE          "Build" | "Draft" (the segmented control)
+  MODE          BUILD | DRAFT ("Build" | "Draft", the segmented control)
   POOL          "All-time" | a season like "2024-25" (the selectbox)
   SEARCH        the pool table's search text
   NONCE         int, part of the pool table's widget key; bumped after a
@@ -40,7 +40,8 @@ PICK = "tb_pick"
 PROJ = "tb_proj"
 
 ALL_TIME = "All-time"
-MODES = ["Build", "Draft"]
+BUILD, DRAFT = "Build", "Draft"
+MODES = [BUILD, DRAFT]
 GAME_KEYS = (BUILD_SLOTS, SLOT, BUILD_SEASON, PICK, PROJ)
 
 

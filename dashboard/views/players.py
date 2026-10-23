@@ -19,6 +19,7 @@ from core.text import fold
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import percentile_of
 
 TABLE_COLS = [
@@ -79,7 +80,7 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
     return out
 
 
-# Session-state keys. The season box mirrors the sidebar's (seasons.SEASON_KEY).
+# Session-state keys. The season box mirrors the sidebar's (SEASON_KEY).
 PLAYERS_SEASON_KEY = "players_season"
 PLAYERS_SEASON_ALL_KEY = "players_season_all"
 PLAYERS_PICK_KEY = "players_pick"
@@ -88,7 +89,7 @@ PLAYERS_PICK_KEY = "players_pick"
 def _sync_season() -> None:
     """The page's season box drives the sidebar's, which every season-scoped
     page reads."""
-    st.session_state[seasons.SEASON_KEY] = st.session_state[PLAYERS_SEASON_KEY]
+    st.session_state[SEASON_KEY] = st.session_state[PLAYERS_SEASON_KEY]
 
 
 class Filters(NamedTuple):
@@ -411,7 +412,7 @@ def _season_detail(row, row_season: str) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
 
     f = _filter_bar(season)
     view, others = _filter_rows(f, season)

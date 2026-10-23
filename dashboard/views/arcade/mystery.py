@@ -1,8 +1,7 @@
 """Mystery Player: identify a notable player-season from progressive clues.
 
-Session state: "my" (the game: the hidden row, the guesses so far, done and
-won flags), "my_difficulty" (the segmented control) and "my_pick" (the
-guess selectbox).
+Session state: GAME (the hidden row, the guesses so far, done and won
+flags), DIFFICULTY (the segmented control) and PICK (the guess selectbox).
 """
 
 import pandas as pd
@@ -12,18 +11,24 @@ from core import teams
 from dashboard.lib.data import arcade as arcade_data
 from dashboard.views.arcade.cards import player_card
 
+# Session-state keys.
+GAME = "my"
+DIFFICULTY = "my_difficulty"
+PICK = "my_pick"
+
 MAX_GUESSES = 6
 DIFFICULTIES = {
     "Legends (easier)": 24.0,  # superstar seasons only - famous names
     "All-Stars (harder)": 18.0,
 }
+DEFAULT_DIFFICULTY = "Legends (easier)"
 
 
 def my_new_game() -> None:
     pool = arcade_data.arcade_pool()
-    min_ppg = DIFFICULTIES[st.session_state.get("my_difficulty", "Legends (easier)")]
+    min_ppg = DIFFICULTIES[st.session_state.get(DIFFICULTY, DEFAULT_DIFFICULTY)]
     stars = pool[pool.ppg >= min_ppg]
-    st.session_state.my = {
+    st.session_state[GAME] = {
         "row": stars.sample(1).iloc[0],
         "guesses": [],
         "done": False,
@@ -84,8 +89,8 @@ def my_clues(r) -> list[str]:
 
 
 def my_guess() -> None:
-    g = st.session_state.my
-    name = st.session_state.get("my_pick", "")
+    g = st.session_state[GAME]
+    name = st.session_state.get(PICK, "")
     if g["done"] or not name:
         return
     g["guesses"].append(name)
@@ -96,9 +101,9 @@ def my_guess() -> None:
 
 
 def render_mystery() -> None:
-    if "my" not in st.session_state:
+    if GAME not in st.session_state:
         my_new_game()
-    g = st.session_state.my
+    g = st.session_state[GAME]
     r = g["row"]
     clues = my_clues(r)
     wrong = len([x for x in g["guesses"] if x != r.player])
@@ -108,8 +113,8 @@ def render_mystery() -> None:
     d1.segmented_control(
         "Difficulty",
         list(DIFFICULTIES),
-        key="my_difficulty",
-        default="Legends (easier)",
+        key=DIFFICULTY,
+        default=DEFAULT_DIFFICULTY,
         label_visibility="collapsed",
         on_change=my_new_game,
     )
@@ -144,14 +149,14 @@ def render_mystery() -> None:
         st.selectbox(
             "Your guess",
             ["", *names],
-            key="my_pick",
+            key=PICK,
             label_visibility="collapsed",
             placeholder="Type to search players...",
         )
         c1, c2, _ = st.columns([1, 1, 3])
         c1.button("Guess", type="primary", width="stretch", on_click=my_guess)
         c2.button(
-            "Give up", width="stretch", on_click=lambda: st.session_state.my.update(done=True)
+            "Give up", width="stretch", on_click=lambda: st.session_state[GAME].update(done=True)
         )
     else:
         st.markdown(player_card(r), unsafe_allow_html=True)

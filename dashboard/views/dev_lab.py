@@ -14,6 +14,13 @@ import streamlit as st
 from dashboard.lib import config, viz
 from dashboard.lib.data import core as data_core
 
+# Session-state keys.
+UNLOCKED = "dev_ok"
+QUERY = "dev_sql"
+RESULT = "dev_result"
+ELAPSED = "dev_elapsed"
+GATE_FORM = "dev_gate"
+
 EXAMPLE_QUERY = """\
 -- Example: top 10 scorers (min 40 games)
 select player_name, count(*) as gp, round(avg(points), 1) as ppg
@@ -33,12 +40,12 @@ def _gate() -> bool:
             "app's secrets (cloud), then restart."
         )
         return False
-    if st.session_state.get("dev_ok"):
+    if st.session_state.get(UNLOCKED):
         return True
-    with st.form("dev_gate"):
+    with st.form(GATE_FORM):
         pw = st.text_input("Dev password", type="password")
         if st.form_submit_button("Unlock") and pw == expected:
-            st.session_state["dev_ok"] = True
+            st.session_state[UNLOCKED] = True
             st.rerun()
         elif pw:
             st.warning("Wrong password.")
@@ -70,8 +77,8 @@ def _run_query(sql: str) -> None:
     except Exception as exc:
         st.error(f"Query failed: {exc}")
         return
-    st.session_state["dev_result"] = result
-    st.session_state["dev_elapsed"] = time.perf_counter() - t0
+    st.session_state[RESULT] = result
+    st.session_state[ELAPSED] = time.perf_counter() - t0
 
 
 def _exports(df: pd.DataFrame) -> None:
@@ -127,20 +134,20 @@ def render() -> None:
 
     sql = st.text_area(
         "SQL",
-        value=st.session_state.get("dev_sql", EXAMPLE_QUERY),
+        value=st.session_state.get(QUERY, EXAMPLE_QUERY),
         height=180,
         label_visibility="collapsed",
     )
     if st.button("Run query", type="primary"):
-        st.session_state["dev_sql"] = sql
+        st.session_state[QUERY] = sql
         _run_query(sql)
 
-    result = st.session_state.get("dev_result")
+    result = st.session_state.get(RESULT)
     if result is None:
         return
     st.caption(
         f"{len(result):,} rows x {len(result.columns)} cols - "
-        f"{st.session_state.get('dev_elapsed', 0) * 1000:.0f} ms"
+        f"{st.session_state.get(ELAPSED, 0) * 1000:.0f} ms"
     )
     st.dataframe(result, hide_index=True, height=min(420, 40 + 35 * len(result)))
     _exports(result)
