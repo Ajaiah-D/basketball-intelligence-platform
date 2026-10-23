@@ -1,8 +1,5 @@
-"""Teams - one team in depth (ratings with league ranks, the Four Factors,
-record splits, margins and its roster), with full standings in their own tab
-so the table doesn't crowd out the team view."""
-
-from typing import Any
+"""The Team tab: one team in depth (ratings, record splits, where it ranks
+in the league on every key stat, margins and its roster)."""
 
 import pandas as pd
 import streamlit as st
@@ -11,53 +8,12 @@ from core.fmt import money, ordinal
 from dashboard.lib import glossary, payroll, viz
 from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
-from dashboard.lib.data import advanced, finances, players, seasons
+from dashboard.lib.data import advanced, finances, players
 from dashboard.lib.data import teams as team_data
-from dashboard.lib.state import SEASON_KEY
+from dashboard.views.teams.common import ROW_HEIGHT, section
+from dashboard.views.teams.profile import render_profile
 
-
-def form_dots(form: str) -> str:
-    return "".join(
-        f'<span class="dot dot-{"w" if ch == "W" else "l"}"></span>'
-        for ch in reversed(form)  # oldest to newest, newest dot last
-    )
-
-
-def standings_table(df: pd.DataFrame) -> str:
-    def th(label: str, term: str) -> str:
-        return f"{label}{T.tip(glossary.TERMS[term])}"
-
-    head = (
-        '<table class="bip-table"><tr><th class="lft">#</th><th class="lft">Team</th>'
-        f"<th>W</th><th>L</th><th>{th('PCT', 'PCT')}</th><th>PTS</th>"
-        f"<th>{th('OPP', 'OPP')}</th><th>{th('+/-', 'Team +/-')}</th>"
-        '<th style="text-align:left;padding-left:.8rem">'
-        f"{th('Form', 'Form')}</th></tr>"
-    )
-    rows = []
-    r: Any  # itertuples() rows: pandas-stubs types each field as any scalar
-    for i, r in enumerate(df.itertuples(), 1):
-        diff_cls = "pos" if r.net > 0 else ("neg" if r.net < 0 else "")
-        rows.append(
-            f'<tr><td class="lft">{i}</td>'
-            f'<td class="lft tm">{T.team_dot(r.team)}{r.team_name}</td>'
-            f"<td>{r.w}</td><td>{r.l}</td><td>{r.pct:.3f}</td>"
-            f"<td>{r.ppg:.1f}</td><td>{r.opp_ppg:.1f}</td>"
-            f'<td class="{diff_cls}">{r.net:+.1f}</td>'
-            f'<td style="text-align:left;padding-left:.8rem">{form_dots(r.form)}</td></tr>'
-        )
-    return head + "".join(rows) + "</table>"
-
-
-# Every table on the Team tab is the same grid component, at the same row
-# height as the Players and Advanced grids.
-ROW_HEIGHT = 38
 CHART_HEIGHT = 360
-
-
-def section(title: str, help: str = "") -> None:
-    """The one heading style on this tab."""
-    st.markdown(f"#### {title}{T.tip(help) if help else ''}", unsafe_allow_html=True)
 
 
 def _rank_sub(rank: tuple[int, int] | None) -> str:
@@ -89,34 +45,6 @@ def _cards(items: list[tuple]) -> None:
     # Fewer than six items leave the trailing columns empty, so not strict=True.
     for col, (label, value, sub, note, help) in zip(cols, items, strict=False):
         col.markdown(T.kpi(label, value, sub, note=note, help=help), unsafe_allow_html=True)
-
-
-def render() -> None:
-    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
-    st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
-    standings = team_data.standings(season)
-
-    tab_team, tab_standings = st.tabs(["Team", "Standings"])
-    with tab_standings:
-        conf = (
-            st.segmented_control(
-                "Conference",
-                ["Eastern", "Western", "League"],
-                default="Eastern",
-                label_visibility="collapsed",
-                key="standings_conf",
-            )
-            or "Eastern"
-        )
-        shown = {
-            "Eastern": standings[standings.conf == "East"],
-            "Western": standings[standings.conf == "West"],
-            "League": standings,
-        }[conf]
-        st.markdown(f'<div class="bip-card">{standings_table(shown)}</div>', unsafe_allow_html=True)
-        st.caption("Form shows the last five games, most recent on the right.")
-    with tab_team:
-        _render_team(season, standings)
 
 
 def _ratings(
@@ -157,44 +85,6 @@ def _splits(games: pd.DataFrame, standings: pd.DataFrame) -> None:
             ("Close games", sp["close"], "", "&le;5 pts", ""),
             ("Vs .500+ teams", sp["vs_winning"], "", "", ""),
         ]
-    )
-
-
-def _four_factors(adv: pd.DataFrame, team: str) -> None:
-    section("Four Factors", glossary.TERMS["Four Factors"])
-    ff = tm.four_factors(adv, team)
-    pct = "%.1f"
-    st.dataframe(
-        ff,
-        hide_index=True,
-        width="stretch",
-        row_height=ROW_HEIGHT,
-        column_order=[
-            "factor",
-            "offense",
-            "league_offense",
-            "offense_rank",
-            "defense",
-            "league_defense",
-            "defense_rank",
-        ],
-        column_config={
-            "factor": st.column_config.TextColumn("Factor"),
-            "offense": st.column_config.NumberColumn(
-                "Offense", help="This team's own value", format=pct
-            ),
-            "league_offense": st.column_config.NumberColumn("League avg", format=pct),
-            "offense_rank": st.column_config.TextColumn(
-                "Off. rank", help="1st is the best offense in the league"
-            ),
-            "defense": st.column_config.NumberColumn(
-                "Defense", help="What opponents managed against this team", format=pct
-            ),
-            "league_defense": st.column_config.NumberColumn("League avg", format=pct),
-            "defense_rank": st.column_config.TextColumn(
-                "Def. rank", help="1st is the best defense in the league"
-            ),
-        },
     )
 
 
@@ -258,7 +148,8 @@ def _footnote(a: pd.Series | None) -> None:
     st.caption(" ".join(notes))
 
 
-def _render_team(season: str, standings: pd.DataFrame) -> None:
+def render_team(season: str, standings: pd.DataFrame) -> None:
+    """The Team tab: a team picker, then its sections top to bottom."""
     pick: str | None = st.selectbox("Team", standings["team_name"], label_visibility="collapsed")
     row = standings[standings.team_name == pick].iloc[0]
     games = team_data.team_game_log(int(row.team_id), season)
@@ -282,8 +173,7 @@ def _render_team(season: str, standings: pd.DataFrame) -> None:
     _ratings(season, row, seed, adv, a)
     if len(games):
         _splits(games, standings)
-    if a is not None and "effective_fg_pct" in adv and a.effective_fg_pct == a.effective_fg_pct:
-        _four_factors(adv, row.team)
+    render_profile(season, int(row.team_id), row.team, adv, a)
     _charts(games, adv, row.team, a is not None)
     _roster(season, row.team)
     _footnote(a)
