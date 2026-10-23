@@ -134,7 +134,14 @@ TERMS = {
         "to the line and scores. Offense: higher is better. Defense: lower "
         "is better, it means fouling less."
     ),
-    # Team strengths and weaknesses (the profile chart)
+    # The team profile chart (league ranks on every key stat)
+    "League ranks": (
+        "Each bar's length is where the team ranks among that season's "
+        "teams, as a percentile: 100 is first, 50 the league median (the "
+        "dashed line), 0 last. Lower-is-better stats such as turnover rate "
+        "are flipped, so further right is always the better end. Pace and "
+        "3-pt rate are style, shown in gray."
+    ),
     "3-pt rate": (
         "Three-point attempt rate: the share of a team's shots taken from "
         "three. A style choice more than a strength."
