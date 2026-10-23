@@ -30,6 +30,13 @@ MUTED = "#898781"  # axis / labels
 GRID = "#2c2c2a"  # hairline gridlines
 BASELINE = "#383835"  # axis baseline / de-emphasis marks
 BORDER = "rgba(255,255,255,0.10)"
+AVATAR_BG = "#242423"  # behind a headshot, where the photo's transparent edges show
+
+# Two-digit hex alpha suffixes for a "#rrggbb" token (f"{color}{TINT_ALPHA}"):
+# the tinted fill of a chip or an initials disc (0x26, about 15%) and a
+# chip's border (0x40, 25%).
+TINT_ALPHA = "26"
+TINT_BORDER_ALPHA = "40"
 
 RADIUS = "2px"  # sharp, not rounded - the site-wide corner radius for every
 # custom card/chip/badge/hero shape (native widgets get the
@@ -351,6 +358,6 @@ def rank_badge(i: int) -> str:
 
 def chip(text: str, color: str = ACCENT) -> str:
     return (
-        f'<span class="bip-chip" style="background:{color}26;'
-        f'border-color:{color}40;color:{color}">{text}</span>'
+        f'<span class="bip-chip" style="background:{color}{TINT_ALPHA};'
+        f'border-color:{color}{TINT_BORDER_ALPHA};color:{color}">{text}</span>'
     )

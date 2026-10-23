@@ -9,6 +9,7 @@ from dashboard.lib.cards import game_card
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import games as game_data
 from dashboard.lib.data import teams as team_data
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import qualification_threshold
 
 # Assist-to-turnover only means something for players who actually run an
@@ -17,12 +18,12 @@ AST_TO_MIN_APG = 3.0
 CLOSE_GAME_MARGIN = 5
 
 
-def ast_to_leaders(stats, n: int = 5):
+def ast_to_leaders(stats: pd.DataFrame, n: int = 5) -> pd.DataFrame:
     """Top n by assists per turnover among players averaging 3+ assists."""
     return stats[stats["apg"] >= AST_TO_MIN_APG].nlargest(n, "ast_to")
 
 
-def close_game_share(games) -> float | None:
+def close_game_share(games: pd.DataFrame) -> float | None:
     """Share of games decided by CLOSE_GAME_MARGIN points or fewer."""
     if not len(games):
         return None
@@ -30,7 +31,7 @@ def close_game_share(games) -> float | None:
     return float((margin <= CLOSE_GAME_MARGIN).mean())
 
 
-def best_record_spot(standings) -> str:
+def best_record_spot(standings: pd.DataFrame) -> str:
     """The banner's right side: the team with the league's best record."""
     if standings.empty:
         return ""
@@ -84,7 +85,7 @@ def standings_mini(df) -> str:
     return "".join(rows)
 
 
-def _hero(season: str, games, stats, standings) -> None:
+def _hero(season: str, games: pd.DataFrame, stats: pd.DataFrame, standings: pd.DataFrame) -> None:
     st.markdown(
         f'<div class="bip-hero">'
         f'<div><div class="bip-hero-title">{season} Regular Season</div>'
@@ -95,7 +96,7 @@ def _hero(season: str, games, stats, standings) -> None:
     )
 
 
-def _kpis(games, stats, pbp_n: int) -> None:
+def _kpis(games: pd.DataFrame, stats: pd.DataFrame, pbp_n: int) -> None:
     # One accent color for all four - matching every other page's KPI row
     # (Players, Teams, Finances) instead of a different color per tile with
     # no meaning behind the assignment.
@@ -116,7 +117,7 @@ def _kpis(games, stats, pbp_n: int) -> None:
     )
 
 
-def _league_leaders(qualified, min_gp: int) -> None:
+def _league_leaders(qualified: pd.DataFrame, min_gp: int) -> None:
     st.markdown("#### League leaders")
     l1, l2, l3, l4 = st.columns(4)
     l1.markdown(leaders_card("Points", qualified.nlargest(5, "ppg"), "ppg"), unsafe_allow_html=True)
@@ -132,7 +133,7 @@ def _league_leaders(qualified, min_gp: int) -> None:
     st.caption(f"Per-game averages, minimum {min_gp} games played.")
 
 
-def _efficiency_leaders(season: str, qualified) -> None:
+def _efficiency_leaders(season: str, qualified: pd.DataFrame) -> None:
     # Counting stats alone reward volume, so give efficiency its own row.
     # Skipped silently on an older warehouse without mart_player_season:
     # this is a bonus section, not a reason for the landing page to fail.
@@ -179,7 +180,7 @@ def _efficiency_leaders(season: str, qualified) -> None:
     )
 
 
-def _standings(standings) -> None:
+def _standings(standings: pd.DataFrame) -> None:
     st.markdown("#### Standings")
     e, w = st.columns(2)
     with e:
@@ -193,7 +194,7 @@ def _standings(standings) -> None:
     st.caption("Full standings with form and scoring splits on the Teams page.")
 
 
-def _latest_games(games) -> None:
+def _latest_games(games: pd.DataFrame) -> None:
     st.markdown("#### Latest games")
     recent = games.head(9)
     cols = st.columns(3)
@@ -202,7 +203,7 @@ def _latest_games(games) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
 
     games = game_data.games_list(season)
     stats = players.player_season_stats(season)

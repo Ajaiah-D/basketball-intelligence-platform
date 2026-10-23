@@ -11,6 +11,7 @@ from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, finances, players, seasons
 from dashboard.lib.data import teams as team_data
+from dashboard.lib.state import SEASON_KEY
 
 
 def form_dots(form: str) -> str:
@@ -56,7 +57,7 @@ def section(title: str, help: str = "") -> None:
     st.markdown(f"#### {title}{T.tip(help) if help else ''}", unsafe_allow_html=True)
 
 
-def _rank_sub(rank) -> str:
+def _rank_sub(rank: tuple[int, int] | None) -> str:
     return f"{ordinal(rank[0])} of {rank[1]}" if rank else ""
 
 
@@ -88,7 +89,7 @@ def _cards(items: list[tuple]) -> None:
 
 
 def render() -> None:
-    season = st.session_state.get(seasons.SEASON_KEY) or seasons.latest_season()
+    season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
     st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     standings = team_data.standings(season)
 
@@ -115,7 +116,9 @@ def render() -> None:
         _render_team(season, standings)
 
 
-def _ratings(season: str, row, seed: int, adv: pd.DataFrame, a) -> None:
+def _ratings(
+    season: str, row: pd.Series, seed: int, adv: pd.DataFrame, a: pd.Series | None
+) -> None:
     """Record, efficiency with league ranks, payroll."""
     cards = [("Record", f"{row.w}-{row.l}", f"{ordinal(seed)} in the {row.conf}", "", "")]
     if a is not None:
@@ -236,7 +239,7 @@ def _roster(season: str, team: str) -> None:
     )
 
 
-def _footnote(a) -> None:
+def _footnote(a: pd.Series | None) -> None:
     """One footnote for the whole tab instead of a caption under every block."""
     notes = [
         "Ranks are out of every team that season, 1st = best (fewest points "

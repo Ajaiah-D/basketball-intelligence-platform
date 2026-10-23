@@ -18,7 +18,8 @@ from core import teams
 from core.fmt import money, ordinal
 from dashboard.lib import franchises, payroll, viz
 from dashboard.lib import theme as T
-from dashboard.lib.data import finances, seasons
+from dashboard.lib.data import finances
+from dashboard.lib.state import SEASON_KEY
 
 EARLY_ERA_CUTOFF = "1996-97"  # Basketball-Reference's own salary data before this era is
 # acknowledged by them to be partly extrapolated/minimum-filled
@@ -139,7 +140,7 @@ def _page_header(all_seasons: pd.DataFrame, cap_df: pd.DataFrame) -> str:
     # here would disagree with it. Payroll starts in 1984-85 while games go
     # back to 1979-80, so an earlier pick falls back to the latest season.
     latest = all_seasons["season"].max()
-    picked = st.session_state.get(seasons.SEASON_KEY) or latest
+    picked = st.session_state.get(SEASON_KEY) or latest
     season = picked if picked in set(all_seasons["season"]) else latest
 
     st.markdown(f"## Finances &nbsp;{T.chip(season)}", unsafe_allow_html=True)

@@ -4,10 +4,6 @@ from __future__ import annotations
 
 from .core import q
 
-# The sidebar season picker's session-state key; every season-scoped page
-# reads the chosen season from it.
-SEASON_KEY = "season"
-
 
 def seasons() -> list[str]:
     """All ingested seasons, newest first."""

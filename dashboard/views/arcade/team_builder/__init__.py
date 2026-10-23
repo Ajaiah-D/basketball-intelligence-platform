@@ -31,7 +31,7 @@ def render_build_team() -> None:
         *sorted((str(s) for s in all_pool["season"].unique()), reverse=True),
     ]
     if st.session_state.get(tb_state.MODE) not in tb_state.MODES:
-        st.session_state[tb_state.MODE] = tb_state.MODES[0]
+        st.session_state[tb_state.MODE] = tb_state.BUILD
     if st.session_state.get(tb_state.POOL) not in choices:
         st.session_state[tb_state.POOL] = tb_state.ALL_TIME
 
@@ -46,7 +46,7 @@ def render_build_team() -> None:
     season = None if choice == tb_state.ALL_TIME else choice
     pool = all_pool if season is None else arcade_data.player_impact_pool(season)
     meta = model_meta()
-    if st.session_state[tb_state.MODE] == "Build":
+    if st.session_state[tb_state.MODE] == tb_state.BUILD:
         render_build(pool, season, choice, meta)
     else:
         render_draft(pool, season, choice, meta)

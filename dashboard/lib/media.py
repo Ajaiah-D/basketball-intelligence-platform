@@ -56,7 +56,7 @@ def team_logo_html(team_id: int, abbr: str, size: int = 80, color: str = T.ACCEN
         )
     return (
         f'<span style="display:inline-flex;width:{size}px;height:{size}px;'
-        f"border-radius:50%;border:2px solid {color};background:{color}26;"
+        f"border-radius:50%;border:2px solid {color};background:{color}{T.TINT_ALPHA};"
         f"color:{color};align-items:center;justify-content:center;"
         f'font-weight:800;font-size:{size * 0.3:.0f}px">{abbr}</span>'
     )
@@ -69,7 +69,7 @@ def avatar_html(player_id: int, name: str, size: int = 72, ring: str = T.ACCENT)
         return (
             f'<span style="display:inline-block;width:{size}px;height:{size}px;'
             f"border-radius:50%;border:2px solid {ring};overflow:hidden;"
-            f'vertical-align:middle;background:#242423">'
+            f'vertical-align:middle;background:{T.AVATAR_BG}">'
             f'<img src="{uri}" alt="" '
             f'style="width:100%;height:100%;object-fit:cover;object-position:top"/>'
             f"</span>"
@@ -77,7 +77,7 @@ def avatar_html(player_id: int, name: str, size: int = 72, ring: str = T.ACCENT)
     initials = "".join(w[0] for w in name.split()[:2]).upper()
     return (
         f'<span style="display:inline-flex;width:{size}px;height:{size}px;'
-        f"border-radius:50%;border:2px solid {ring};background:{ring}26;"
+        f"border-radius:50%;border:2px solid {ring};background:{ring}{T.TINT_ALPHA};"
         f"color:{ring};align-items:center;justify-content:center;"
         f'font-weight:800;font-size:{size * 0.34:.0f}px;vertical-align:middle">'
         f"{initials}</span>"
