@@ -12,9 +12,10 @@
 -- mart_player_season, mart_player_team_season and mart_player_career all
 -- call it, so their definitions can't drift apart.
 --
--- Averages and true shooting are the dashboard's own definitions
--- (dashboard/lib/db.py), kept expression for expression - including
--- dividing before the * 100 - so the values round identically:
+-- Averages and true shooting are the definitions the dashboard used to
+-- compute itself, before these marts (in dashboard/lib/db.py, since
+-- removed), kept expression for expression - including dividing before
+-- the * 100 - so the values round as the pages always showed them:
 --   - averages are avg(stat), which skips a game whose stat is null. The
 --     source has whole columns missing in early seasons; counting those
 --     games as zeros would understate the player.
@@ -25,7 +26,7 @@
 --     This is narrower than mart_player_season's box_score_complete, which
 --     also needs team and opponent columns true shooting does not use.
 --
--- The shooting percentages correct the dashboard's: summed makes over
+-- The shooting percentages correct the dashboard's old ones: summed makes over
 -- summed attempts, counting only games where both are recorded (see
 -- shooting_pct below), null with no attempts. Before 1985-86 the source
 -- often has the makes but not the attempts, and summing each side over its

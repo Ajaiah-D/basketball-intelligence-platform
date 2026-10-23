@@ -53,6 +53,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     reporter = session.config.pluginmanager.get_plugin("terminalreporter")
     if reporter is None:
+        # Only under -p no:terminal, which CI never passes: the guard is off then.
         return
     skipped = reporter.stats.get("skipped", [])
     if not skipped:
