@@ -53,6 +53,22 @@ where p.attempt = 1
   and not (f.home_points = 0 and f.away_points = 0)
 """
 
+# The most recent prediction for each game: a game is re-predicted every
+# day until it tips off, and the latest run has the freshest inputs.
+# Upcoming games and the Schedule page both read it.
+LATEST_PREDICTIONS_SQL = """
+select *
+from (
+    select
+        *,
+        row_number() over (
+            partition by game_id order by predicted_at desc, prediction_id
+        ) as recency
+    from main.predictions
+)
+where recency = 1
+"""
+
 _SETTLED_COLUMNS = [
     "game_id",
     "model_version",
@@ -87,16 +103,7 @@ def predictions_available() -> bool:
 def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
     """The most recent prediction for each not-yet-played game, soonest first."""
     return q(
-        """
-        with latest as (
-            select
-                *,
-                row_number() over (
-                    partition by game_id order by predicted_at desc, prediction_id
-                ) as recency
-            from main.predictions
-        )
-
+        f"""
         select
             l.game_id,
             l.game_date,
@@ -105,13 +112,28 @@ def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
             l.predicted_margin,
             s.home_team_abbreviation,
             s.away_team_abbreviation
-        from latest l
+        from ({LATEST_PREDICTIONS_SQL}) l
         join main_staging.stg_schedule s on s.game_id = l.game_id
-        where l.recency = 1 and s.game_status = 1
+        where s.game_status = 1
         order by l.game_date, l.game_id
         limit ?
         """,
         (limit,),
+    )
+
+
+def latest_predictions() -> pd.DataFrame:
+    """The latest prediction for every game ever predicted, played or not:
+    game_id, win_probability (home) and predicted_margin (home). Empty on a
+    warehouse without the predictions table."""
+    if not predictions_available():
+        return pd.DataFrame(columns=["game_id", "win_probability", "predicted_margin"])
+    return q(
+        f"""
+        select game_id, win_probability, predicted_margin
+        from ({LATEST_PREDICTIONS_SQL})
+        order by game_id
+        """
     )
 
 
