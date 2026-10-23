@@ -293,6 +293,127 @@ models:
                 - estimated from box score
                 - not available before 1985-86
 
+  - name: mart_team_profile
+    description: >
+      One row per team per season: the team stats the diagnosis views compare
+      (all from mart_team_season except the four three-point columns) with
+      each stat's league rank and percentile within its season. Rank 1 is the
+      best team and percentile 100 is the best (0 the worst), and which end
+      of a stat is best is in each column's description. Pace and the
+      three-point rates are style stats, where rank 1 means the most, not the
+      best. Ties share a rank. A null value has a null rank and percentile,
+      and the percentile counts only teams that have the value. Grain checked
+      by assert_mart_grain_is_unique; ranks by assert_team_profile_ranks.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: team_abbreviation
+        tests: [not_null]
+      - name: offensive_rating
+        description: Points scored per 100 possessions.
+      - name: offensive_rating_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: offensive_rating_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: defensive_rating
+        description: Points allowed per 100 possessions.
+      - name: defensive_rating_rank
+        description: League rank in the season (1 = lowest value). Lower is better.
+      - name: defensive_rating_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: net_rating
+        description: Offensive minus defensive rating.
+      - name: net_rating_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: net_rating_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: pace
+        description: Possessions per 48 minutes. Style, not quality.
+      - name: pace_rank
+        description: League rank in the season (1 = the most value). Rank 1 = the most, not the best.
+      - name: pace_pctile
+        description: Percentile 0-100 in the season (100 = the most).
+      - name: effective_fg_pct
+        description: Effective field goal %, 3-pointers weighted 1.5.
+      - name: effective_fg_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: effective_fg_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: turnover_pct
+        description: Turnovers per 100 plays.
+      - name: turnover_pct_rank
+        description: League rank in the season (1 = lowest value). Lower is better.
+      - name: turnover_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: offensive_rebound_pct
+        description: Share of own misses rebounded.
+      - name: offensive_rebound_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: offensive_rebound_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: free_throw_rate
+        description: Free throws made per field goal attempt, x100.
+      - name: free_throw_rate_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: free_throw_rate_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: assist_pct
+        description: Assists per field goal made, x100.
+      - name: assist_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: assist_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: opp_effective_fg_pct
+        description: Opponent effective field goal %.
+      - name: opp_effective_fg_pct_rank
+        description: League rank in the season (1 = lowest value). Lower is better.
+      - name: opp_effective_fg_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: opp_turnover_pct
+        description: Opponent turnovers per 100 plays (turnovers forced).
+      - name: opp_turnover_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: opp_turnover_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: defensive_rebound_pct
+        description: Share of opponent misses rebounded.
+      - name: defensive_rebound_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: defensive_rebound_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: opp_free_throw_rate
+        description: Opponent free throws made per field goal attempt, x100.
+      - name: opp_free_throw_rate_rank
+        description: League rank in the season (1 = lowest value). Lower is better.
+      - name: opp_free_throw_rate_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: three_pt_pct
+        description: Team 3PM / 3PA x 100. Null when any game that season lacks either.
+      - name: three_pt_pct_rank
+        description: League rank in the season (1 = highest value). Higher is better.
+      - name: three_pt_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: three_pt_rate
+        description: 3PA / FGA x 100. Style, not quality.
+      - name: three_pt_rate_rank
+        description: League rank in the season (1 = the most value). Rank 1 = the most, not the best.
+      - name: three_pt_rate_pctile
+        description: Percentile 0-100 in the season (100 = the most).
+      - name: opp_three_pt_pct
+        description: Opponent 3PM / 3PA x 100.
+      - name: opp_three_pt_pct_rank
+        description: League rank in the season (1 = lowest value). Lower is better.
+      - name: opp_three_pt_pct_pctile
+        description: Percentile 0-100 in the season (100 = best).
+      - name: opp_three_pt_rate
+        description: Opponent 3PA / FGA x 100. Style, not quality.
+      - name: opp_three_pt_rate_rank
+        description: League rank in the season (1 = the most value). Rank 1 = the most, not the best.
+      - name: opp_three_pt_rate_pctile
+        description: Percentile 0-100 in the season (100 = the most).
+
   - name: fct_team_game
     description: >
       One row per game, oriented home versus away, with margin.

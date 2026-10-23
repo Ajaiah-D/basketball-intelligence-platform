@@ -27,6 +27,13 @@ having count(*) > 1
 
 union all
 
+select 'mart_team_profile' as model, season, cast(team_id as varchar) as entity, count(*) as rows
+from {{ ref('mart_team_profile') }}
+group by season, team_id
+having count(*) > 1
+
+union all
+
 select 'mart_team_standings' as model, season, cast(team_id as varchar) as entity, count(*) as rows
 from {{ ref('mart_team_standings') }}
 group by season, team_id
