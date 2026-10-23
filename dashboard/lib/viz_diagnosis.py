@@ -21,9 +21,9 @@ from .viz import _empty, _layout
 
 # The profile's diverging scale: the bottom of the league (red) through a
 # neutral gray to the top (green). Colour only encodes the percentile; no
-# label calls a stat good or bad. The neutral sits between MUTED and BASELINE, darker than MUTED, so
-# a median bar recedes and stays apart from the unjudged style rows, which
-# are MUTED.
+# label calls a stat good or bad. The neutral sits between MUTED and
+# BASELINE, darker than MUTED, so a median bar recedes and stays apart from
+# the unjudged style rows, which are MUTED.
 PROFILE_NEUTRAL = "#605f5b"
 PROFILE_STYLE = T.MUTED
 
@@ -42,10 +42,22 @@ _PLAIN = {
 # the bars come out about 22px thick: under the 24px cap, with air between,
 # and tall enough that plotly doesn't shrink an 11px label set inside one.
 _ROW_PX = 28
-# Bars at or past this percentile carry their label inside, in white; the
-# shorter ones carry it just past the tip. At phone width a bar this long
-# still fits "104.2 · #1 most".
-_INSIDE_FROM = 55
+# What an unjudged (style) stat's rank counts, from the top: rank 1 is the
+# fastest pace, the biggest share of shots from three. The bar says it
+# briefly ("#13 in threes"): at phone width a mid-length bar has room for
+# neither "42.6% · #13 in threes taken" inside nor past its tip. The hover
+# spells it out.
+STYLE_RANK_NOUN = {"pace": "fastest", "three_pt_rate": "in threes"}
+STYLE_RANK_HOVER = {
+    "pace": "fastest",
+    "three_pt_rate": "in threes taken (share of shots from three)",
+}
+
+# A label goes inside its bar, in white, when it fits there at phone width
+# (the narrowest plot: about 1.85px per percentile point, and about 5.6px
+# per 11px character); otherwise it sits just past the tip.
+_PHONE_PX_PER_POINT = 1.85
+_CHAR_PX = 5.6
 # The last-ranked team's bar (percentile 0) still draws a sliver, so the row
 # reads as a bar at the far left rather than a missing one. The hover and
 # label carry the real rank.
@@ -79,11 +91,9 @@ def format_value(key: str, value: float) -> str:
     return f"{value:.1f}" if key in _PLAIN else f"{value:.1f}%"
 
 
-def _style_rank(rank: int, league_size: int) -> str:
-    """'#3 most' / '#2 least': an unjudged stat's place from whichever end
-    is nearer, since neither end is the good one (rank 1 = the most)."""
-    from_least = league_size + 1 - rank
-    return f"#{rank} most" if rank <= from_least else f"#{from_least} least"
+def _fits_inside(pctile: float, label: str) -> bool:
+    """Whether `label` fits inside a bar of this length at phone width."""
+    return pctile * _PHONE_PX_PER_POINT >= len(label) * _CHAR_PX + 10
 
 
 def _missing(value: Any) -> bool:
@@ -103,19 +113,20 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
     mart has already flipped the lower-is-better stats).
 
     Judged stats run from T.CRITICAL through gray to T.GOOD and print
-    "value · #rank". Unjudged ones (pace, 3-pt rate) are MUTED and print
-    "#n most/least", since more of them is a choice, not a strength. A
-    stat with no percentile (an early season without the inputs) has no
-    row, and a group with none has no label. `league_size` is the number
-    of teams that season, for the "least" count."""
+    "value · #rank". Unjudged ones (pace, 3-pt rate) are MUTED and name
+    what their rank counts ("#3 fastest"), since more of them is a style,
+    not a ranking from good to bad. A stat with no percentile (an early
+    season without the inputs) has no row, and a group with none has no
+    label. `league_size` is the number of teams that season, for the
+    hover's "#4 of 30"."""
     ys: list[str] = []
     ticks: list[str] = []
     xs: list[float | None] = []
     colors: list[str] = []
     texts: list[str] = []
     positions: list[str] = []
-    font_colors: list[str] = []
     hovers: list[str] = []
+    outside: list[tuple[str, float, str]] = []  # (category, bar end, label)
 
     group = None
     for stat in diagnosis.PROFILE_STATS:
@@ -133,7 +144,6 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
             colors.append(PROFILE_NEUTRAL)
             texts.append("")
             positions.append("none")
-            font_colors.append(T.INK_2)
             hovers.append("")
 
         p = float(pctile)
@@ -144,17 +154,25 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
             color = percentile_color(p)
             standing = f"#{r} of {league_size} · {ordinal(round(p))} percentile"
         else:
-            place = _style_rank(r, league_size)
+            place = f"#{r} {STYLE_RANK_NOUN.get(stat.key, '')}".rstrip()
             color = PROFILE_STYLE
-            standing = f"{place} of {league_size} · style: more is neither better nor worse"
-        inside = p >= _INSIDE_FROM
+            counts = STYLE_RANK_HOVER.get(stat.key, "")
+            standing = f"#{r} of {league_size} {counts} · a style stat"
+        label = f"{shown} · {place}"
+        x = max(p, _STUB)
         ys.append(stat.key)
         ticks.append(stat.label)
-        xs.append(max(p, _STUB))
+        xs.append(x)
         colors.append(color)
-        texts.append(f"{shown} · {place}")
-        positions.append("inside" if inside else "outside")
-        font_colors.append(T.INK if inside else T.INK_2)
+        texts.append(label)
+        if _fits_inside(p, label):
+            positions.append("inside")
+        else:
+            # Drawn as an annotation instead, for its background: plotly's
+            # bar text has none, and a label crossing the dashed median
+            # line is hard to read without one.
+            positions.append("none")
+            outside.append((stat.key, x, label))
         hovers.append(
             f"<b>{stat.label}</b> {shown}<br>{standing}"
             f'<br><span style="color:{T.MUTED}">{_hover_term(stat.term)}</span>'
@@ -173,15 +191,28 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
         textposition=positions,
         insidetextanchor="end",
         textangle=0,
-        textfont={"color": font_colors, "size": 11},
-        cliponaxis=False,
+        textfont={"color": T.INK, "size": 11},
         hovertext=hovers,
         hovertemplate="%{hovertext}<extra></extra>",
         showlegend=False,
     )
     # The league median. Dashed, unlike the hairline grid, so it reads as
-    # the reference the bars are measured against.
-    fig.add_vline(x=50, line_color=T.MUTED, line_width=1, line_dash="dash")
+    # the reference the bars are measured against. Drawn below the bars, so
+    # it shows in the gaps between them and never crosses a label set
+    # inside one.
+    fig.add_vline(x=50, line_color=T.MUTED, line_width=1, line_dash="dash", layer="below")
+    for category, x, label in outside:
+        fig.add_annotation(
+            x=x,
+            y=category,
+            xanchor="left",
+            xshift=4,
+            text=label,
+            showarrow=False,
+            font={"color": T.INK_2, "size": 11},
+            bgcolor=T.PAGE,
+            borderpad=1,
+        )
     fig.add_annotation(
         x=50,
         y=1,
@@ -205,7 +236,7 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
                 "gridcolor": T.GRID,
                 "tickfont": {"color": T.MUTED},
                 "title": {
-                    "text": "League percentile (100 = best)",
+                    "text": "League percentile (100 = first in the league)",
                     "font": {"color": T.MUTED, "size": 11},
                 },
                 "fixedrange": True,

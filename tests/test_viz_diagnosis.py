@@ -1,4 +1,4 @@
-"""The strengths-and-weaknesses chart (dashboard/lib/viz_diagnosis.py).
+"""The league-ranks profile chart (dashboard/lib/viz_diagnosis.py).
 
 Pure: a hand-built mart_team_profile row, no warehouse or Streamlit.
 """
@@ -80,15 +80,31 @@ def test_labels_carry_value_and_rank():
     texts = {b[0]: b[3] for b in _bars(viz_diagnosis.profile_chart(row))}
     assert texts["effective_fg_pct"] == "56.1% · #3"
     assert texts["offensive_rating"] == "117.6 · #3"
-    assert texts["pace"] == "104.2 · #1 most"
-    assert texts["three_pt_rate"] == "40.3% · #2 least"
+    # Style ranks say what they count, as a plain rank from the top.
+    assert texts["pace"] == "104.2 · #1 fastest"
+    assert texts["three_pt_rate"] == "40.3% · #29 in threes"
 
 
-def test_style_rank_uses_the_league_size():
+def test_style_hover_counts_the_league():
     row = _row()
     row["pace_rank"] = 22
-    texts = {b[0]: b[3] for b in _bars(viz_diagnosis.profile_chart(row, league_size=23))}
-    assert texts["pace"].endswith("#2 least")
+    hovers = viz_diagnosis.profile_chart(row, league_size=23).data[0].hovertext
+    assert any("#22 of 23 fastest" in h for h in hovers)
+    assert any("in threes taken" in h for h in hovers)
+
+
+def test_short_bars_label_outside_on_a_background():
+    fig = viz_diagnosis.profile_chart(_row(pctile=10.0))
+    trace = fig.data[0]
+    bars = [i for i, x in enumerate(trace.x) if x is not None]
+    assert all(trace.textposition[i] == "none" for i in bars)
+    labels = [a for a in fig.layout.annotations if a.text != "league median"]
+    assert len(labels) == len(bars)
+    assert all(a.bgcolor and a.xanchor == "left" for a in labels)
+
+    long = viz_diagnosis.profile_chart(_row(pctile=100.0))
+    assert all(p == "inside" for p in long.data[0].textposition if p != "none")
+    assert [a.text for a in long.layout.annotations] == ["league median"]
 
 
 def test_hover_explains_each_stat():
