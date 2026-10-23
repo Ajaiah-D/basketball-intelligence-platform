@@ -30,14 +30,17 @@ class ProfileStat(NamedTuple):
     label: str
     group: str  # "Offense" | "Defense" | "Style"
     term: str  # the glossary.TERMS entry for its hover
+    # False for volume and style stats (pace, 3-pt rate): more is a choice,
+    # not a strength, so they are never called a team's best or worst.
+    judged: bool = True
 
 
-# The spec's order. Style (pace) is shown but never judged.
+# The spec's order. Pace and 3-pt rate are shown but never judged.
 PROFILE_STATS: list[ProfileStat] = [
     ProfileStat("offensive_rating", "Offensive rating", "Offense", "Offensive rating"),
     ProfileStat("effective_fg_pct", "eFG%", "Offense", "eFG%"),
     ProfileStat("three_pt_pct", "3P%", "Offense", "3P%"),
-    ProfileStat("three_pt_rate", "3-pt rate", "Offense", "3-pt rate"),
+    ProfileStat("three_pt_rate", "3-pt rate", "Offense", "3-pt rate", judged=False),
     ProfileStat("turnover_pct", "Turnover rate", "Offense", "Turnover rate"),
     ProfileStat("offensive_rebound_pct", "Off. rebound %", "Offense", "Off. rebound %"),
     ProfileStat("free_throw_rate", "FT rate", "Offense", "FT rate"),
@@ -48,7 +51,7 @@ PROFILE_STATS: list[ProfileStat] = [
     ProfileStat("opp_turnover_pct", "Opp turnover rate", "Defense", "Opp turnover rate"),
     ProfileStat("defensive_rebound_pct", "Def. rebound %", "Defense", "Def. rebound %"),
     ProfileStat("opp_free_throw_rate", "Opp FT rate", "Defense", "Opp FT rate"),
-    ProfileStat("pace", "Pace", "Style", "Pace"),
+    ProfileStat("pace", "Pace", "Style", "Pace", judged=False),
 ]
 
 
@@ -68,14 +71,14 @@ def _in_sentence(label: str) -> str:
 def summary_line(profile_row: Mapping[str, Any] | None, n: int = 3) -> str:
     """The "Best at: 3P% (#2), ... · Worst at: turnover rate (#30), ..."
     line for one mart_team_profile row: the n best and n worst league ranks
-    among the Offense and Defense stats (style is not good or bad). Nulls
+    among the judged stats (pace and 3-pt rate are not good or bad). Nulls
     are skipped, rank ties keep the profile's order, and no stat appears on
     both sides. "" when nothing is ranked."""
     if profile_row is None:
         return ""
     ranked = []
     for order, stat in enumerate(PROFILE_STATS):
-        if stat.group == "Style":
+        if not stat.judged:
             continue
         rank = profile_row.get(f"{stat.key}_rank")
         if rank is not None and not _missing(rank):
@@ -246,6 +249,10 @@ _ON_OFF_MIN_GAP = 1.0
 # The reads name regulars only: the rotation's 10-game floor lets in a
 # player whose few minutes give him the team's "best" rate by accident.
 REGULAR_MIN_MPG = 15.0
+# Ball security names a primary handler: a low-usage player who barely
+# touches the ball has a low turnover rate without being the team's surest
+# ball-handler.
+HANDLER_MIN_USAGE = 20.0
 
 
 def _short_names(names: list[str]) -> list[str]:
@@ -308,9 +315,11 @@ def _three_point_read(team: str, rows: pd.DataFrame) -> str | None:
     if top.empty:
         return None
     names = _short_names(top["player"].tolist())
-    share = round(100 * float(top["team_three_pa_share"].sum()))
+    # "Most of" is decided on the exact share; 49.6% must not round up to it.
+    exact = float(top["team_three_pa_share"].sum())
+    share = round(100 * exact)
     who = " and ".join(names)
-    if share >= 50:
+    if exact >= 0.5:
         lead = f"Most of {team}'s threes come from {who}"
     elif len(names) == 1:
         lead = f"{team}'s most frequent three-point shooter is {who}"
@@ -353,22 +362,39 @@ def _on_off_read(team: str, rows: pd.DataFrame) -> str:
     return f"{team} defends {-gap:.1f} points per 100 better with {name} on the floor{_ON_OFF_NOTE}"
 
 
+def _handlers(ranked: pd.DataFrame) -> pd.DataFrame:
+    """The ranked rows with HANDLER_MIN_USAGE+ usage (empty without the
+    column)."""
+    if "usage_pct" not in ranked.columns:
+        return ranked.iloc[0:0]
+    return ranked[ranked["usage_pct"].fillna(0) >= HANDLER_MIN_USAGE]
+
+
 def _leader_read(area: Area, team: str, rows: pd.DataFrame) -> str | None:
     col, label, higher = area.player_cols[0]
     median = _median(rows, col)
     ranked = _ranked(rows, col, higher)
     if ranked.empty or median is None:
         return None
-    leader = ranked.iloc[0]
-    name = _short_names([leader["player"]])[0]
     values = ranked[col].astype(float)
     better = int((values > median).sum() if higher else (values < median).sum())
+    count = f"{better} of {len(ranked)} regulars beat the league median"
     most = "highest" if higher else "lowest"
+    handlers = _handlers(ranked) if area.key == "ball_security" else ranked.iloc[0:0]
+    if not handlers.empty:
+        leader = handlers.iloc[0]
+        name = _short_names([leader["player"]])[0]
+        value = _fmt(col, float(leader[col]))
+        return (
+            f"Of {team}'s high-usage players (20%+), {name} has the {most} {label} "
+            f"({value}; median {_fmt(col, median)}); {count}."
+        )
+    leader = ranked.iloc[0]
+    name = _short_names([leader["player"]])[0]
     note = _DEFENSE_NOTE if area.defensive else ""
     return (
         f"{name} has {team}'s {most} {label} ({_fmt(col, float(leader[col]))}; "
-        f"league median {_fmt(col, median)}); {better} of {len(ranked)} regulars "
-        f"beat it{note}."
+        f"median {_fmt(col, median)}); {count}{note}."
     )
 
 
