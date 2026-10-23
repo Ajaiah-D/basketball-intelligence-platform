@@ -520,6 +520,64 @@ def test_a_git_commit_failure_is_recorded_and_nothing_pushed(fake_run):
     assert ("push",) not in out["git"]
 
 
+@pytest.fixture
+def real_repo(env, tmp_path):
+    """The temp folder as a real git repo holding the refresh's three files
+    and one unrelated file, all committed. Returns a git runner for it."""
+
+    def git(*args: str) -> str:
+        done = subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        )
+        return done.stdout
+
+    git("init", "-q")
+    git("config", "user.name", "Refresh Test")
+    git("config", "user.email", "refresh@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    (tmp_path / "data" / "last_updated.json").write_text("{}\n")
+    env["logs"].mkdir()
+    wr.LOG_PATH.write_text("")
+    (tmp_path / "notes.txt").write_text("draft\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "start")
+    # Someone's half-done edit, staged in the same checkout.
+    (tmp_path / "notes.txt").write_text("half-done edit\n")
+    git("add", "notes.txt")
+    return git
+
+
+RUN = {
+    "run_at": "2026-10-27T10:00:00+00:00",
+    "ok": True,
+    "payroll_ok": True,
+    "player_impact_ok": True,
+}
+
+
+def test_the_commit_takes_only_the_refresh_s_own_files(env, tmp_path, real_repo):
+    (tmp_path / "data" / "last_updated.json").write_text('{"updated_at": "now"}\n')
+    wr.LOG_PATH.write_text('{"run_at": "2026-10-27T10:00:00+00:00"}\n')
+    env["history"].write_bytes(HISTORY + APPENDED)
+    entry = wr.commit_and_push(RUN, with_history=True)
+    assert "git push failed" in entry["error"], "no remote: only the push fails"
+    committed = real_repo("show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(committed) == [
+        "data/last_updated.json",
+        "data/predictions/history.csv",
+        "logs/refresh_runs.jsonl",
+    ]
+    assert real_repo("diff", "--cached", "--name-only").split() == ["notes.txt"]
+
+
+def test_nothing_of_its_own_to_commit_commits_nothing(real_repo):
+    head = real_repo("rev-parse", "HEAD")
+    entry = wr.commit_and_push(RUN, with_history=True)
+    assert entry["ok"] is True
+    assert real_repo("rev-parse", "HEAD") == head
+    assert real_repo("diff", "--cached", "--name-only").split() == ["notes.txt"]
+
+
 # -- --no-publish ---------------------------------------------------------------
 
 

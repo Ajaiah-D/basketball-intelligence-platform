@@ -657,6 +657,7 @@ def commit_status(run_ok: bool, payroll_ok: bool | None, player_impact_ok: bool 
 def commit_and_push(run: dict, *, with_history: bool = False) -> dict:
     """Commit this run's log line, data/last_updated.json and (with_history:
     the warehouse asset was uploaded) the predictions history, and push.
+    Only those files go in the commit, whatever else is staged.
 
     Returns a "git_push" entry. It cannot go in the run's own line, which
     has to be written before the commit that carries it; the caller appends
@@ -674,13 +675,18 @@ def commit_and_push(run: dict, *, with_history: bool = False) -> dict:
             # did not publish has already put it back (discard_predictions),
             # so it has nothing of its own to add.
             owned.append(HISTORY_PATH)
-        # Repo-relative, the way git is given paths everywhere else.
+        # Repo-relative: git runs in PROJECT_ROOT.
         files = [_display(path) for path in owned]
-        add = git("add", *files)
+        add = git("add", "--", *files)
         if add.returncode != 0:
             error = f"git add failed: {add.stdout}{add.stderr}"
-        elif git("diff", "--cached", "--quiet").returncode != 0:
-            commit = git("commit", "-m", f"Weekly refresh: {status} {run['run_at']}")
+        # Scoped to these files, and --only commits nothing else: anything
+        # someone left staged in this checkout stays staged, out of the
+        # refresh's commit and out of the push.
+        elif git("diff", "--cached", "--quiet", "--", *files).returncode != 0:
+            commit = git(
+                "commit", "-m", f"Weekly refresh: {status} {run['run_at']}", "--only", "--", *files
+            )
             if commit.returncode != 0:
                 error = f"git commit failed: {commit.stdout}{commit.stderr}"
             else:
