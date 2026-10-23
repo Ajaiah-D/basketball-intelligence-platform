@@ -169,3 +169,79 @@ def test_offseason_falls_back_without_a_readable_schedule(tmp_path):
         assert health_check.in_offseason(date(2026, 11, 6), path) is True
         assert health_check.in_offseason(date(2026, 11, 7), path) is False
     assert not missing.exists()  # a read-only probe never creates the file
+
+
+@pytest.mark.parametrize(
+    ("day", "phrase"),
+    [
+        (date(2026, 7, 1), None),
+        (date(2026, 10, 20), None),  # the eve of opening night: still the offseason
+        (date(2026, 10, 21), "the season just started (opening night 2026-10-21)"),
+        (date(2026, 10, 27), "the season just started (opening night 2026-10-21)"),
+        (date(2026, 10, 28), None),  # grace over: in season, no qualifier
+        (date(2027, 1, 15), None),
+    ],
+)
+def test_the_grace_week_is_called_the_season_starting(schedule_db, day, phrase):
+    assert health_check.season_just_started(day, schedule_db) == phrase
+
+
+def test_the_grace_week_on_the_fallback_says_the_date_is_assumed(schedule_db):
+    # 2027-28 has only a preseason game, so opening night is the fallback.
+    assert health_check.season_just_started(date(2027, 10, 30), schedule_db) is None
+    assert health_check.season_just_started(date(2027, 10, 31), schedule_db) == (
+        "the season just started (opening night 2027-10-31, "
+        "assumed: the schedule doesn't have it yet)"
+    )
+
+
+@pytest.fixture
+def grace_week(schedule_db, monkeypatch):
+    """Today is 2026-10-23, two days after schedule_db's opening night, with
+    the checks pointed at a warehouse whose latest game is that night."""
+    con = duckdb.connect(str(schedule_db))
+    con.execute("create table main_staging.stg_team_game_logs (game_date date)")
+    con.execute("insert into main_staging.stg_team_game_logs values ('2026-10-21')")
+    con.close()
+
+    class Today(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 23)
+
+    monkeypatch.setattr(health_check, "date", Today)
+    monkeypatch.setattr(health_check, "DB_PATH", schedule_db)
+    monkeypatch.setattr(health_check, "CHECKS_FAILED", [])
+    return schedule_db
+
+
+def test_freshness_in_the_grace_week_says_the_season_just_started(grace_week, capsys):
+    health_check.check_freshness()
+    printed = capsys.readouterr().out
+    assert "the season just started (opening night 2026-10-21)" in printed
+    assert "offseason" not in printed
+    assert health_check.CHECKS_FAILED == []
+
+
+def test_the_last_run_in_the_grace_week_says_the_season_just_started(
+    grace_week, tmp_path, monkeypatch, capsys
+):
+    printed = _check_last_run(tmp_path, monkeypatch, capsys, RUN)
+    assert "succeeded; the season just started (opening night 2026-10-21)" in printed
+    assert "idle until the season starts" not in printed
+
+
+def test_a_failed_non_fatal_step_is_noted_as_carried_over(tmp_path, monkeypatch, capsys):
+    steps = [{"step": "payroll", "ok": False}, {"step": "player_impact", "ok": True}]
+    printed = _check_last_run(tmp_path, monkeypatch, capsys, {**RUN, "steps": steps})
+    assert "NOTE step 'payroll' failed but did not block the run; the warehouse is carrying" in (
+        printed
+    )
+
+
+def test_a_failed_drop_snapshot_is_noted_with_its_own_error(tmp_path, monkeypatch, capsys):
+    error = "could not delete history.csv.pre-run: locked; overwrote it with the published history"
+    steps = [{"step": "drop_snapshot", "ok": False, "error": error}]
+    printed = _check_last_run(tmp_path, monkeypatch, capsys, {**RUN, "steps": steps})
+    assert f"NOTE step 'drop_snapshot' failed after the run published: {error}" in printed
+    assert "last week's data" not in printed

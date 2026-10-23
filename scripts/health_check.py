@@ -36,6 +36,10 @@ from core.seasons import current_season
 DB_PATH = paths.warehouse_path()
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
 
+# The refresh's non-fatal steps: when one fails the run still publishes,
+# with last week's tables for it.
+CARRIED_OVER_STEPS = {"payroll", "load_payroll", "player_impact"}
+
 CHECKS_PASSED: list[str] = []
 CHECKS_FAILED: list[str] = []
 
@@ -56,15 +60,19 @@ def opening_night(today: date, db_path: Path | None = None) -> date:
     year, from the warehouse's schedule; OFFSEASON_FALLBACK_END of that
     year when the warehouse is missing, unreadable or has no schedule for
     that season yet."""
+    return scheduled_opening_night(today, db_path) or date(today.year, *OFFSEASON_FALLBACK_END)
+
+
+def scheduled_opening_night(today: date, db_path: Path | None = None) -> date | None:
+    """opening_night() as the warehouse's schedule has it, or None when the
+    warehouse is missing, unreadable or has no schedule for that season."""
     season = current_season(date(today.year, SEASON_START_MONTH, 1))
     try:
         with duckdb.connect(str(db_path or DB_PATH), read_only=True) as con:
             row = con.execute(OPENING_NIGHT_SQL, [season]).fetchone()
     except duckdb.Error:
-        row = None
-    if row is not None and row[0] is not None:
-        return row[0]
-    return date(today.year, *OFFSEASON_FALLBACK_END)
+        return None
+    return row[0] if row is not None else None
 
 
 def in_offseason(today: date | None = None, db_path: Path | None = None) -> bool:
@@ -81,6 +89,22 @@ def in_offseason(today: date | None = None, db_path: Path | None = None) -> bool
     # the freshness check gets the same slack it allows in season.
     grace = timedelta(days=LATEST_GAME_MAX_AGE_DAYS)
     return today < opening_night(today, db_path) + grace
+
+
+def season_just_started(today: date | None = None, db_path: Path | None = None) -> str | None:
+    """How to describe the grace week, in the checks' messages: in_offseason()
+    still holds for LATEST_GAME_MAX_AGE_DAYS after opening night, but games
+    are being played by then, so "offseason" would be wrong. The phrase to
+    use from opening night until the grace ends; None at any other time."""
+    today = today or date.today()
+    if not in_offseason(today, db_path):
+        return None
+    scheduled = scheduled_opening_night(today, db_path)
+    opened = scheduled or date(today.year, *OFFSEASON_FALLBACK_END)
+    if today < opened:
+        return None
+    assumed = "" if scheduled else ", assumed: the schedule doesn't have it yet"
+    return f"the season just started (opening night {opened}{assumed})"
 
 
 def fail(msg: str) -> None:
@@ -155,7 +179,11 @@ def check_freshness() -> None:
     # generous week (LATEST_GAME_MAX_AGE_DAYS) before flagging the pipeline
     # as stalled.
     if in_offseason():
-        ok(f"most recent game is {latest} ({days_old} days ago), expected in the offseason")
+        started = season_just_started()
+        if started:
+            ok(f"most recent game is {latest} ({days_old} days ago); {started}")
+        else:
+            ok(f"most recent game is {latest} ({days_old} days ago), expected in the offseason")
     elif days_old > LATEST_GAME_MAX_AGE_DAYS:
         fail(f"most recent game in the warehouse is {latest} ({days_old} days ago)")
     else:
@@ -207,10 +235,8 @@ def check_last_run() -> None:
         failed_step = next((s["step"] for s in last["steps"] if not s["ok"]), "unknown")
         fail(f"last run ({last['run_at']}, {age_days}d ago) FAILED at step '{failed_step}'")
     elif in_offseason():
-        ok(
-            f"last run {last['run_at']} ({age_days}d ago) succeeded; the weekly job "
-            "is idle until the season starts"
-        )
+        idle = season_just_started() or "the weekly job is idle until the season starts"
+        ok(f"last run {last['run_at']} ({age_days}d ago) succeeded; {idle}")
     elif age_days > LAST_RUN_MAX_AGE_DAYS:
         fail(
             f"last successful run was {last['run_at']} ({age_days}d ago) - "
@@ -220,16 +246,25 @@ def check_last_run() -> None:
         ok(f"last run {last['run_at']} ({age_days}d ago) succeeded, {len(last['steps'])} steps")
     # A run can be "ok" overall and still have a failed step in it: the
     # payroll scrape and the player_impact refit are non-fatal by design
-    # (see weekly_refresh.main), so their failures no longer show up in
+    # (see weekly_refresh.build), so their failures no longer show up in
     # last["ok"]. Report them anyway - non-fatal is not the same as
     # invisible - without failing the check, which would defeat the point
     # of making them non-fatal. Both keep last week's tables on failure.
+    # The one other step an ok run can have failed is drop_snapshot, after
+    # the publish; its error says what was done about it.
     if last.get("ok"):
         for step in last["steps"]:
-            if not step["ok"]:
+            if step["ok"]:
+                continue
+            if step["step"] in CARRIED_OVER_STEPS:
                 print(
                     f"  NOTE step '{step['step']}' failed but did not block the "
                     f"run; the warehouse is carrying last week's data for it"
+                )
+            else:
+                print(
+                    f"  NOTE step '{step['step']}' failed after the run published: "
+                    f"{step.get('error', 'no error recorded')}"
                 )
     # A dbt test configured to warn (assert_player_season_matches_game_logs
     # below its error threshold) passes the build, so the run is "ok" and
