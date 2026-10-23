@@ -1,5 +1,7 @@
 """Overview - league pulse: KPIs, leaders, standings snapshot, recent games."""
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -47,8 +49,11 @@ def best_record_spot(standings: pd.DataFrame) -> str:
     )
 
 
-def leaders_card(title: str, df, stat: str, help: str = "", fmt: str = "{:.1f}") -> str:
+def leaders_card(
+    title: str, df: pd.DataFrame, stat: str, help: str = "", fmt: str = "{:.1f}"
+) -> str:
     rows = []
+    r: Any  # itertuples() rows: pandas-stubs types each field as any scalar
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'
@@ -59,9 +64,10 @@ def leaders_card(title: str, df, stat: str, help: str = "", fmt: str = "{:.1f}")
     return T.card_html(title, "".join(rows), help)
 
 
-def adv_leaders_card(title: str, df, stat: str) -> str:
+def adv_leaders_card(title: str, df: pd.DataFrame, stat: str) -> str:
     """Same card as leaders_card, for the advanced mart's column names."""
     rows = []
+    r: Any  # itertuples() rows: pandas-stubs types each field as any scalar
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'
@@ -73,8 +79,9 @@ def adv_leaders_card(title: str, df, stat: str) -> str:
     return T.card_html(title, "".join(rows), glossary.TERMS.get(title, ""))
 
 
-def standings_mini(df) -> str:
+def standings_mini(df: pd.DataFrame) -> str:
     rows = []
+    r: Any  # itertuples() rows: pandas-stubs types each field as any scalar
     for i, r in enumerate(df.itertuples(), 1):
         rows.append(
             f'<div class="bip-row">{T.rank_badge(i)}'

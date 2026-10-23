@@ -2,6 +2,8 @@
 record splits, margins and its roster), with full standings in their own tab
 so the table doesn't crowd out the team view."""
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -21,7 +23,7 @@ def form_dots(form: str) -> str:
     )
 
 
-def standings_table(df) -> str:
+def standings_table(df: pd.DataFrame) -> str:
     def th(label: str, term: str) -> str:
         return f"{label}{T.tip(glossary.TERMS[term])}"
 
@@ -33,6 +35,7 @@ def standings_table(df) -> str:
         f"{th('Form', 'Form')}</th></tr>"
     )
     rows = []
+    r: Any  # itertuples() rows: pandas-stubs types each field as any scalar
     for i, r in enumerate(df.itertuples(), 1):
         diff_cls = "pos" if r.net > 0 else ("neg" if r.net < 0 else "")
         rows.append(
