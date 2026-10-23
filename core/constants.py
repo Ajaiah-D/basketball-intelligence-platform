@@ -44,6 +44,12 @@ ELO_SEASON_CARRY = 0.75
 # its own decision, with a new model_version, not a side effect of a refactor.
 PREDICTION_MARGIN_SD = 13.5
 
+# A win probability at or above this is a home pick. A coin flip (exactly
+# 0.5) counts as one. The model's accuracy (ml.train.evaluate), the
+# public track record and the Predictions page's cards all call a game
+# with it, so they can't disagree about a 50-50 game.
+HOME_PICK_THRESHOLD = 0.5
+
 # GAME_MARGIN_SD is the Arcade simulator's game-to-game noise around a known
 # rating gap: margin ~ Normal(net_a - net_b + HOME_EDGE_POINTS, GAME_MARGIN_SD).
 # Both teams' strengths are given, so there is no model error to cover.

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
+from core.constants import HOME_PICK_THRESHOLD
 from dashboard.lib import glossary, stats, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import predictions
@@ -46,7 +47,7 @@ def prediction_card(r, tip: str) -> str:
     home, away = r.home_team_abbreviation, r.away_team_abbreviation
     home_pct, away_pct = _split(r.win_probability)
     # Trust the probability over the margin's sign if they ever disagree.
-    home_fav = float(r.win_probability) >= predictions.HOME_PICK_THRESHOLD
+    home_fav = float(r.win_probability) >= HOME_PICK_THRESHOLD
     fav, fav_pct = (home, home_pct) if home_fav else (away, away_pct)
     # Never "by 0": a pick that is a coin flip is still a pick by a point.
     by = max(1, round(abs(float(r.predicted_margin))))
@@ -127,7 +128,7 @@ def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
     for r in recent.itertuples():
         # A coin flip is a home pick - the card's favorite and the accuracy
         # KPI (predictions.prediction_track_record) use the same rule.
-        home_pick = float(r.win_probability) >= predictions.HOME_PICK_THRESHOLD
+        home_pick = float(r.win_probability) >= HOME_PICK_THRESHOLD
         pick = r.home if home_pick else r.away
         pick_pct = _split(r.win_probability)[0 if home_pick else 1]
         home_won = r.home_pts > r.away_pts

@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.stats import norm
 from sklearn.metrics import brier_score_loss, log_loss
 
-from core.constants import PREDICTION_MARGIN_SD
+from core.constants import HOME_PICK_THRESHOLD, PREDICTION_MARGIN_SD
 from ml.features import FEATURE_COLUMNS
 
 # Turning a predicted margin into a win probability needs a spread:
@@ -118,7 +118,7 @@ def evaluate(predictions: pd.DataFrame) -> dict:
     probability = predictions["win_probability"].astype(float).to_numpy()
     clipped = np.clip(probability, 1e-6, 1 - 1e-6)
     return {
-        "accuracy": float(((probability >= 0.5) == actual).mean()),
+        "accuracy": float(((probability >= HOME_PICK_THRESHOLD) == actual).mean()),
         "log_loss": float(log_loss(actual, clipped, labels=[False, True])),
         "brier": float(brier_score_loss(actual, clipped)),
         "margin_mae": float(
