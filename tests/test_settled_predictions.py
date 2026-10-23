@@ -2,7 +2,8 @@
 mart_settled_predictions, which ml/evaluate.py reads, and as the dashboard's
 own copy in dashboard/lib/data/predictions.py, which stays until a warehouse
 with the model is published. These tests fail the moment the two differ, in
-text or in output."""
+text or in output. The metric math is duplicated too (the dashboard can't
+import ml), so the track records are compared as well."""
 
 import re
 import shutil
@@ -15,6 +16,7 @@ from core import paths
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import predictions
 from ml import evaluate
+from ml.train import evaluate as ml_metrics
 
 MODEL = (
     paths.PROJECT_ROOT
@@ -101,6 +103,48 @@ def test_the_query_applies_every_grading_rule(synthetic_warehouse):
         ["g1", 0.60],
         ["g2", 0.48],
     ]
+
+
+# ml.train.evaluate clips probabilities to [1e-6, 1 - 1e-6] for log loss and
+# scores Brier on the clipped values; the dashboard scores the raw ones. Each
+# game's squared error moves by at most 2e-6 that way, so the averages stay
+# within this of each other.
+BRIER_CLIP_TOLERANCE = 1e-6
+
+
+def _assert_same_record(dashboard: dict, ml: dict) -> None:
+    assert dashboard["n"] == ml["n"]
+    assert dashboard["accuracy"] == ml["accuracy"]
+    assert dashboard["margin_mae"] == pytest.approx(ml["margin_mae"], rel=1e-12)
+    assert dashboard["brier"] == pytest.approx(ml["brier"], rel=0, abs=BRIER_CLIP_TOLERANCE)
+
+
+def test_the_track_record_is_ml_s_metrics(synthetic_warehouse):
+    # Three more graded games on top of the fixture's two, at the edges of
+    # the math: a coin flip (counts as a home pick), and a certain home win
+    # and a certain home loss that both went the other way (the clip).
+    with duckdb.connect(str(synthetic_warehouse)) as con:
+        con.execute("""
+            insert into main.predictions values
+                ('e1', 'ridge-v1', '2026-10-01 12:00', 'g5', '2026-27', '2026-10-24', 1, 3, 0.0, 0.5),
+                ('f1', 'ridge-v1', '2026-10-01 12:00', 'g6', '2026-27', '2026-10-24', 2, 4, 9.0, 1.0),
+                ('h1', 'ridge-v1', '2026-10-01 12:00', 'g7', '2026-27', '2026-10-25', 5, 7, -9.0, 0.0)
+        """)
+        con.execute("""
+            insert into main_marts.fct_team_game values
+                ('g5', -1, false, 100, 101),
+                ('g6', -3, false, 97, 100),
+                ('g7', 12, true, 120, 108)
+        """)
+    data_core.clear_caches()
+    settled = predictions.settled_predictions()
+    assert len(settled) == 5
+    record = predictions.prediction_track_record()
+    expected = ml_metrics(settled)
+    _assert_same_record(record, expected)
+    # Hand-checked: g1 and g2 called right; g5's coin flip picks home, who
+    # lost; g6 and g7 called wrong.
+    assert record["accuracy"] == pytest.approx(2 / 5)
 
 
 @pytest.fixture(scope="module")
@@ -221,3 +265,10 @@ def test_ml_evaluate_grades_the_same_games(warehouse_copy):
         graded = evaluate.settled_predictions(con)
     dashboard = predictions.settled_predictions()[graded.columns]
     pd.testing.assert_frame_equal(graded, dashboard)
+
+
+def test_ml_and_the_dashboard_score_the_same_track_record(warehouse_copy):
+    path, _ = warehouse_copy
+    with duckdb.connect(str(path), read_only=True) as con:
+        ml = evaluate.track_record(con)
+    _assert_same_record(predictions.prediction_track_record(), ml)

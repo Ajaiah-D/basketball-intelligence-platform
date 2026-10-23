@@ -4,7 +4,8 @@ on.
 Nothing here imports ml: scikit-learn and scipy are dev-only and absent on
 the deployed app, which once crashed with ModuleNotFoundError the moment a
 real predictions table was published because this module imported
-ml.evaluate. The few lines of metric math are duplicated below instead.
+ml.evaluate. The few lines of metric math are duplicated below instead;
+tests/test_settled_predictions.py checks they give ml's numbers.
 """
 
 from __future__ import annotations
@@ -12,11 +13,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .core import objects_exist, q
+from core.constants import HOME_PICK_THRESHOLD
 
-# A probability at or above this is a home pick. A coin flip (exactly 0.5)
-# counts as one, the same rule the page's cards and recent-results grid use.
-HOME_PICK_THRESHOLD = 0.5
+from .core import objects_exist, q
 
 # The predictions graded against what happened: the earliest prediction per
 # game only (grading a later re-run would let a model be scored on a
