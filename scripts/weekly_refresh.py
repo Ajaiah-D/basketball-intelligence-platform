@@ -87,6 +87,7 @@ LOCK_PATH = paths.logs_dir() / "refresh.lock"
 # output, so without this a skipped run would leave no trace at all.
 LAUNCH_LOG_PATH = paths.logs_dir() / "refresh.log"
 HISTORY_PATH = paths.predictions_history_path()
+LAST_UPDATED_PATH = paths.last_updated_path()
 # Far longer than a run ever takes (minutes), so a lock this old was left by
 # a run that was killed without reaching its finally block.
 LOCK_STALE_SECONDS = 6 * 3600
@@ -667,12 +668,14 @@ def commit_and_push(run: dict, *, with_history: bool = False) -> dict:
     error = None
     try:
         status = commit_status(run["ok"], run["payroll_ok"], run["player_impact_ok"])
-        files = ["data/last_updated.json", "logs/refresh_runs.jsonl"]
+        owned = [LAST_UPDATED_PATH, LOG_PATH]
         if with_history:
             # The source of truth for the public track record. A run that
             # did not publish has already put it back (discard_predictions),
             # so it has nothing of its own to add.
-            files.append("data/predictions/history.csv")
+            owned.append(HISTORY_PATH)
+        # Repo-relative, the way git is given paths everywhere else.
+        files = [_display(path) for path in owned]
         add = git("add", *files)
         if add.returncode != 0:
             error = f"git add failed: {add.stdout}{add.stderr}"

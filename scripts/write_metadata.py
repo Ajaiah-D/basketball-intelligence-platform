@@ -22,8 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
 
 DB_PATH = paths.warehouse_path()
-# Committed by the refresh, so it stays in the repo whatever BIP_DATA_HOME says.
-OUT_PATH = paths.PROJECT_ROOT / "data" / "last_updated.json"
+OUT_PATH = paths.last_updated_path()
 
 
 def _one_row(con: duckdb.DuckDBPyConnection, sql: str) -> tuple:

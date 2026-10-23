@@ -30,6 +30,8 @@ Add a top-level `core/` package that every part of the project imports:
   the Arcade economy, the play-by-play cap and the health check thresholds,
   each with a comment saying where its value came from.
 - `teams.py`: what a team code means in a given season.
+- `seasons.py`: the season a date falls in (`current_season()`), so the
+  health check gets it without importing the ingester and nba_api.
 - `text.py`: `fold()`, the one search-folding rule. Searches fold in
   Python, not SQL, so both sides of a match fold the same way.
 - `fmt.py`: money and ordinal formats.
