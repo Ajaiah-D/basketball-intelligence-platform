@@ -7,9 +7,10 @@
 -- threshold is 60% of the most games anyone played that season (rounded
 -- down), at least 1 and at most 25, so early in a live season the cut
 -- scales with the schedule instead of emptying every leaderboard. The
--- Python function and this model must agree; tests/test_player_percentiles.py
--- checks that they do. Players below it keep their row and their values,
--- with null percentiles and is_qualified = false.
+-- rule lives in the qualification_games macro; the Python function and the
+-- macro must agree, which tests/test_player_percentiles.py and
+-- assert_qualification_games_rule check. Players below it keep their row
+-- and their values, with null percentiles and is_qualified = false.
 --
 -- Turnover rate is the one stat graded the other way: a lower rate is a
 -- better percentile (see the player_pctile macro). A stat the box scores
@@ -18,8 +19,7 @@
 with season_stats as (
     select
         *,
-        -- stats.py takes int() of a positive product, which is floor()
-        greatest(1, least(25, cast(floor(max(games_played) over (partition by season) * 0.6) as int)))
+        {{ qualification_games('max(games_played) over (partition by season)') }}
             as qualification_games
     from {{ ref('mart_player_season') }}
 ),

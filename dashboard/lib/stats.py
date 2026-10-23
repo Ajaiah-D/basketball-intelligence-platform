@@ -16,9 +16,9 @@ def qualification_threshold(stats: pd.DataFrame, full_season: int = 25) -> int:
     season has actually run - the same idea as the NBA's "share of team
     games played" rule - and cap it at the full-season number.
 
-    mart_player_percentiles repeats this rule in SQL (qualification_games);
-    change one and you must change the other. tests/test_player_percentiles.py
-    asserts they agree.
+    mart_player_percentiles repeats this rule in SQL (the qualification_games
+    macro); change one and you must change the other.
+    tests/test_player_percentiles.py asserts they agree.
     """
     if stats.empty:
         return 0
