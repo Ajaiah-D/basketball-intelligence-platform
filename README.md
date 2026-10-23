@@ -48,32 +48,44 @@ would do
 stats.nba.com (via nba_api)        Basketball-Reference (team salary pages)
         |  rate-limited ingestion          |  throttled scrape
         v                                  v
-data/raw/*.parquet                 raw extracts, one file per season
+data/raw/*.parquet                 raw extracts, one file per season, each
+                                   written whole or not at all
         |  scripts/load_to_duckdb.py
         v
-warehouse/basketball.duckdb        local DuckDB warehouse (raw schema)
+warehouse/next/basketball.duckdb   a copy of the DuckDB warehouse (raw schema)
+                                   that the refresh builds into
         |
         v
 dbt (dbt-duckdb)
-        - seed          salary cap / tax / apron history (hand-curated)
+        - seeds         salary cap / tax / apron history, team codes
+                        (both hand-curated)
         - staging       clean, rename, type raw tables (views)
         - intermediate  pair each team-game with its opponent
-        - marts         player and team seasons, standings, game features,
-                        team finances, contracts
+        - marts         every number the site shows: player seasons, stints
+                        and careers, team seasons, standings, game features,
+                        team finances, contracts, graded predictions
         |
         v
-ml/                                Elo + ridge model; appends predictions;
+ml/                                Elo + ridge model; appends predictions to
+                                   data/predictions/history.csv (committed);
                                    scores every player-season for the Arcade
-        |
+        |  every required step passed: the copy is swapped onto
+        |  warehouse/basketball.duckdb
         v
-GitHub Release (data-v1)           the published warehouse file
+GitHub Release (data-v1)           the published warehouse file, then version.txt
         |  downloaded on boot, re-checked hourly
         v
-dashboard/ (Streamlit + Plotly)    the public app
+dashboard/ (Streamlit + Plotly)    the public app; reads the marts through
+                                   dashboard/lib/data/
 ```
 
+Every Python stage imports `core/`, a small shared package: where the data
+lives, crash-safe file writes, the constants and team-code facts the
+pipeline and the pages share, and search-text folding. Each rule is defined
+once, there or in a dbt mart.
+
 `scripts/weekly_refresh.py` runs that whole chain once a week from a local
-Windows Scheduled Task. A diagram of the full system, including CI and
+Windows Scheduled Task (see "How the data refresh works" below). A diagram of the full system, including CI and
 hosting, is in [docs/architecture.excalidraw](docs/architecture.excalidraw)
 (open it at excalidraw.com), and the reasoning behind the main choices is in
 [docs/adr/](docs/adr/).
@@ -130,22 +142,30 @@ here, and so are four more that finished within $2.5M of it
 ## Project layout
 
 ```
+core/                              # shared by every stage: paths, atomic writes and
+                                   # retries, constants, team codes, text, formats
 ingestion/nba_ingest.py            # NBA game data into data/raw/*.parquet
 ingestion/team_payroll_ingest.py   # Basketball-Reference salaries into data/raw/
-scripts/load_to_duckdb.py          # data/raw into warehouse/basketball.duckdb (raw schema)
-scripts/weekly_refresh.py          # the whole pipeline end to end, then publish
+scripts/load_to_duckdb.py          # data/raw into the warehouse (raw schema)
+scripts/weekly_refresh.py          # the whole pipeline in a copy, then swap and publish
 scripts/backfill_team_payroll.py   # one-time salary history backfill
 scripts/health_check.py            # is the data fresh and the API still reachable
-dbt/basketball_intelligence/       # dbt project (seed / staging / intermediate / marts)
+dbt/basketball_intelligence/       # dbt project (seeds / staging / intermediate / marts)
 ml/                                # Elo ratings, ridge model, backtest, predictions,
                                    # player impact model (player_impact.py)
 dashboard/app.py                   # Streamlit app entry point
-dashboard/lib/                     # queries, charts, theme, franchise lineage,
+dashboard/lib/data/                # read-only queries, one module per domain
+dashboard/lib/                     # charts, cards, theme, simulator, franchise lineage,
                                    # payroll wording, stat glossary
-dashboard/views/                   # one module per page
+dashboard/views/                   # one module per page; arcade/ is a package with
+                                   # one module per game
+data/predictions/history.csv       # every published prediction (committed)
+data/fixtures/                     # small real-data slices CI builds its warehouse from
 tests/                             # pytest suite
 docs/adr/                          # architecture decision records
-warehouse/, data/raw/              # generated locally (gitignored)
+logs/refresh_runs.jsonl            # one line per refresh run (committed)
+warehouse/, data/raw/              # generated locally (gitignored); BIP_DATA_HOME
+                                   # moves them out of the repo
 ```
 
 ## Dashboard
@@ -210,18 +230,24 @@ To put the app on the public internet for free, see [DEPLOYMENT.md](DEPLOYMENT.m
 
 ## Setup
 
-Requires Python 3.11+ (developed on 3.14; CI runs 3.12).
+Requires Python 3.12, the version CI, the Docker image and the Streamlit
+Cloud app run. The lock files pin exact package versions for it.
 
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -r requirements.txt -r requirements-dev.txt --prefer-binary
+python -m pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt
+pre-commit install
 
-# Python 3.14 only: dbt-core's pinned mashumaro fails to import on 3.14.
-# Upgrading past the pin works fine (ignore pip's resolver warning):
-pip install --upgrade mashumaro
+# Optional: the Dev Lab password, and BIP_DATA_HOME to keep the data
+# outside the repo (see CONTRIBUTING.md)
+copy .env.example .env
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the lock files, the data location
+variables, the test and lint commands, and the rules for changing the
+warehouse.
 
 ## Running the pipeline
 
@@ -245,12 +271,13 @@ python scripts\load_to_duckdb.py
 python scripts\backfill_team_payroll.py
 python scripts\load_to_duckdb.py
 
-# 4. Build and test dbt models (seed first - the salary cap/tax/apron
-#    reference table is hand-curated data, not derived from a raw source)
+# 4. Build and test the dbt models: seeds first (the salary cap and team
+#    code tables are hand-curated, not derived from a raw source), then
+#    each model followed by its tests. dbt does not read .env, so if you
+#    set BIP_DATA_HOME there, point dbt at the same warehouse first
+$env:BIP_WAREHOUSE = python -c "from core import paths; print(paths.warehouse_path())"
 cd dbt\basketball_intelligence
-dbt seed --profiles-dir .
-dbt run --profiles-dir .
-dbt test --profiles-dir .
+dbt build --profiles-dir .
 cd ..\..
 
 # 5. Score every player-season for the Arcade team builder, then predict
@@ -259,15 +286,12 @@ python -m ml.player_impact
 python -m ml.predict
 python -m ml.evaluate
 
-# 6. Run the test suite
-pytest tests
+# 6. Run the test suite (CONTRIBUTING.md has the CI-style run)
+python -m pytest -q
 
 # 7. Explore locally in the dashboard (same app as the live deploy)
 streamlit run dashboard\app.py
 ```
-
-`python scripts\weekly_refresh.py` runs steps 2 to 5 for the current season
-and republishes the warehouse; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Staging models land as views in the `main_staging` schema of
 `warehouse/basketball.duckdb`, e.g.:
@@ -278,6 +302,35 @@ from main_staging.stg_player_game_logs
 group by 1 order by ppg desc limit 10;
 ```
 
+## How the data refresh works
+
+`python scripts\weekly_refresh.py` runs steps 2 to 5 for the current season,
+then publishes. A Windows Scheduled Task runs it every Tuesday.
+
+- **It builds in a copy.** The run copies the warehouse to
+  `warehouse/next/basketball.duckdb` and every step writes there. Only when
+  every required step passes is the copy swapped onto the real file and
+  uploaded. A failed run deletes the copy, so the site keeps last week's
+  data instead of half of this week's.
+- **Two steps are optional.** The salary scrape and the Arcade's player
+  ratings can fail without stopping the run; the warehouse keeps last
+  week's tables for them.
+- **Play-by-play accumulates.** Each run adds up to 120 games the season's
+  file doesn't hold yet, so older games keep their game-flow and shot
+  charts.
+- **Predictions are kept in git.** New predictions are appended to
+  `data/predictions/history.csv`, which is committed with the run log. A run
+  that doesn't publish puts the file back as it found it.
+- **`--no-publish` is a dry run.** Every step runs against the copy, then
+  the copy is deleted: nothing is swapped, uploaded or committed.
+- **Every run leaves a record.** `logs/refresh_runs.jsonl` gets one line
+  per run (committed), and `logs/runs/<run time>/` holds each step's full
+  output.
+
+[DEPLOYMENT.md](DEPLOYMENT.md) covers the scheduled task and publishing, and
+[ADR 0009](docs/adr/0009-atomic-writes-and-building-the-warehouse-in-a-copy.md)
+explains why it works this way.
+
 ## Status / roadmap
 
 - [x] Ingestion with rate limiting; 47 seasons backfilled (1979-80 to 2025-26,
@@ -285,10 +338,12 @@ group by 1 order by ppg desc limit 10;
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging (10 models), intermediate (1) and marts (7), plus a salary
-      cap history seed; 75 passing dbt tests and 260 pytest cases. CI runs
-      both against small committed fixtures, where a few dbt tests have no
-      matching rows; the full set only bites against the local warehouse
+- [x] dbt staging (10 models), intermediate (1) and marts (11), plus salary
+      cap history and team code seeds; 113 dbt tests and 635 pytest cases.
+      CI runs ruff, mypy, `dbt build` and pytest against small committed
+      fixtures cut from the real data (`data/fixtures/`), which cover every
+      era the tests check; the 6 tests that need all seasons are marked
+      `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors. Official NBA advanced stats pulled for 1996-97 onward (one API
       call per season); earlier seasons derived from box scores, and withheld
@@ -302,8 +357,11 @@ group by 1 order by ppg desc limit 10;
       plus-minus, era-relative box-score rates) and a numpy season and playoff
       simulator
 - [x] Weekly scheduled refresh (`scripts/weekly_refresh.py`, local Windows
-      Scheduled Task); it re-fetches the current season in full each run
-- [ ] Incremental ingestion (only new games)
+      Scheduled Task), built in a copy and swapped in only when it passes. It
+      re-fetches the current season's game logs in full (one call each) and
+      adds only the play-by-play it doesn't hold yet
+- [ ] Play-by-play for older games: it accumulates from October 2026 on,
+      and earlier games aren't backfilled (`--all-pbp` can, slowly)
 - [ ] Alerting when a scheduled refresh fails or stops running
 - [ ] Lineup and on/off data (needs possession-level substitution parsing)
 - [ ] Full Q&A dashboard (natural-language questions over marts)

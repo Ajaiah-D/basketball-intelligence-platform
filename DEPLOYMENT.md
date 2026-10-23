@@ -29,6 +29,10 @@ changes.
 
 3. **Create the app** at https://share.streamlit.io. Sign in with GitHub,
    "New app", pick the repo, set **Main file path** to `dashboard/app.py`.
+   Open **Advanced settings** and set **Python version** to **3.12**, the
+   version the lock files are compiled for. It can't be changed later
+   without deleting and redeploying the app (see "Python version on
+   Streamlit Cloud" below).
 
 4. **Set secrets** (app, then Settings, then Secrets). This replaces `.env`
    in the cloud. Never commit either:
@@ -54,10 +58,44 @@ the app's **⋮** menu, **Reboot app**. A reboot also re-downloads the
 warehouse. If reboots stop working, delete the app and recreate it from the
 same repo with the same secrets and custom subdomain.
 
+Community Cloud installs `requirements.txt`, the runtime lock file, so the
+app gets exactly the package versions CI tested. A dependency change is a
+lock file change (see [CONTRIBUTING.md](CONTRIBUTING.md)) and reaches the app
+with the push that carries it. The dev-only packages (pytest, scikit-learn,
+scipy, the linters) are in `requirements-dev.txt` and never installed there,
+which is why the dashboard must not import `ml/` or `scripts/`.
+
 A change that needs new data (a new dbt model, seed or column) is not live
 until the warehouse is republished too: run `python scripts/weekly_refresh.py`
 once after pushing, or wait for the next scheduled run. Pages are written to
-keep working against an older warehouse in the meantime.
+keep working against an older warehouse in the meantime, and warehouse
+changes are additive until the code that reads them has shipped (the
+"expand, then contract" rule in CONTRIBUTING.md).
+
+## Python version on Streamlit Cloud
+
+The app must run Python 3.12 to match the lock files. Community Cloud fixes
+an app's Python version when the app is created: the app's settings show
+it, but changing it means deleting the app and deploying it again.
+
+To check it: share.streamlit.io, the app's **⋮** menu, **Settings**. The
+Python version is listed there and can't be edited.
+
+To change it, delete and redeploy with the same address and secrets:
+
+1. In the app's **Settings**, open **Secrets** and copy the whole text
+   somewhere safe outside the repo. Deleting the app deletes its secrets.
+2. Note the app's address: `basketball-intelligence-platform` in
+   `https://basketball-intelligence-platform.streamlit.app`.
+3. From the app's **⋮** menu, choose **Delete** and confirm.
+4. Create the app again ("New app"): the same repo, branch `main`, main
+   file path `dashboard/app.py`, and the same subdomain as the **App URL**
+   (it is free again once the old app is gone).
+5. Open **Advanced settings**, set **Python version** to **3.12**, and paste
+   the secrets back in.
+6. Deploy. The first boot downloads the warehouse. Then open the public
+   address and check a few pages; if it returns a 404, the subdomain didn't
+   attach, so set it again in the app's settings.
 
 ## Security checklist for going public
 
@@ -80,7 +118,7 @@ keep working against an older warehouse in the meantime.
   - Put Cloudflare (free) in front for CDN/DDoS + custom domain TLS.
   - Payments: Stripe Checkout links work fine from a Streamlit app; full
     accounts/subscriptions are the point where a custom frontend
-    (Next.js + FastAPI reusing `dashboard/lib/db.py` queries) pays off.
+    (Next.js + FastAPI reusing the `dashboard/lib/data/` queries) pays off.
 - **Data refresh cadence**: `scripts/weekly_refresh.py` runs the pipeline
   end to end (ingest game data, load DuckDB, scrape the current season's
   salaries, dbt build, re-score player impact for the Arcade, predict
@@ -102,20 +140,51 @@ keep working against an older warehouse in the meantime.
   only swapped onto `basketball.duckdb` once every required step passed, so
   a failed run leaves the real file and the release untouched. The swap
   retries for about 20 seconds, then fails if something still holds the
-  warehouse open (a local dashboard): close it and rerun. The refresh's own
-  messages and each step's full output go to `logs/runs/<run time>/`,
-  `logs/refresh.log` records every launch, and `logs/refresh.lock` stops
-  two runs overlapping. Before a scheduled run,
+  warehouse open (a local dashboard): close it and rerun.
+
+  Publishing uploads the warehouse first and `version.txt` second.
+  `version.txt` is written only after the warehouse upload succeeded,
+  because the live app re-downloads when that marker changes and must never
+  be told about data that isn't there yet. If the marker's own upload fails,
+  the local file is put back and the run counts as failed; running apps
+  stay on the old data until the next good run.
+
+  New predictions go to `data/predictions/history.csv`, which the run
+  commits with its log. Only a run that uploaded the warehouse keeps them:
+  any other ending puts the file back as the run found it.
+
+  Logs:
+  - `logs/refresh_runs.jsonl`: one line per run (committed; see "Checking
+    data health" below).
+  - `logs/runs/<run time>/`: the refresh's own messages (`refresh.log`)
+    and each step's full output. Look here first when a step failed.
+  - `logs/refresh.log`: one line per launch, including launches that found
+    another run going and did nothing.
+  - `logs/refresh.lock`: held while a run is going, so two runs can't
+    overlap. A lock older than 6 hours is taken to be left by a killed run
+    and is taken over.
+
+  Before a scheduled run, and after any change to the pipeline,
   `python scripts/weekly_refresh.py --no-publish` does a dry run: every step
-  against the copy, then the copy is deleted - no swap, upload or commit.
-  It does still update the raw parquet files and `data/last_updated.json`,
-  and logs a `"dry_run": true` line (which `health_check.py` skips); the
-  next scheduled run commits both.
+  against the copy, then the copy is deleted - no swap, upload or commit,
+  and no rows added to the predictions history. It does still update the
+  raw parquet files and `data/last_updated.json`, and logs a
+  `"dry_run": true` line (which `health_check.py` skips); the next
+  scheduled run commits both.
+
+  **Where the data lives.** The refresh machine's `.env` sets
+  `BIP_DATA_HOME` to a folder outside OneDrive, because sync can lock or
+  half-upload a 90 MB file while it is being written, which breaks the
+  swap. The raw parquet files (`raw/`) and the warehouse (`warehouse/`)
+  live under that folder. The run logs, the predictions history and the
+  test fixtures stay in the repo, because they are committed. Without the
+  variable everything stays under the repo, as before.
 
   It's registered as a Windows Scheduled Task named
   `BasketballIntelligence-WeeklyRefresh` (action: this repo's
   `.venv\Scripts\python.exe scripts\weekly_refresh.py`, working directory
-  the repo root). **This task lives in Windows, not in git** - nothing in
+  the repo root). That `.venv` is Python 3.12, installed from the lock
+  files like any other checkout (see the README's Setup). **This task lives in Windows, not in git** - nothing in
   the repo controls whether it's enabled, paused, or what time it fires.
   Checking or changing it requires a shell on the machine it's registered
   on (currently the user's desktop PC, always on):
@@ -138,7 +207,9 @@ keep working against an older warehouse in the meantime.
 
   If this ever moves to a new machine (e.g. a mini PC), the Scheduled
   Task has to be recreated there; nothing about it migrates with `git
-  clone`.
+  clone`. Neither does the data: copy the `BIP_DATA_HOME` folder across
+  (or backfill again) and set the same variable in that machine's `.env`,
+  then do a dry run before the first scheduled one.
 
 ## Checking data health
 

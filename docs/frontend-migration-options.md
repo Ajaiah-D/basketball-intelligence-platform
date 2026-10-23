@@ -53,10 +53,11 @@ frontend portfolio signal.
 
 ### 1. FastAPI + Next.js / TypeScript
 
-`dashboard/lib/db.py` is already a clean query layer: 20 functions, SQL held in
-module constants, DataFrames out. Those convert to JSON endpoints nearly
-mechanically. Frontend in React with ECharts or visx. Deploy Vercel for the
-frontend, Render for the API.
+`dashboard/lib/data/` is already a clean query layer: one module per domain,
+plain SQL over the dbt marts, DataFrames out. Those convert to JSON endpoints
+nearly mechanically. (When this was measured it was a single `db.py`; it has
+since been split into the package.) Frontend in React with ECharts or visx.
+Deploy Vercel for the frontend, Render for the API.
 
 Effort: 60-80 hours solo for feature parity. The API half is
 straightforward. The expensive half is re-implementing the 13 Plotly builders in
@@ -65,9 +66,10 @@ play-by-play score worm are the fiddly ones.
 
 Phasing that never leaves the app broken:
 
-- **a.** Extract `db.py` into a framework-free `queries.py` with no `st.`
-  imports, then put FastAPI over it. Streamlit keeps running off the same
-  module, so nothing breaks.
+- **a.** Make `dashboard/lib/data/` framework-free: only its `core.py`
+  imports Streamlit, for its result cache, so swapping that cache for a plain
+  one leaves modules FastAPI can call. Streamlit keeps running off the same
+  package, so nothing breaks.
 - **b.** Build the Next.js shell and port the design tokens from `theme.py`.
 - **c.** Migrate pages one at a time, easiest first: Teams, Overview, Players,
   Advanced, Games, Arcade. Both apps run side by side.
