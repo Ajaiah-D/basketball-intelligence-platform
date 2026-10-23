@@ -30,6 +30,7 @@ def test_defaults_with_no_env():
     assert paths.fixtures_dir() == ROOT / "data" / "fixtures"
     assert paths.logs_dir() == ROOT / "logs"
     assert paths.predictions_history_path() == ROOT / "data" / "predictions" / "history.csv"
+    assert paths.last_updated_path() == ROOT / "data" / "last_updated.json"
 
 
 def test_data_home_moves_raw_and_the_warehouse(monkeypatch, tmp_path):
@@ -42,13 +43,14 @@ def test_data_home_moves_raw_and_the_warehouse(monkeypatch, tmp_path):
 
 
 def test_data_home_leaves_fixtures_and_logs_in_the_repo(monkeypatch, tmp_path):
-    # Fixtures, run logs and the predictions history are committed, so they
-    # never follow the data.
+    # Fixtures, run logs, the predictions history and last_updated.json are
+    # committed, so they never follow the data.
     monkeypatch.setenv("BIP_DATA_HOME", str(tmp_path))
     monkeypatch.setenv("BIP_WAREHOUSE", str(tmp_path / "copy.duckdb"))
     assert paths.fixtures_dir() == ROOT / "data" / "fixtures"
     assert paths.logs_dir() == ROOT / "logs"
     assert paths.predictions_history_path() == ROOT / "data" / "predictions" / "history.csv"
+    assert paths.last_updated_path() == ROOT / "data" / "last_updated.json"
 
 
 def test_warehouse_env_overrides_the_file_only(monkeypatch, tmp_path):

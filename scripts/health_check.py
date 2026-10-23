@@ -31,6 +31,7 @@ from core.constants import (
     SEASON_START_MONTH,
     WAREHOUSE_MAX_AGE_DAYS,
 )
+from core.seasons import current_season
 
 DB_PATH = paths.warehouse_path()
 LOG_PATH = paths.logs_dir() / "refresh_runs.jsonl"
@@ -55,10 +56,6 @@ def opening_night(today: date, db_path: Path | None = None) -> date:
     year, from the warehouse's schedule; OFFSEASON_FALLBACK_END of that
     year when the warehouse is missing, unreadable or has no schedule for
     that season yet."""
-    # Imported here: nba_ingest pulls in nba_api, which only check_api and
-    # this need.
-    from ingestion.nba_ingest import current_season
-
     season = current_season(date(today.year, SEASON_START_MONTH, 1))
     try:
         with duckdb.connect(str(db_path or DB_PATH), read_only=True) as con:
@@ -256,10 +253,8 @@ def check_api(skip: bool) -> None:
         print("  --skip-api passed, skipping")
         return
     try:
-        sys.path.insert(0, str(PROJECT_ROOT))
+        # Imported here: nba_api is only needed for this live call.
         from nba_api.stats.endpoints import leaguegamelog
-
-        from ingestion.nba_ingest import current_season
 
         df = leaguegamelog.LeagueGameLog(
             season=current_season(),

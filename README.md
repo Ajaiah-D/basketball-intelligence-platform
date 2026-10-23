@@ -143,7 +143,7 @@ here, and so are four more that finished within $2.5M of it
 
 ```
 core/                              # shared by every stage: paths, atomic writes and
-                                   # retries, constants, team codes, text, formats
+                                   # retries, constants, team codes, seasons, text, formats
 ingestion/nba_ingest.py            # NBA game data into data/raw/*.parquet
 ingestion/team_payroll_ingest.py   # Basketball-Reference salaries into data/raw/
 scripts/load_to_duckdb.py          # data/raw into the warehouse (raw schema)

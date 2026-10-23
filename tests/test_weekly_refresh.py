@@ -42,6 +42,7 @@ def env(tmp_path, monkeypatch):
     history.parent.mkdir(parents=True)
     history.write_bytes(HISTORY)
     monkeypatch.setattr(wr, "HISTORY_PATH", history)
+    monkeypatch.setattr(wr, "LAST_UPDATED_PATH", tmp_path / "data" / "last_updated.json")
     # The swap tests fake os.replace to lock the warehouse; the history's
     # writes would hit the same fake. Their atomicity is core.io's, tested
     # in test_core_io.py, so here they are plain writes.

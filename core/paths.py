@@ -8,8 +8,8 @@ change of location is one environment variable instead of a dozen edits.
 
 With neither set, everything is under the repo, exactly as before. A
 relative value is read relative to the repo root, whatever the cwd.
-Fixtures, run logs and the predictions history always stay in the repo: the
-refresh commits the logs and the history.
+Fixtures, run logs, the predictions history and last_updated.json always
+stay in the repo: the refresh commits all but the fixtures.
 """
 
 from __future__ import annotations
@@ -84,6 +84,12 @@ def predictions_history_path() -> Path:
     truth the warehouse predictions table is rebuilt from, so it never moves
     with BIP_DATA_HOME."""
     return PROJECT_ROOT / "data" / "predictions" / "history.csv"
+
+
+def last_updated_path() -> Path:
+    """data/last_updated.json, the refresh's small status file; committed
+    with the run log, so it never moves with BIP_DATA_HOME."""
+    return PROJECT_ROOT / "data" / "last_updated.json"
 
 
 def team_codes_seed_path() -> Path:

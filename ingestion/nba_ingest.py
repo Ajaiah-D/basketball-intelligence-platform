@@ -44,7 +44,6 @@ import argparse
 import logging
 import sys
 import time
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -62,11 +61,7 @@ from nba_api.stats.static import teams as static_teams
 # Run as `python ingestion/nba_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
-from core.constants import (
-    ADVANCED_STATS_FIRST_SEASON,
-    PBP_MAX_NEW_GAMES_PER_RUN,
-    SEASON_START_MONTH,
-)
+from core.constants import ADVANCED_STATS_FIRST_SEASON, PBP_MAX_NEW_GAMES_PER_RUN
 from core.io import (
     TransientError,
     atomic_write_parquet,
@@ -77,6 +72,7 @@ from core.io import (
     retry_transient,
     suspicious_shrink,
 )
+from core.seasons import current_season, season_range
 
 RAW_DIR = paths.raw_dir()
 
@@ -166,24 +162,6 @@ def call_endpoint(endpoint_cls, **kwargs) -> pd.DataFrame:
         label=endpoint_cls.__name__,
         log=log,
     )
-
-
-# --- Season helpers ----------------------------------------------------------
-
-
-def current_season(today: date | None = None) -> str:
-    """NBA season string like '2025-26'. Seasons start in October
-    (SEASON_START_MONTH); before October we are still in (or just finished)
-    the season that began the prior year."""
-    today = today or date.today()
-    start_year = today.year if today.month >= SEASON_START_MONTH else today.year - 1
-    return f"{start_year}-{str(start_year + 1)[-2:]}"
-
-
-def season_range(start: str, end: str) -> list[str]:
-    """All season strings from start to end inclusive, e.g. 1979-80..2025-26."""
-    start_year, end_year = int(start[:4]), int(end[:4])
-    return [f"{y}-{str(y + 1)[-2:]}" for y in range(start_year, end_year + 1)]
 
 
 # --- Extractors ---------------------------------------------------------------
