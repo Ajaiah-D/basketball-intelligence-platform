@@ -134,6 +134,28 @@ TERMS = {
         "to the line and scores. Offense: higher is better. Defense: lower "
         "is better, it means fouling less."
     ),
+    # Team strengths and weaknesses (the profile chart)
+    "3-pt rate": (
+        "Three-point attempt rate: the share of a team's shots taken from "
+        "three. A style choice more than a strength."
+    ),
+    "Turnover rate": "Turnovers per 100 plays a team finished. Lower is better.",
+    "Off. rebound %": "The share of its own missed shots a team rebounds.",
+    "FT rate": (
+        "Free throw rate: free throws made per field goal attempt - how often "
+        "a team gets to the line and scores."
+    ),
+    "Assist rate": "The share of a team's baskets that came from an assist.",
+    "Opp eFG%": "The effective FG% opponents shot against the team. Lower is better.",
+    "Opp 3P%": "The three-point percentage opponents shot against the team. Lower is better.",
+    "Opp turnover rate": (
+        "Turnovers the team forced: opponents' turnovers per 100 of their plays. Higher is better."
+    ),
+    "Def. rebound %": "The share of opponents' missed shots a team rebounds.",
+    "Opp FT rate": (
+        "Free throws opponents made per field goal attempt - how often the "
+        "team fouls them into points. Lower is better."
+    ),
     "Seed": "Where the team sits in its conference standings.",
     "Close-game record": "Wins and losses in games decided by 5 points or fewer.",
     "Vs winning teams": "Record against teams that finished the season above .500.",

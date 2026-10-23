@@ -69,7 +69,9 @@ def test_summary_line_breaks_rank_ties_in_profile_order():
     # Everything ties at 15, so the profile's own order decides.
     line = D.summary_line(_profile_row())
     assert line.startswith("Best at: offensive rating (#15), eFG% (#15), 3P% (#15)")
-    assert line.endswith("Worst at: opp FT rate (#15), def. rebound % (#15), opp turnover rate (#15)")
+    assert line.endswith(
+        "Worst at: opp FT rate (#15), def. rebound % (#15), opp turnover rate (#15)"
+    )
 
 
 def test_summary_line_is_empty_without_data():
@@ -202,7 +204,7 @@ def test_three_point_read_when_both_are_below():
             [61.2, 57.0, 55.4],
             57.1,
             "Tatum has BOS's highest true shooting (61.2%; league median 57.1%); "
-            "1 of 3 rotation players beat the median.",
+            "1 of 3 regulars beat it.",
         ),
         (
             "ball_security",
@@ -210,7 +212,7 @@ def test_three_point_read_when_both_are_below():
             [12.0, 8.1, 10.0],
             11.0,
             "Brown has BOS's lowest turnover rate (8.1%; league median 11.0%); "
-            "2 of 3 rotation players beat the median.",
+            "2 of 3 regulars beat it.",
         ),
         (
             "offensive_rebounding",
@@ -218,7 +220,7 @@ def test_three_point_read_when_both_are_below():
             [2.0, 3.5, 11.4],
             4.2,
             "Horford has BOS's highest offensive rebound rate (11.4%; league median 4.2%); "
-            "1 of 3 rotation players beat the median.",
+            "1 of 3 regulars beat it.",
         ),
         (
             "free_throws",
@@ -226,7 +228,7 @@ def test_three_point_read_when_both_are_below():
             [0.301, 0.412, 0.150],
             0.250,
             "Brown has BOS's highest free throw rate (.412; league median .250); "
-            "2 of 3 rotation players beat the median.",
+            "2 of 3 regulars beat it.",
         ),
         (
             "playmaking",
@@ -234,7 +236,7 @@ def test_three_point_read_when_both_are_below():
             [25.0, 18.0, 12.0],
             14.0,
             "Tatum has BOS's highest assist rate (25.0%; league median 14.0%); "
-            "2 of 3 rotation players beat the median.",
+            "2 of 3 regulars beat it.",
         ),
     ],
 )
@@ -255,7 +257,7 @@ def test_defensive_rebounding_read_calls_itself_an_estimate():
     )
     assert _check(D.driver_read(AREAS["defensive_rebounding"], "BOS", rows)) == (
         "Horford has BOS's highest defensive rebound rate (21.0%; league median 15.0%); "
-        "1 of 2 rotation players beat the median - a box-score estimate of defense."
+        "1 of 2 regulars beat it - a box-score estimate of defense."
     )
 
 
@@ -282,8 +284,7 @@ def test_three_point_read_with_one_shooter():
         fg3_pct=35.5,
     )
     assert _check(D.driver_read(AREAS["three_point"], "BOS", rows)) == (
-        "Most of BOS's threes come from Tatum (55% of attempts), "
-        "above the league median at 37.4%."
+        "Most of BOS's threes come from Tatum (55% of attempts), above the league median at 37.4%."
     )
 
 
@@ -312,7 +313,7 @@ def test_on_off_read_does_not_overclaim_a_small_gap():
         def_on_minus_off=0.0,
     )
     assert _check(D.driver_read(AREAS["on_off"], "BOS", rows)) == (
-        "BOS's defense moves less than a point per 100 with any one player on the floor "
+        "No BOS player improves its defense by a point per 100 or more "
         "- an estimate; see the caption."
     )
 
@@ -336,7 +337,7 @@ def test_fouling_read_names_the_lowest_rate():
     )
     assert _check(D.driver_read(AREAS["fouling"], "BOS", rows)) == (
         "Horford has BOS's lowest fouls per 36 (1.8; league median 2.6); "
-        "2 of 3 rotation players beat the median - a box-score estimate of defense."
+        "2 of 3 regulars beat it - a box-score estimate of defense."
     )
 
 
@@ -357,3 +358,39 @@ def test_short_names_keep_suffixes_and_avoid_clashes():
     assert D._short_names(["Jayson Tatum", "Jaren Jackson Jr."]) == ["Tatum", "Jackson Jr."]
     assert D._short_names(["Jrue Holiday", "Aaron Holiday"]) == ["Jrue Holiday", "Aaron Holiday"]
     assert D._short_names(["Nenê"]) == ["Nenê"]
+
+
+def test_reads_name_regulars_not_a_few_minutes_of_luck():
+    rows = _rows(
+        [
+            {"player": "Jayson Tatum", "minutes_per_game": 36.0, "free_throw_rate": 0.300},
+            {"player": "Jaden Springer", "minutes_per_game": 4.0, "free_throw_rate": 0.422},
+            {"player": "Al Horford", "minutes_per_game": 26.0, "free_throw_rate": 0.100},
+        ],
+        free_throw_rate=0.229,
+    )
+    assert _check(D.driver_read(AREAS["free_throws"], "BOS", rows)) == (
+        "Tatum has BOS's highest free throw rate (.300; league median .229); 1 of 2 regulars beat it."
+    )
+    # With nobody at 15 minutes a game, everyone counts.
+    rows["minutes_per_game"] = 5.0
+    assert D.driver_read(AREAS["free_throws"], "BOS", rows).startswith("Springer has")
+
+
+def test_disruption_read_names_one_player_once():
+    rows = _rows(
+        [
+            {"player": "Mitchell Robinson", "steal_pct": 2.7, "block_pct": 6.0},
+            {"player": "Josh Hart", "steal_pct": 1.9, "block_pct": 0.9},
+        ],
+        steal_pct=1.5,
+        block_pct=1.5,
+    )
+    assert _check(D.driver_read(AREAS["disruption"], "NYK", rows)) == (
+        "Robinson leads NYK in steal rate (2.7%; median 1.5%) and block rate "
+        "(6.0%; median 1.5%) - a box-score estimate of defense."
+    )
+    rows["block_pct_league_median"] = None
+    assert _check(D.driver_read(AREAS["disruption"], "NYK", rows)) == (
+        "Robinson leads NYK in steal rate (2.7%; median 1.5%) - a box-score estimate of defense."
+    )
