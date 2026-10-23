@@ -64,6 +64,8 @@ A selector for the area to look at:
 | Getting to the line | Free throw rate | Free throw rate |
 | Playmaking | Assist rate | Assist rate |
 | Disruption | Opponent turnover rate | Steal rate and block rate |
+| Defense on/off (estimate) | Defensive rating | Team defensive rating with the player on vs off the court |
+| Fouling | Opponent free throw rate | Personal fouls per 36 minutes |
 
 It shows:
 
@@ -76,8 +78,32 @@ It shows:
 
 Clicking a player opens him on the Players page, which is step 2 to step 3.
 
-Box scores show offense far better than defense. The caption says so plainly
-for the defensive areas.
+Box scores show offense far better than defense. Two areas give the
+defensive side something real to work with.
+
+**Defense on/off (estimate).**
+- The NBA publishes each player's on-court defensive rating, from 1996-97.
+- With the team's season defensive rating and the player's share of the
+  team's minutes (s = minutes / (games × 48)), the team's rating with him OFF
+  the floor is estimated as `(team − s × on) / (1 − s)`.
+- The bar is on − off: negative means the team defends better with him on.
+- Shown only for:
+  - players with 500+ minutes;
+  - seasons spent entirely with this team (a traded player's on-court rating
+    mixes two teams);
+  - seasons from 1996-97.
+- The caption is plain that it is noisy. It moves with lineups and teammates:
+  a stopper who guards stars next to the starters can look worse than he is.
+- Checked on 2024-25: Holiday (-4.6), Horford and Caruso come out strong;
+  Dort (+1.5) shows the noise.
+
+**Fouling.**
+- Fouls per 36 against the league median.
+- It links directly to the team's opponent free throw rate.
+
+Next to these, the activity rates (defensive rebound, steal and block rates)
+complete a defensive footprint. The defensive captions say plainly that none
+of this replaces film.
 
 ### 3. Team scatter (replaces the fixed offense-vs-defense chart)
 
@@ -137,12 +163,15 @@ for the defensive areas.
 
 ## Predictions page: simpler
 
-- **Upcoming games:** a compact list grouped by day, one row per game:
-  `7:00 PM  NYK @ BOS   BOS 65%  by 5`.
-  - The favourite's probability is shown once, with a thin single-colour
-    confidence bar in the favourite's colour, from 50% to 100%.
-  - Games under 55% are marked "toss-up".
-  - Each value appears once, with no two-colour bars.
+- **Upcoming games:** a compact list grouped by day, one row per game, with
+  four columns: tip-off · matchup · probability · margin.
+  - The favourite is marked inside the matchup itself, in bold and its team
+    colour (`NYK @ **BOS**`), so its abbreviation is never repeated.
+  - The probability column shows the favourite's chance once (`65%`), with a
+    thin single-colour bar in the favourite's colour, from 50% to 100%.
+  - The margin reads `by 5`.
+  - Games under 55% show "toss-up" in place of the bar.
+  - There are no two-colour bars, and no value appears twice.
 - **Track record:** one row of three KPIs: accuracy, Brier score, margin
   error.
 - **Detail:** the calibration chart and "How these are made" move into one
@@ -166,6 +195,12 @@ read them merge.
 - **`mart_player_percentiles`** (grain: season × player): percentile within
   the season among qualified players (the dashboard's qualification rule,
   moved into SQL) for each radar and "who drives it" measure.
+- **`mart_player_defense`** (grain: season × player):
+  - on-court defensive rating, the team's season defensive rating, minutes
+    share;
+  - estimated off-court rating and on − off, for single-team seasons with
+    500+ minutes from 1996-97 (null otherwise);
+  - personal fouls per 36.
 - **"Who drives it":** reads `mart_player_team_season` (per-team stints) for
   minutes and volume, and `mart_player_season` for rates.
   - A traded player's rates cover his whole season, not just his time on
