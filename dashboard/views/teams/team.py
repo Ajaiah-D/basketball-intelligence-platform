@@ -14,6 +14,7 @@ from dashboard.lib.data import teams as team_data
 from dashboard.views.teams.breakdown import render_breakdown
 from dashboard.views.teams.common import ROW_HEIGHT, section
 from dashboard.views.teams.profile import render_profile
+from dashboard.views.teams.scatter import render_scatter
 
 CHART_HEIGHT = 360
 
@@ -90,7 +91,14 @@ def _splits(games: pd.DataFrame, standings: pd.DataFrame) -> None:
     )
 
 
-def _charts(games: pd.DataFrame, adv: pd.DataFrame, team: str, has_ratings: bool) -> None:
+def _charts(
+    games: pd.DataFrame,
+    standings: pd.DataFrame,
+    adv: pd.DataFrame,
+    season: str,
+    team: str,
+    has_ratings: bool,
+) -> None:
     left, right = st.columns(2)
     if len(games):
         with left:
@@ -98,12 +106,8 @@ def _charts(games: pd.DataFrame, adv: pd.DataFrame, team: str, has_ratings: bool
             fig = viz.team_margins(games)
             fig.update_layout(height=CHART_HEIGHT)
             st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
-    if has_ratings:
-        with right:
-            section("Offense vs defense")
-            fig = viz.rating_quadrant(adv, highlight=team)
-            fig.update_layout(height=CHART_HEIGHT)
-            st.plotly_chart(fig, config=viz.PLOTLY_CONFIG, width="stretch")
+    with right:
+        render_scatter(season, team, standings, adv, has_ratings)
 
 
 def _roster(season: str, team: str) -> None:
@@ -177,6 +181,6 @@ def render_team(season: str, standings: pd.DataFrame) -> None:
         _splits(games, standings)
     render_profile(season, int(row.team_id), row.team, adv, a)
     render_breakdown(season, row.team)
-    _charts(games, adv, row.team, a is not None)
+    _charts(games, standings, adv, season, row.team, a is not None)
     _roster(season, row.team)
     _footnote(a)

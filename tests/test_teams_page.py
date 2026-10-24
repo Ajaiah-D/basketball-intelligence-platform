@@ -5,6 +5,7 @@ test_players_page.py, and against a copy of it without the diagnosis marts
 for the fallback an older published warehouse gets.
 """
 
+import json
 import shutil
 
 import duckdb
@@ -18,7 +19,7 @@ from dashboard.lib.data import core as data_core
 from dashboard.lib.data import diagnosis as diagnosis_data
 from dashboard.lib.data import seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
-from dashboard.views.teams import breakdown
+from dashboard.views.teams import breakdown, scatter
 
 SCRIPT = """
 from dashboard.views import teams
@@ -79,8 +80,8 @@ def test_team_tab_shows_the_profile(con, which):
     assert "Best at" not in _captions(at)
     assert not at.info
     charts = at.get("plotly_chart")
-    # The profile, the player breakdown, the margins and the
-    # offense-vs-defense chart.
+    # The profile, the player breakdown, the margins and the two-stat
+    # scatter.
     assert len(charts) == 4
 
 
@@ -224,3 +225,81 @@ def test_a_short_rotation_gets_one_button_per_player(con, switched, monkeypatch)
     assert not at.exception, at.exception
     assert at.session_state[PLAYERS_PICK_KEY] == player
     assert switched == ["players-page"]
+
+
+# --- The two-stat scatter -------------------------------------------------------------
+
+
+def _figures(at: AppTest) -> list[dict]:
+    return [json.loads(c.proto.spec) for c in at.get("plotly_chart")]
+
+
+def _scatter_figure(at: AppTest) -> dict:
+    """The scatter: the figure whose dashed shapes are league-average lines."""
+    found = [
+        f
+        for f in _figures(at)
+        if f["layout"].get("shapes") and f["data"][0].get("mode") == "markers+text"
+    ]
+    assert len(found) == 1
+    return found[0]
+
+
+def test_the_scatter_defaults_to_offense_against_defense(con):
+    team = _team_names(con, MODERN)[0]
+    at = _app(MODERN, team)
+    assert at.selectbox(key=scatter.X_KEY).value == "offensive_rating"
+    assert at.selectbox(key=scatter.Y_KEY).value == "defensive_rating"
+    fig = _scatter_figure(at)
+    assert fig["layout"]["xaxis"]["title"]["text"] == "Offensive rating"
+    # Up is the better defence, and the axis says so.
+    assert fig["layout"]["yaxis"]["autorange"] == "reversed"
+    assert "reversed" in fig["layout"]["yaxis"]["title"]["text"]
+    # All 30 teams, the picked one as a trace of its own.
+    assert sum(len(t["x"]) for t in fig["data"]) == 30
+    assert len(fig["data"][1]["x"]) == 1
+
+
+def test_the_scatter_takes_any_other_pair(con):
+    team = _team_names(con, MODERN)[0]
+    at = _app(MODERN, team)
+    at.selectbox(key=scatter.X_KEY).select("effective_fg_pct").run()
+    at.selectbox(key=scatter.Y_KEY).select("pace").run()
+    assert not at.exception, at.exception
+    assert not at.info
+    fig = _scatter_figure(at)
+    assert fig["layout"]["xaxis"]["title"]["text"] == "eFG%"
+    assert fig["layout"]["yaxis"]["title"]["text"] == "Pace"
+    # Neither is lower-is-better, so neither axis is reversed.
+    assert fig["layout"]["yaxis"].get("autorange") != "reversed"
+    assert fig["layout"]["xaxis"].get("autorange") != "reversed"
+    hover = fig["data"][0]["hovertext"][0]
+    assert "eFG%" in hover and "Pace" in hover and " of 30)" in hover
+    # The choice survives picking another team.
+    at.selectbox[0].select(_team_names(con, MODERN)[1]).run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key=scatter.X_KEY).value == "effective_fg_pct"
+
+
+def test_a_lower_is_better_stat_is_reversed_wherever_it_sits(con):
+    team = _team_names(con, MODERN)[0]
+    at = _app(MODERN, team)
+    at.selectbox(key=scatter.X_KEY).select("turnover_pct").run()
+    assert not at.exception, at.exception
+    fig = _scatter_figure(at)
+    assert fig["layout"]["xaxis"]["autorange"] == "reversed"
+    assert "reversed" in fig["layout"]["xaxis"]["title"]["text"]
+
+
+def test_the_scatter_in_an_early_season_does_not_raise(con):
+    at = _app(EARLY)
+    assert not at.exception
+
+
+def test_without_the_marts_the_scatter_falls_back_to_the_ratings(warehouse_without_profile):
+    at = _app(MODERN)
+    assert not at.exception
+    assert len(at.selectbox) == 1  # only the team picker
+    assert len(at.info) == 1  # the profile's notice, not another
+    fig = _scatter_figure(at)
+    assert fig["layout"]["yaxis"]["autorange"] == "reversed"
