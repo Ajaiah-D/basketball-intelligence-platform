@@ -262,7 +262,8 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
 
 # One player row's height in px, and the dot diameters: the fewest minutes
 # in the rotation get the smallest dot (at the 8px floor for a marker) and
-# the most get the largest, by area, so a dot's size reads as minutes.
+# the most get the largest, the diameter growing with the square root of
+# minutes so big minutes don't swamp the chart.
 _DRIVER_ROW_PX = 26
 _DOT_MIN_PX = 8
 _DOT_MAX_PX = 20
