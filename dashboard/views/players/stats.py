@@ -1,4 +1,4 @@
-"""Players - searchable stats table + per-player detail view.
+"""The Players page's stats: a searchable table + per-player detail view.
 
 Scope toggle: one season, or Career (every ingested season pooled - the
 percentages are recomputed from summed makes/attempts, not averaged).

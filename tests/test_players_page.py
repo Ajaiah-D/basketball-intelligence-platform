@@ -1,4 +1,4 @@
-"""The Players page's own season box (dashboard/views/players.py).
+"""The Players page's own season box (dashboard/views/players/stats.py).
 
 It mirrors the sidebar's season picker (key "season"), which every
 season-scoped page reads: changing either one changes both. Runs against
