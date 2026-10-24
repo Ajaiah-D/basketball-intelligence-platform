@@ -261,7 +261,7 @@ def test_scatter_draws_one_dot_per_team_and_the_pick_as_its_own_trace():
     # Bigger and outlined against the rest, and still in the team's colour.
     assert pick[0].marker.size > others.marker.size
     assert pick[0].marker.line.width > others.marker.line.width
-    assert pick[0].marker.color == T.team_color("T07")
+    assert list(pick[0].marker.color) == [T.team_color("T07")]
 
 
 def test_scatter_dots_take_the_team_colours():
@@ -364,3 +364,24 @@ def test_lower_is_better_comes_from_the_ranks():
     assert viz_diagnosis.lower_is_better(df, "off") is False
     assert viz_diagnosis.lower_is_better(df.drop(columns=["dfn_rank"]), "dfn") is False
     assert viz_diagnosis.lower_is_better(df.assign(off=math.nan), "off") is False
+
+
+def test_scatter_rank_counts_come_from_the_ranking_pool_not_the_plotted_rows():
+    # 2 of 30 teams lack "dfn": the 28 plotted still hover "of 30" for the
+    # stat that is ranked across all 30.
+    df = _league()
+    df.loc[[0, 1], "dfn"] = math.nan
+    df.loc[[0, 1], "dfn_rank"] = math.nan
+    hover = _scatter(df).data[0].hovertext[5]
+    assert "of 30" in hover.split("<br>")[1]
+    # The stat that lacks values is ranked among the 28 that have one.
+    assert "of 28" in hover.split("<br>")[2]
+
+
+def test_scatter_draws_every_row_matching_the_highlight_in_the_pick_trace():
+    df = _league()
+    df.loc[4, "team_abbreviation"] = "T07"
+    fig = _scatter(df, highlight="T07")
+    pick = fig.data[1]
+    assert len(pick.x) == 2
+    assert sum(len(t.x) for t in fig.data) == 30

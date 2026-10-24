@@ -471,12 +471,13 @@ def _default_fmt(key: str, value: float) -> str:
     return f"{value:.1f}"
 
 
-def _standing(df: pd.DataFrame, col: str, i: int, n: int) -> str:
-    """' (#3 of 30)' for row i, or '' when the frame carries no rank."""
+def _standing(df: pd.DataFrame, col: str, i: int, pool: int) -> str:
+    """' (#3 of 30)' for row i, or '' when the frame carries no rank. `pool`
+    is how many rows the stat is ranked across."""
     rank_col = f"{col}_rank"
     if rank_col not in df.columns or diagnosis.missing(df[rank_col].iloc[i]):
         return ""
-    return f" (#{int(df[rank_col].iloc[i])} of {n})"
+    return f" (#{int(df[rank_col].iloc[i])} of {pool})"
 
 
 def _axis(label: str, reversed_: bool, vertical: bool) -> dict[str, Any]:
@@ -537,6 +538,10 @@ def stat_scatter(
     values through `fmt(column, value)` and, when `df` has `<column>_rank`,
     both ranks as "#3 of 30". Rows missing either column are skipped."""
     fmt = fmt or _default_fmt
+    # "of N" counts everything the stat was ranked across, so a team missing
+    # the other stat does not shrink it (a rank column the mart left null
+    # for a row is simply not in the pool).
+    pools = {c: int(df[f"{c}_rank"].notna().sum()) for c in (x, y) if f"{c}_rank" in df.columns}
     data = df.dropna(subset=[x, y]).reset_index(drop=True)
     if data.empty:
         return _empty("No data for these stats this season")
@@ -552,8 +557,8 @@ def stat_scatter(
 
     hovers = [
         f"<b>{names[i]}</b><br>{x_label or x} {fmt(x, float(data[x][i]))}"
-        f"{_standing(data, x, i, n)}<br>{y_label or y} {fmt(y, float(data[y][i]))}"
-        f"{_standing(data, y, i, n)}"
+        f"{_standing(data, x, i, pools.get(x, 0))}<br>{y_label or y} {fmt(y, float(data[y][i]))}"
+        f"{_standing(data, y, i, pools.get(y, 0))}"
         for i in range(n)
     ]
     colors = [T.team_color(str(c)) for c in data[color_col]]
@@ -568,7 +573,7 @@ def stat_scatter(
             textfont={"color": T.INK if is_pick else T.INK_2, "size": 11 if is_pick else 9},
             marker={
                 "size": _SCATTER_PICK_PX if is_pick else _SCATTER_DOT_PX,
-                "color": colors[rows[0]] if is_pick else [colors[i] for i in rows],
+                "color": [colors[i] for i in rows],
                 # The pick's ring is the page's ink; the others' a page-coloured
                 # gap that keeps overlapping dots apart.
                 "line": {"color": T.INK if is_pick else T.PAGE, "width": 2.5 if is_pick else 1.5},
@@ -582,7 +587,7 @@ def stat_scatter(
     fig = go.Figure()
     fig.add_trace(trace([i for i in range(n) if not pick[i]], False))
     if any(pick):
-        fig.add_trace(trace([i for i in range(n) if pick[i]][:1], True))
+        fig.add_trace(trace([i for i in range(n) if pick[i]], True))
     fig.add_vline(
         x=float(data[x].mean()), line_color=T.MUTED, line_width=1, line_dash="dash", layer="below"
     )
