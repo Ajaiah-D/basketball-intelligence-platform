@@ -1,9 +1,13 @@
-"""The league-ranks profile chart (dashboard/lib/viz_diagnosis.py).
+"""The diagnosis charts (dashboard/lib/viz_diagnosis.py): the league-ranks
+profile and the player breakdown.
 
-Pure: a hand-built mart_team_profile row, no warehouse or Streamlit.
+Pure: hand-built mart_team_profile rows and rotations, no warehouse or
+Streamlit.
 """
 
 import math
+
+import pandas as pd
 
 from dashboard.lib import diagnosis, viz_diagnosis
 from dashboard.lib import theme as T
@@ -123,3 +127,92 @@ def test_no_ranks_draws_a_sentence_not_an_empty_axis():
     fig = viz_diagnosis.profile_chart(empty)
     assert len(fig.data) == 0
     assert len(fig.layout.annotations) == 1
+
+
+# --- The player breakdown chart ----------------------------------------------------
+
+AREAS = {a.key: a for a in diagnosis.AREAS}
+
+
+def _rotation(**overrides) -> pd.DataFrame:
+    """Three players, most minutes first, with every area measure and its
+    league median."""
+    rows = pd.DataFrame(
+        {
+            "player_id": [1, 2, 3],
+            "player": ["Ann Able", "Ben Best", "Cy Cole"],
+            "games_played": [70, 60, 12],
+            "minutes": [2400.0, 1500.0, 150.0],
+        }
+    )
+    for col in diagnosis.driver_measures():
+        rows[col] = [10.0, 20.0, 30.0]
+        rows[f"{col}_league_median"] = 18.0
+    for col, values in overrides.items():
+        rows[col] = values
+    return rows
+
+
+def test_one_dot_per_player_in_minutes_order_in_the_team_colour():
+    fig = viz_diagnosis.drivers_chart(_rotation(), AREAS["playmaking"], "OKC")
+    assert len(fig.data) == 1
+    trace = fig.data[0]
+    assert list(trace.y) == ["p1", "p2", "p3"]
+    assert list(trace.x) == [10.0, 20.0, 30.0]
+    assert trace.marker.color == T.team_color("OKC")
+    assert list(fig.layout.yaxis.ticktext) == ["Ann Able", "Ben Best", "Cy Cole"]
+    assert fig.layout.yaxis.autorange == "reversed"
+    assert fig.layout.yaxis.type == "category"
+    assert fig.layout.showlegend is False
+
+
+def test_dot_size_follows_minutes():
+    sizes = list(
+        viz_diagnosis.drivers_chart(_rotation(), AREAS["playmaking"], "OKC").data[0].marker.size
+    )
+    assert sizes == sorted(sizes, reverse=True)
+    assert sizes[0] == viz_diagnosis._DOT_MAX_PX
+    assert sizes[-1] >= viz_diagnosis._DOT_MIN_PX
+
+
+def test_a_dashed_median_line_and_label_per_measure():
+    fig = viz_diagnosis.drivers_chart(_rotation(), AREAS["scoring"], "BOS")
+    # Two measures: two panels on their own x axes, sharing the rows.
+    assert [t.xaxis for t in fig.data] == ["x", "x2"]
+    assert all(t.yaxis == "y" for t in fig.data)
+    lines = [s for s in fig.layout.shapes if s.line.dash == "dash"]
+    assert [(s.xref, s.x0) for s in lines] == [("x", 18.0), ("x2", 18.0)]
+    labels = [a.text for a in fig.layout.annotations if a.text.startswith("median")]
+    assert labels == ["median 18.0%", "median 18.0%"]
+    assert fig.layout.xaxis.title.text == "TS%"
+    assert fig.layout.xaxis2.title.text == "USG%"
+    left, right = fig.layout.xaxis.domain, fig.layout.xaxis2.domain
+    assert left[1] < right[0]
+
+
+def test_the_range_holds_every_value_and_the_median():
+    rows = _rotation(assist_pct=[5.0, 6.0, 7.0], assist_pct_league_median=40.0)
+    lo, hi = viz_diagnosis.drivers_chart(rows, AREAS["playmaking"], "OKC").layout.xaxis.range
+    assert lo < 5.0 and hi > 40.0
+
+
+def test_a_missing_value_reads_not_available():
+    rows = _rotation(def_on_minus_off=[-3.0, None, None])
+    fig = viz_diagnosis.drivers_chart(rows, AREAS["on_off"], "OKC")
+    notes = [a for a in fig.layout.annotations if a.text == "not available"]
+    assert [a.y for a in notes] == ["p2", "p3"]
+    assert fig.layout.xaxis.zeroline is True  # on/off is a difference
+
+
+def test_the_hover_names_the_value_the_median_and_the_glossary():
+    fig = viz_diagnosis.drivers_chart(_rotation(), AREAS["fouling"], "OKC")
+    hover = fig.data[0].hovertext[0]
+    assert "Ann Able" in hover and "Fouls per 36 10.0" in hover
+    assert "league median 18.0" in hover
+    assert "2,400 min · 70 games for this team" in hover
+    assert "Personal fouls per 36" in hover
+
+
+def test_no_rotation_gives_the_placeholder():
+    fig = viz_diagnosis.drivers_chart(_rotation().iloc[0:0], AREAS["fouling"], "OKC")
+    assert not fig.data

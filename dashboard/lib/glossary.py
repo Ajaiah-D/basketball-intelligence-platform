@@ -72,6 +72,30 @@ TERMS = {
         "while he was on the court."
     ),
     "BLK%": ("Block rate: the share of opponents' 2-point shots he blocked while on the court."),
+    "ORB%": (
+        "Offensive rebound rate: the share of his team's missed shots he "
+        "rebounded while on the court."
+    ),
+    "DRB%": (
+        "Defensive rebound rate: the share of opponents' missed shots he "
+        "rebounded while on the court."
+    ),
+    "FT rate (player)": (
+        "Free throw rate: his free throw attempts per field goal attempt - how "
+        "often he gets to the line for each shot he takes."
+    ),
+    "3PA share": (
+        "His share of the team's three-point attempts that season, out of every "
+        "player who took one for it."
+    ),
+    "PF/36": "Personal fouls per 36 minutes on the court.",
+    "Def. on/off": (
+        "The team's defensive rating (points allowed per 100 possessions) with "
+        "him on the court, minus an estimate with him off: (team - s × on) / "
+        "(1 - s), where s is his share of the team's minutes. Below 0, the team "
+        "allowed fewer points with him on. Only for 500+ minutes with one team, "
+        "from 1996-97, when the NBA's on-court ratings begin."
+    ),
     "GmSc": _GMSC,
     "P/36": "Points per 36 minutes: his scoring rate if he played a starter's minutes.",
     "P/100": "Points per 100 possessions: his scoring rate with team pace taken out.",
@@ -145,7 +169,7 @@ TERMS = {
     ),
     "3-pt rate": (
         "Three-point attempt rate: the share of a team's shots taken from "
-        "three. A style choice more than a strength."
+        "three. A style choice, ranked from the most threes taken."
     ),
     "Turnover rate": "Turnovers per 100 plays a team finished. Lower is better.",
     "Off. rebound %": "The share of its own missed shots a team rebounds.",
@@ -167,6 +191,12 @@ TERMS = {
     "Seed": "Where the team sits in its conference standings.",
     "Close-game record": "Wins and losses in games decided by 5 points or fewer.",
     "Vs winning teams": "Record against teams that finished the season above .500.",
+    # The player breakdown under the profile
+    "Player breakdown": (
+        "Each dot is one rotation player (10+ games for this team), sized by "
+        "his minutes for it. The dashed line is the league median among "
+        "qualified players that season."
+    ),
     # Predictions
     "Accuracy": "The share of games where the predicted winner actually won.",
     "Brier score": (

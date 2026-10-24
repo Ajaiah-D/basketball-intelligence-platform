@@ -19,7 +19,7 @@ from core.text import fold
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
-from dashboard.lib.state import SEASON_KEY
+from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
 from dashboard.lib.stats import percentile_of
 
 TABLE_COLS = [
@@ -83,7 +83,30 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
 # Session-state keys. The season box mirrors the sidebar's (SEASON_KEY).
 PLAYERS_SEASON_KEY = "players_season"
 PLAYERS_SEASON_ALL_KEY = "players_season_all"
-PLAYERS_PICK_KEY = "players_pick"
+PLAYERS_DETAIL_KEY = "players_pick"
+PLAYERS_MIN_GP_KEY = "players_min_gp"
+SEASON_MIN_GP = 25
+
+
+def _apply_preset(season: str) -> None:
+    """Open the player another page asked for (state.PLAYERS_PICK_KEY, set
+    with the season by Teams' "Open on Players"). It is read once: the
+    player becomes the detail picker's choice, and the min-games slider
+    drops to his games when he has fewer than it asks for (a team's
+    rotation starts at 10 games), so he is in the table and the picker and
+    stays there as the page reruns. A name nobody has this season is
+    ignored."""
+    preset = st.session_state.pop(PLAYERS_PICK_KEY, None)
+    if not preset:
+        return
+    stats = players.player_season_stats(season)
+    match = stats[stats["player"] == preset]
+    if match.empty:
+        return
+    st.session_state[PLAYERS_DETAIL_KEY] = preset
+    games = int(match["gp"].min())
+    if games < st.session_state.get(PLAYERS_MIN_GP_KEY, SEASON_MIN_GP):
+        st.session_state[PLAYERS_MIN_GP_KEY] = games
 
 
 def _sync_season() -> None:
@@ -143,7 +166,11 @@ def _filter_bar(season: str) -> Filters:
         min_gp = f2.slider("Min career games", 1, 1500, 200)
     else:
         stats = players.player_season_stats(season)
-        min_gp = f2.slider("Min games", 1, 82, 25)
+        # Keyed, so a preset player (_apply_preset) can lower it; set before
+        # the slider rather than passed as its value, which Streamlit would
+        # warn about alongside a value set through session state.
+        st.session_state.setdefault(PLAYERS_MIN_GP_KEY, SEASON_MIN_GP)
+        min_gp = f2.slider("Min games", 1, 82, key=PLAYERS_MIN_GP_KEY)
 
     with head:
         st.markdown(
@@ -283,7 +310,7 @@ def _pick_player(view: pd.DataFrame, f: Filters, season: str):
             )
         )
     pick: str | None = st.selectbox(
-        "Player", options["pick"], label_visibility="collapsed", key=PLAYERS_PICK_KEY
+        "Player", options["pick"], label_visibility="collapsed", key=PLAYERS_DETAIL_KEY
     )
     if not pick:
         return None
@@ -413,6 +440,7 @@ def _season_detail(row, row_season: str) -> None:
 
 def render() -> None:
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
+    _apply_preset(season)
 
     f = _filter_bar(season)
     view, others = _filter_rows(f, season)

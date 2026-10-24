@@ -13,7 +13,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import paths
-from dashboard.lib import config, theme
+from dashboard.lib import config, nav, theme
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import seasons
 from dashboard.lib.state import SEASON_KEY
@@ -113,32 +113,41 @@ from dashboard.views import (
     teams,
 )
 
-nav = {
-    "Explore": [
-        st.Page(
-            overview.render, title="Overview", icon=":material/home:", default=True
-        ),  # default page serves at "/", no url_path
-        st.Page(players.render, title="Players", icon=":material/person:", url_path="players"),
-        st.Page(teams.render, title="Teams", icon=":material/groups:", url_path="teams"),
-        st.Page(games.render, title="Games", icon=":material/sports_basketball:", url_path="games"),
-        st.Page(advanced.render, title="Advanced", icon=":material/insights:", url_path="advanced"),
-        st.Page(
-            arcade.render, title="Arcade", icon=":material/stadia_controller:", url_path="arcade"
-        ),
-        st.Page(
-            predictions.render,
-            title="Predictions",
-            icon=":material/query_stats:",
-            url_path="predictions",
-        ),
-        st.Page(finances.render, title="Finances", icon=":material/payments:", url_path="finances"),
-    ],
+# Every page by name, so views can switch to one through lib/nav.py.
+explore = {
+    # The default page serves at "/", with no url_path.
+    "overview": st.Page(overview.render, title="Overview", icon=":material/home:", default=True),
+    "players": st.Page(
+        players.render, title="Players", icon=":material/person:", url_path="players"
+    ),
+    "teams": st.Page(teams.render, title="Teams", icon=":material/groups:", url_path="teams"),
+    "games": st.Page(
+        games.render, title="Games", icon=":material/sports_basketball:", url_path="games"
+    ),
+    "advanced": st.Page(
+        advanced.render, title="Advanced", icon=":material/insights:", url_path="advanced"
+    ),
+    "arcade": st.Page(
+        arcade.render, title="Arcade", icon=":material/stadia_controller:", url_path="arcade"
+    ),
+    "predictions": st.Page(
+        predictions.render,
+        title="Predictions",
+        icon=":material/query_stats:",
+        url_path="predictions",
+    ),
+    "finances": st.Page(
+        finances.render, title="Finances", icon=":material/payments:", url_path="finances"
+    ),
 }
+for name, page in explore.items():
+    nav.register(name, page)
+sections = {"Explore": list(explore.values())}
 if config.dev_lab_enabled():
-    nav["Developer"] = [
+    sections["Developer"] = [
         st.Page(dev_lab.render, title="Dev Lab", icon=":material/terminal:", url_path="dev"),
     ]
-pages = st.navigation(nav)
+pages = st.navigation(sections)
 
 with st.sidebar:
     st.markdown(

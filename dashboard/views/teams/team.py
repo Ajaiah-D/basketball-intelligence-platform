@@ -1,5 +1,6 @@
 """The Team tab: one team in depth (ratings, record splits, where it ranks
-in the league on every key stat, margins and its roster)."""
+in the league on every key stat, its players on each of those areas,
+margins and its roster)."""
 
 import pandas as pd
 import streamlit as st
@@ -10,6 +11,7 @@ from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, finances, players
 from dashboard.lib.data import teams as team_data
+from dashboard.views.teams.breakdown import render_breakdown
 from dashboard.views.teams.common import ROW_HEIGHT, section
 from dashboard.views.teams.profile import render_profile
 
@@ -174,6 +176,7 @@ def render_team(season: str, standings: pd.DataFrame) -> None:
     if len(games):
         _splits(games, standings)
     render_profile(season, int(row.team_id), row.team, adv, a)
+    render_breakdown(season, row.team)
     _charts(games, adv, row.team, a is not None)
     _roster(season, row.team)
     _footnote(a)
