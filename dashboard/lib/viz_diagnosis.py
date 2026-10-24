@@ -1,6 +1,6 @@
 """Plotly charts for the diagnosis views (the Teams page's league-ranks
-profile and player breakdown), in the house style of viz.py and built on
-its _layout.
+profile, player breakdown and two-stat scatter, and the Players page's
+game-by-game trend), in the house style of viz.py and built on its _layout.
 
 Kept apart from viz.py, which is already ~1,000 lines.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -610,6 +610,144 @@ def stat_scatter(
             margin={"l": 8, "r": 8, "t": 24, "b": 8},
             xaxis=_axis(x_label or x, x in inverted, vertical=False),
             yaxis=_axis(y_label or y, y in inverted, vertical=True),
+        )
+    )
+    return fig
+
+
+# --- The Players page's game-by-game trend ----------------------------------------
+
+
+class GameStat(NamedTuple):
+    """A stat the game log and trend show: its column in
+    data.players.player_games, its name in the chart title, its printed
+    decimals, and the weight a run of games averages it over (None: each
+    game counts once)."""
+
+    col: str
+    name: str
+    decimals: int = 0
+    weight: str | None = None
+
+
+# In the picker's order. True shooting averages over shot volume, so a
+# 1-for-1 night doesn't count the same as a 10-for-25 one.
+GAME_STATS: dict[str, GameStat] = {
+    "PTS": GameStat("pts", "Points"),
+    "REB": GameStat("reb", "Rebounds"),
+    "AST": GameStat("ast", "Assists"),
+    "3PM": GameStat("tpm", "Threes made"),
+    "TS%": GameStat("ts_pct", "True shooting %", decimals=1, weight="shot_poss"),
+    "+/-": GameStat("plus_minus", "Plus-minus"),
+}
+TREND_WINDOW = 5
+
+
+def _rolling(games: pd.DataFrame, stat: GameStat, window: int) -> pd.Series:
+    """The `window`-game average at each game, NaN until there are that many
+    games behind it."""
+    values = games[stat.col].astype(float)
+    if stat.weight is None:
+        return values.rolling(window, min_periods=window).mean()
+    # A game with no value (no shots) adds no weight, rather than a zero.
+    weight = games[stat.weight].astype(float).where(values.notna(), 0.0).fillna(0.0)
+    total = (values.fillna(0.0) * weight).rolling(window, min_periods=window).sum()
+    shots = weight.rolling(window, min_periods=window).sum()
+    return total / shots.where(shots > 0)
+
+
+def stat_trend(games: pd.DataFrame, stat: str, season_avg: float) -> go.Figure:
+    """One stat game by game (a neutral bar per game), its 5-game rolling
+    average (the accent line) and a dashed line at `season_avg`, his season
+    figure from mart_player_season. `games` is data.players.player_games,
+    oldest first; `stat` is a GAME_STATS key, named in the title.
+
+    The rolling line only starts once there are five games behind it: from
+    the first game it would be one game's value wearing a "5-game average"
+    label, an early swing that never happened. A game without the stat (TS%
+    with no shots) has no bar and doesn't pull the line toward zero."""
+    if games.empty:
+        return _empty("No games this season")
+    spec = GAME_STATS[stat]
+    window = min(TREND_WINDOW, len(games))
+    dates = games["game_date"]
+    roll = _rolling(games, spec, window)
+    value_fmt = f":.{spec.decimals}f"
+
+    fig = go.Figure()
+    fig.add_bar(
+        x=dates,
+        y=games[spec.col].astype(float),
+        name="Game",
+        marker={"color": T.BASELINE},
+        customdata=[
+            f"{'@' if away else 'vs'} {opp}"
+            for away, opp in zip(games["is_away"], games["opp"], strict=True)
+        ],
+        hovertemplate=f"%{{customdata}}: %{{y{value_fmt}}} {stat}<extra></extra>",
+    )
+    fig.add_scatter(
+        x=dates,
+        y=roll,
+        name=f"{window}-game avg",
+        mode="lines",
+        line={"color": T.ACCENT, "width": 2},
+        connectgaps=False,
+        hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
+    )
+    # His own season figure turns the rolling line into a story: where he
+    # ran hot or cold against his year.
+    if season_avg == season_avg:
+        fig.add_hline(y=season_avg, line_color=T.MUTED, line_width=1, line_dash="dash")
+        # Named in the legend: a label on the line itself sits under the bars
+        # and the rolling line wherever it goes. The trace has no points, so
+        # it only draws the legend entry.
+        fig.add_scatter(
+            x=[None],
+            y=[None],
+            name=f"season avg {season_avg:.1f}",
+            mode="lines",
+            line={"color": T.MUTED, "width": 1, "dash": "dash"},
+            hoverinfo="skip",
+        )
+    if roll.notna().any():
+        last = roll.last_valid_index()
+        fig.add_annotation(
+            x=dates[last].to_pydatetime(),
+            y=float(roll[last]),
+            text=f"{roll[last]:.1f}",
+            showarrow=False,
+            xshift=22,
+            font={"color": T.ACCENT, "size": 12},
+        )
+    fig.update_layout(
+        **_layout(
+            # The title on its own line at the top, the legend (the house
+            # one, left-aligned) under it: side by side they collide at
+            # phone width.
+            title={
+                "text": f"{spec.name} by game",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1,
+                "yref": "container",
+                "yanchor": "top",
+                "pad": {"t": 6},
+                "font": {"size": 13, "color": T.INK},
+            },
+            margin={"l": 8, "r": 8, "t": 70, "b": 8},
+            # Narrow keys and a smaller font keep the three entries on one
+            # row at phone width.
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "x": 0,
+                "itemwidth": 30,
+                "font": {"color": T.INK_2, "size": 11},
+            },
+            hovermode="x unified",
+            bargap=0.45,
         )
     )
     return fig

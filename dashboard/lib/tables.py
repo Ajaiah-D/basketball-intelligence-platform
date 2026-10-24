@@ -19,8 +19,14 @@ import pandas as pd
 from . import theme as T
 
 
+def _missing(v) -> bool:
+    # pd.isna covers None, NaN and pandas' NA, which a nullable integer
+    # column holds for a missing value and which can't be compared.
+    return v is None or bool(pd.isna(v))
+
+
 def _text(v) -> str:
-    if v is None or (isinstance(v, float) and v != v):
+    if _missing(v):
         return "-"
     return html.escape(str(v))
 
@@ -40,13 +46,13 @@ class Col:
 
 def signed(v) -> str:
     """+5, -3, 0; '-' when missing."""
-    if v is None or v != v:
+    if _missing(v):
         return "-"
     return f"{int(v):+d}" if v else "0"
 
 
 def pos_neg(v) -> str:
-    if v is None or v != v or v == 0:
+    if _missing(v) or v == 0:
         return ""
     return "pos" if v > 0 else "neg"
 
@@ -56,9 +62,12 @@ def html_table(
     cols: list[Col],
     foot: dict | None = None,
     row_css: Callable[[object], str] | None = None,
+    max_height: int | None = None,
 ) -> str:
     """The table's HTML. `foot` maps column keys to ready-made HTML for a
-    totals row (missing keys stay blank); `row_css` gives a row its class."""
+    totals row (missing keys stay blank); `row_css` gives a row its class.
+    `max_height` (px) scrolls a long table inside that height, its header
+    row pinned, instead of running the page on."""
 
     def cls(*names: str) -> str:
         joined = " ".join(n for n in names if n)
@@ -82,7 +91,9 @@ def html_table(
             f"<td{cls('lft' if c.left else '')}>{foot.get(c.key, '')}</td>" for c in cols
         )
         body.append(f'<tr class="bip-foot">{cells}</tr>')
-    return (
-        f'<div class="bip-table-wrap"><table class="bip-table">'
-        f"<tr>{head}</tr>{''.join(body)}</table></div>"
+    wrap = (
+        f'class="bip-table-wrap bip-scroll" style="max-height:{max_height}px"'
+        if max_height
+        else 'class="bip-table-wrap"'
     )
+    return f'<div {wrap}><table class="bip-table"><tr>{head}</tr>{"".join(body)}</table></div>'

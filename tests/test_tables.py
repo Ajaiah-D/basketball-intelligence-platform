@@ -30,6 +30,8 @@ def test_html_table_totals_row_and_header_help():
 def test_signed_and_pos_neg():
     assert [tables.signed(v) for v in (5, -3, 0, float("nan"))] == ["+5", "-3", "0", "-"]
     assert [tables.pos_neg(v) for v in (5, -3, 0)] == ["pos", "neg", ""]
+    # A nullable integer column's missing value can't be compared at all.
+    assert tables.signed(pd.NA) == "-" and tables.pos_neg(pd.NA) == ""
 
 
 def _box() -> pd.DataFrame:
@@ -65,3 +67,10 @@ def test_box_score_card(monkeypatch):
     assert "Did not play: Benchwarmer" in out
     assert out.count("<tr") == 1 + 2 + 1  # header, two who played, totals
     assert 'class="sc winner">113' in out
+
+
+def test_html_table_scrolls_inside_a_fixed_height():
+    df = pd.DataFrame({"a": range(3)})
+    out = tables.html_table(df, [Col("a", "A")], max_height=420)
+    assert '<div class="bip-table-wrap bip-scroll" style="max-height:420px">' in out
+    assert "bip-scroll" not in tables.html_table(df, [Col("a", "A")])

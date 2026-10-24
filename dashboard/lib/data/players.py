@@ -1,11 +1,12 @@
 """Player stats for the Players, Overview and Teams pages.
 
 Everything reads the dbt player marts (mart_player_season,
-mart_player_team_season, mart_player_career, mart_league_shooting), which
-hold the season line once for every page. The queries rename the mart
-columns to the short names the pages use (ppg, rpg, ts_pct, ...). The
-select lists are written out per query rather than assembled from shared
-pieces, so each query reads as the SQL that actually runs.
+mart_player_team_season, mart_player_career, mart_league_shooting, and
+mart_player_game for one player's games), which hold the season line once
+for every page. The queries rename the mart columns to the short names the
+pages use (ppg, rpg, ts_pct, ...). The select lists are written out per
+query rather than assembled from shared pieces, so each query reads as the
+SQL that actually runs.
 
 `team` is a player's last team that season; `team_label` is every team in
 the order he played for them ("CHI → BOS" when traded mid-season), so the
@@ -18,7 +19,7 @@ import pandas as pd
 
 from core.text import fold
 
-from .core import q
+from .core import objects_exist, q
 
 
 def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
@@ -238,13 +239,36 @@ def player_season_breakdown(player_id: int) -> pd.DataFrame:
     )
 
 
-def player_game_log(player_id: int, season: str) -> pd.DataFrame:
-    """Every game one player played in `season`, oldest first."""
+def player_games_available() -> bool:
+    """Whether the warehouse has mart_player_game. One published before it
+    gets a notice in place of the game log and trend."""
+    return objects_exist("main_marts.mart_player_game")
+
+
+def player_games(player_id: int, season: str) -> pd.DataFrame:
+    """Every game one player played in `season`, oldest first: his line and
+    the result (mart_player_game). team_pts/opp_pts are null for the rare
+    game the team logs lack."""
     return q(
         """
-        select * from main_staging.stg_player_game_logs
+        select
+            game_date,
+            opp_team_abbreviation  as opp,
+            is_away_game           as is_away,
+            is_win,
+            team_points            as team_pts,
+            opp_points             as opp_pts,
+            minutes_played         as min,
+            points                 as pts,
+            total_rebounds         as reb,
+            assists                as ast,
+            three_pointers_made    as tpm,
+            true_shooting_pct      as ts_pct,
+            shot_poss,
+            plus_minus
+        from main_marts.mart_player_game
         where player_id = ? and season = ?
-        order by game_date
+        order by game_date, game_id
         """,
         (player_id, season),
     )
