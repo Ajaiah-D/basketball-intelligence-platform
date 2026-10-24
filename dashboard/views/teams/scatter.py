@@ -33,16 +33,14 @@ def _pick(label: str, key: str, options: list[str], default: str) -> str:
     # A stat the new season has no values for leaves a stale choice behind.
     if st.session_state.get(key) not in options:
         st.session_state.pop(key, None)
-    current = st.session_state.get(key, default)
-    picked = st.selectbox(
+    st.session_state.setdefault(key, default)
+    return st.selectbox(
         label,
         options,
-        index=options.index(default) if key not in st.session_state else None,
         key=key,
         format_func=lambda k: diagnosis.PROFILE_BY_KEY[k].label,
-        help=_stat_term(current),
+        help=_stat_term(st.session_state[key]),
     )
-    return picked if picked is not None else default
 
 
 def render_scatter(
@@ -102,7 +100,13 @@ def render_scatter(
 
 def _ratings_scatter(adv: pd.DataFrame, team: str) -> None:
     """The fixed offense-against-defense pair, from the ratings alone."""
-    section("Offense vs defense", glossary.TERMS["Compare two stats"])
+    # The two ratings' own hovers: "Compare two stats" talks about a picker
+    # this version does not have.
+    section(
+        "Offense vs defense",
+        f"Offensive rating: {glossary.TERMS['Offensive rating']} "
+        f"Defensive rating: {glossary.TERMS['Defensive rating']}",
+    )
     fig = viz_diagnosis.stat_scatter(
         adv,
         "offensive_rating",
@@ -113,6 +117,7 @@ def _ratings_scatter(adv: pd.DataFrame, team: str) -> None:
         x_label="Offensive rating",
         y_label="Defensive rating",
         label_top=len(adv),
+        # Hard-coded: the ratings frame has no rank columns to read it from.
         invert=("defensive_rating",),
         name_col="team_name",
     )

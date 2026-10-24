@@ -291,9 +291,14 @@ def test_a_lower_is_better_stat_is_reversed_wherever_it_sits(con):
     assert "reversed" in fig["layout"]["xaxis"]["title"]["text"]
 
 
-def test_the_scatter_in_an_early_season_does_not_raise(con):
+def test_the_scatter_in_an_early_season_is_left_out(con):
     at = _app(EARLY)
     assert not at.exception
+    # Too few stats that season: no section and no pickers, rather than an
+    # empty chart.
+    assert "Compare two stats" not in _text(at)
+    keys = {s.key for s in at.selectbox}
+    assert scatter.X_KEY not in keys and scatter.Y_KEY not in keys
 
 
 def test_without_the_marts_the_scatter_falls_back_to_the_ratings(warehouse_without_profile):
