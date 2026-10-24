@@ -1,5 +1,6 @@
 """Plotly charts for the diagnosis views (the Teams page's league-ranks
-profile), in the house style of viz.py and built on its _layout.
+profile and player breakdown), in the house style of viz.py and built on
+its _layout.
 
 Kept apart from viz.py, which is already ~1,000 lines.
 """
@@ -96,10 +97,6 @@ def _fits_inside(pctile: float, label: str) -> bool:
     return pctile * _PHONE_PX_PER_POINT >= len(label) * _CHAR_PX + 10
 
 
-def _missing(value: Any) -> bool:
-    return value is None or bool(pd.isna(value))
-
-
 def _hover_term(term: str) -> str:
     """The glossary entry, wrapped for a hover box (plotly doesn't wrap)."""
     text = glossary.TERMS.get(term, "")
@@ -133,7 +130,7 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
         value: Any = profile_row.get(stat.key)
         rank: Any = profile_row.get(f"{stat.key}_rank")
         pctile: Any = profile_row.get(f"{stat.key}_pctile")
-        if _missing(value) or _missing(rank) or _missing(pctile):
+        if diagnosis.missing(value) or diagnosis.missing(rank) or diagnosis.missing(pctile):
             continue
         if stat.group != group:
             group = stat.group
@@ -259,3 +256,187 @@ def profile_chart(profile_row: Mapping[str, Any], league_size: int = 30) -> go.F
         )
     )
     return fig
+
+
+# --- The player breakdown ------------------------------------------------------
+
+# One player row's height in px, and the dot diameters: the fewest minutes
+# in the rotation get the smallest dot (at the 8px floor for a marker) and
+# the most get the largest, by area, so a dot's size reads as minutes.
+_DRIVER_ROW_PX = 26
+_DOT_MIN_PX = 8
+_DOT_MAX_PX = 20
+# The gap between two measure panels, as a share of the plot width.
+_PANEL_GAP = 0.08
+
+
+def _dot_sizes(minutes: pd.Series) -> list[float]:
+    m = minutes.fillna(0).astype(float).clip(lower=0)
+    top = float(m.max()) if len(m) else 0.0
+    if top <= 0:
+        return [float(_DOT_MIN_PX)] * len(m)
+    return [_DOT_MIN_PX + (_DOT_MAX_PX - _DOT_MIN_PX) * (v / top) ** 0.5 for v in m]
+
+
+def _median_of(rows: pd.DataFrame, col: str) -> float | None:
+    name = f"{col}_league_median"
+    if name not in rows.columns:
+        return None
+    values = rows[name].dropna()
+    return None if values.empty else float(values.iloc[0])
+
+
+def _panel_range(values: pd.Series, median: float | None) -> list[float]:
+    """The x range that holds every value and the median, with a margin so
+    the largest dots aren't cut at the edge."""
+    points = [float(v) for v in values.dropna()]
+    if median is not None:
+        points.append(median)
+    if not points:
+        return [0.0, 1.0]
+    lo, hi = min(points), max(points)
+    pad = (hi - lo) * 0.08 or max(abs(hi) * 0.1, 0.5)
+    return [lo - pad, hi + pad]
+
+
+def drivers_chart(rows: pd.DataFrame, area: diagnosis.Area, team: str) -> go.Figure:
+    """The rotation on one area: a row per player (team_drivers() order,
+    most minutes at the top), a dot per measure at his value, sized by his
+    minutes for the team and in the team's colour, against a dashed line at
+    the league median. An area with two measures gets two panels side by
+    side, each on its own axis, sharing the player rows.
+
+    A player with no value for a measure (no on/off estimate, a season
+    without the box-score inputs) gets "not available" in that panel
+    instead of a dot. No legend: the panels' axis titles name the
+    measures."""
+    if rows.empty:
+        return _empty("No rotation players for this team-season")
+
+    # Row keys: the player id, so two players with one name keep two rows,
+    # prefixed so plotly never reads them as numbers.
+    ids = [f"p{i}" for i in rows["player_id"]]
+    names = rows["player"].tolist()
+    sizes = _dot_sizes(rows["minutes"]) if "minutes" in rows.columns else [_DOT_MIN_PX] * len(ids)
+    color = T.team_color(team)
+    measures = area.measures
+    width = (1 - _PANEL_GAP * (len(measures) - 1)) / len(measures)
+
+    fig = go.Figure()
+    axes: dict[str, Any] = {}
+    for i, m in enumerate(measures):
+        suffix = "" if i == 0 else str(i + 1)
+        xref = f"x{suffix}"
+        values = rows[m.col] if m.col in rows.columns else pd.Series([None] * len(ids))
+        median = _median_of(rows, m.col)
+        shown = [m.format(v) for v in values]
+        med_text = m.format(median) if median is not None else "-"
+        hovers = [
+            f"<b>{name}</b><br>{m.label} {value} · league median {med_text}"
+            f"<br>{_minutes_line(row)}"
+            f'<br><span style="color:{T.MUTED}">{_hover_term(m.term)}</span>'
+            for name, value, row in zip(names, shown, rows.itertuples(index=False), strict=True)
+        ]
+        fig.add_scatter(
+            x=values.tolist(),
+            y=ids,
+            xaxis=xref,
+            yaxis="y",
+            mode="markers",
+            marker={
+                "size": sizes,
+                "color": color,
+                # A ring in the page colour keeps overlapping dots apart.
+                "line": {"color": T.PAGE, "width": 2},
+            },
+            hovertext=hovers,
+            hovertemplate="%{hovertext}<extra></extra>",
+            # The biggest dots at either end of the range stay whole.
+            cliponaxis=False,
+            showlegend=False,
+            name=m.label,
+        )
+        for pid, value in zip(ids, values, strict=True):
+            if diagnosis.missing(value):
+                fig.add_annotation(
+                    x=0,
+                    xref=f"{xref} domain",
+                    y=pid,
+                    yref="y",
+                    xanchor="left",
+                    text="not available",
+                    showarrow=False,
+                    font={"color": T.MUTED, "size": 11},
+                )
+        if median is not None:
+            fig.add_shape(
+                type="line",
+                x0=median,
+                x1=median,
+                xref=xref,
+                y0=0,
+                y1=1,
+                yref="paper",
+                line={"color": T.MUTED, "width": 1, "dash": "dash"},
+                layer="below",
+            )
+            fig.add_annotation(
+                x=median,
+                xref=xref,
+                y=1,
+                yref="paper",
+                yanchor="bottom",
+                text=f"median {med_text}",
+                showarrow=False,
+                font={"color": T.MUTED, "size": 11},
+            )
+        start = i * (width + _PANEL_GAP)
+        axes[f"xaxis{suffix}"] = {
+            "domain": [start, start + width],
+            "anchor": "y",
+            "range": _panel_range(values, median),
+            "nticks": 6,
+            "gridcolor": T.GRID,
+            # On/off is a difference, so its zero is drawn.
+            "zeroline": m.kind == "signed",
+            "zerolinecolor": T.BASELINE,
+            "tickfont": {"color": T.MUTED},
+            "title": {"text": m.label, "font": {"color": T.MUTED, "size": 11}},
+            "fixedrange": True,
+            "automargin": True,
+        }
+
+    fig.update_layout(
+        **_layout(
+            height=_DRIVER_ROW_PX * len(ids) + 100,
+            showlegend=False,
+            margin={"l": 8, "r": 8, "t": 28, "b": 8},
+            yaxis={
+                "type": "category",
+                "categoryorder": "array",
+                "categoryarray": ids,
+                "tickvals": ids,
+                "ticktext": names,
+                "tickfont": {"color": T.INK_2, "size": 11},
+                "autorange": "reversed",
+                "gridcolor": T.GRID,
+                "fixedrange": True,
+                "automargin": True,
+                "ticksuffix": " ",
+            },
+            **axes,
+        )
+    )
+    return fig
+
+
+def _minutes_line(row: Any) -> str:
+    """'2,261 min · 68 games for this team' for a hover."""
+    minutes: Any = getattr(row, "minutes", None)
+    games: Any = getattr(row, "games_played", None)
+    parts = []
+    if not diagnosis.missing(minutes):
+        parts.append(f"{round(float(minutes)):,} min")
+    if not diagnosis.missing(games):
+        parts.append(f"{int(games)} games for this team")
+    return " · ".join(parts)

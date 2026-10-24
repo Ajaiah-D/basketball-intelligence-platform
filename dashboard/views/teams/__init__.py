@@ -2,9 +2,10 @@
 table doesn't crowd out the team view.
 
   team.py       the Team tab: ratings, splits, league ranks on every key
-                stat, charts and the roster
+                stat, the player breakdown, charts and the roster
   profile.py    the league-ranks section (or the Four Factors on an older
                 warehouse)
+  breakdown.py  the player breakdown: the rotation on one area at a time
   standings.py  the Standings tab
   common.py     the heading style and grid row height both tabs share
 

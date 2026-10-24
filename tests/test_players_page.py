@@ -9,6 +9,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from dashboard.lib.data import players, seasons
+from dashboard.lib.state import PLAYERS_PICK_KEY
 
 # The sidebar box from dashboard/app.py, then the page.
 SCRIPT = """
@@ -153,3 +154,50 @@ def test_latest_seasons_search_ignores_case_and_accents(con):
     plain = con.execute("select upper(strip_accents(?))", [name]).fetchone()[0]
     found = players.player_latest_seasons(plain, 25)  # "VALANCIUNAS" for "Valančiūnas"
     assert player_id in set(found["player_id"])
+
+
+# --- A player preset by another page (Teams' "Open on Players") ------------------
+
+
+def _short_season_player(con, season: str) -> tuple[str, int]:
+    """A player with 10-24 games that season: in a team's rotation, but
+    under the page's default 25-game floor."""
+    row = con.execute(
+        """
+        select player_name, games_played
+        from main_marts.mart_player_season
+        where season = ? and games_played between 10 and 24
+        order by player_name
+        limit 1
+        """,
+        [season],
+    ).fetchone()
+    assert row, f"no 10-24 game player in {season}"
+    return row[0], int(row[1])
+
+
+def test_a_preset_player_opens_even_under_the_games_floor(con):
+    season = seasons.latest_season()
+    name, games = _short_season_player(con, season)
+    at = AppTest.from_string(SCRIPT, default_timeout=60)
+    at.session_state["season"] = season
+    at.session_state[PLAYERS_PICK_KEY] = name
+    at.run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key="players_pick").value == name
+    assert at.slider(key="players_min_gp").value == games
+    # Read once: the page doesn't keep reopening him.
+    assert PLAYERS_PICK_KEY not in at.session_state
+    assert name in " ".join(m.value for m in at.markdown)
+    # Another rerun (any widget) keeps him, since the slider stays lowered.
+    at.run()
+    assert at.selectbox(key="players_pick").value == name
+
+
+def test_a_preset_nobody_has_is_ignored(con):
+    at = AppTest.from_string(SCRIPT, default_timeout=60)
+    at.session_state[PLAYERS_PICK_KEY] = "Nobody At All"
+    at.run()
+    assert not at.exception, at.exception
+    assert at.slider(key="players_min_gp").value == 25
+    assert PLAYERS_PICK_KEY not in at.session_state

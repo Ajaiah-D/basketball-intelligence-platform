@@ -1,6 +1,6 @@
 """The numbers behind the diagnosis views: each team's profile of league
-ranks, the rotation that drives it, one player's percentiles, and the
-player scatter's source.
+ranks, the rotation behind it (the player breakdown), one player's
+percentiles, and the player scatter's source.
 
 The three marts these read (mart_team_profile, mart_player_percentiles,
 mart_player_defense) are newer than some published warehouses, so a page
