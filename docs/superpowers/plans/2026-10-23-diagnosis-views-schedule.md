@@ -200,10 +200,9 @@ per team-season in `mart_team_season`.
   - **Defense:** defensive rating, opp eFG%, opp 3P%, opp turnover rate,
     def. rebound %, opp FT rate;
   - **Style:** pace.
-- `summary_line(profile_row, n=3) -> str`, e.g.
-  `"Best at: 3P% (#2), defensive rating (#4), pace (#5) · Worst at: …"`.
-  Uses only Offense and Defense stats (style isn't good or bad), skips nulls,
-  and returns "" when there's no data.
+- (`summary_line` and `driver_read` below were built in Task 3 and removed
+  in Task 5: the owner wants evidence, not verdicts, so no sentence words
+  the numbers.)
 - `Area` is a NamedTuple:
   `key, label, team_stat, team_rank_col, player_cols (list of (col, label, higher_is_better)), defensive (bool), caption`.
   `AREAS: list[Area]` is the spec's table, all 10 areas, including "Defense
@@ -264,7 +263,7 @@ warehouse. Then start Phase B.
 
 ## Phase B: pages
 
-### Task 4: Teams package and the strengths-and-weaknesses profile
+### Task 4: Teams package and the league-ranks profile
 
 **Files:**
 - Convert `dashboard/views/teams.py` into the package
@@ -276,13 +275,13 @@ warehouse. Then start Phase B.
 - Add `profile_chart(profile_row) -> go.Figure` to `dashboard/lib/viz_diagnosis.py`.
 - Update `dashboard/app.py` only if the import changes. Update tests.
 
-- **Profile section:** placed where Four Factors was. A heading with a
-  glossary tip, then `diagnosis.summary_line` as one caption line, then the
-  chart.
+- **Profile section:** placed where Four Factors was, titled "How they rank
+  in the league". A heading with a glossary tip, then the chart; no summary
+  line.
 - **Chart:** horizontal bars, one per `PROFILE_STATS` row, grouped with group
   labels.
-  - Bar length = percentile (0-100), colour from `T.CRITICAL` (weak) through
-    neutral to `T.GOOD` (strong).
+  - Bar length = percentile (0-100), colour from `T.CRITICAL` (percentile 0) through
+    neutral to `T.GOOD` (percentile 100).
   - Text on the bar: value (formatted per stat) and `#rank`.
   - Style rows in `T.MUTED` with "most/least" wording.
   - A dashed line at 50 (league median).
@@ -294,9 +293,9 @@ warehouse. Then start Phase B.
 - **Tests:** AppTest of the Team tab on the real warehouse; on a warehouse
   without the marts, the fallback shows and nothing raises; `profile_chart`
   unit test (row count, colours by percentile, labels).
-- **Commit:** "Show each team's strengths and weaknesses by league rank".
+- **Commit:** "Show where each team ranks in the league on every key stat".
 
-### Task 5: Who drives it
+### Task 5: Player breakdown
 
 **Files:**
 - Create `dashboard/views/teams/drivers.py`.
@@ -304,11 +303,12 @@ warehouse. Then start Phase B.
 - Navigation helper: `dashboard/lib/nav.py`, plus app.py registering pages
   into it. Tests.
 
-- **Section:** "Who drives it", below the profile.
-  - A `segmented_control`/selectbox over `AREAS` labels. Default: the team's
-    weakest offensive area.
+- **Section:** "Player breakdown", below the profile.
+  - A `segmented_control`/selectbox over `AREAS` labels. Default: the first
+    area.
   - A chip with the team's rank in the area.
-  - The `driver_read` sentence.
+  - No generated sentence; a compact table of the numbers (player, minutes,
+    measures, league median) under the chart.
   - The chart: one row per rotation player, the measure as a dot or bar
     against a vertical league-median line, marker size by minutes, team
     colour, sorted by minutes.
@@ -326,12 +326,12 @@ warehouse. Then start Phase B.
     `views/players`' pick logic selects the preset player if present.
 - **Tests:**
   - AppTest: each area renders for a real team;
-  - the read sentence appears;
+  - no verdict wording appears;
   - clicking a player button sets the state keys (switch_page can be
     monkeypatched in the test);
   - the defensive areas show their caption;
   - a pre-1996 season shows on/off as unavailable without error.
-- **Commit:** "Show which players drive each team strength and weakness".
+- **Commit:** "Add a player breakdown for each team stat area".
 
 ### Task 6: Any-two-stats team scatter
 

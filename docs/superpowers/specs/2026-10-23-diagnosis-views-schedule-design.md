@@ -8,8 +8,8 @@ dashboard, scatter plots and leaders).
 Help a fan who knows basketball (the owner, and anyone he shares the site
 with) reason about teams in three steps:
 
-1. **What is this team good and bad at?**
-2. **Which players cause it?**
+1. **Where does this team rank in the league, stat by stat?**
+2. **What do its players' numbers look like in each of those areas?**
 3. **How does that compare to the rest of the league?**
 
 The pages should stay clean: every view answers one question. Film and
@@ -18,25 +18,29 @@ not a verdict.
 
 Decisions made with the owner:
 
+- **Evidence, not verdicts** (2026-10-23): the site shows ranks and
+  numbers and lets people judge and dig further. It never writes a
+  strengths-and-weaknesses verdict, a "Best at / Worst at" line or a
+  generated "who drives it" sentence. Captions explain method and limits
+  only.
 - **Players page:** a scatter, a game log with an any-stat trend, and a
   head-to-head compare.
 - **Teams page:** an any-two-stats scatter.
 - **Schedule:** its own page.
 - **Monthly splits** were dropped: they show *when* a team was good, not
-  *what* it is good at. Step 1 is covered by the strengths and weaknesses
-  profile instead, and step 2 by "who drives it".
+  *what* it is good at. Step 1 is covered by the league-ranks profile
+  instead, and step 2 by the player breakdown.
 - **Predictions page:** made simpler. The owner found it clunky, too big for
   what it says, and its two-colour bars ugly.
 
 ## Teams page (the Team tab)
 
-### 1. Strengths and weaknesses (replaces the Four Factors section)
+### 1. How they rank in the league (replaces the Four Factors section)
 
 One horizontal percentile chart of about 14 stats, in three groups. Each bar
-shows where the team ranks in that season's league (1-30), coloured from
-weak to strong. The value and the rank are printed on the bar.
-"Better" is always to the right, so a low turnover rate counts as a
-strength.
+shows where the team ranks in that season's league (1-30), coloured by
+percentile. The value and the rank are printed on the bar. Rank 1 is
+always to the right, so the lowest turnover rate sits at the right end.
 
 | Group | Stats |
 |---|---|
@@ -44,15 +48,14 @@ strength.
 | Defense | Defensive rating, opponent eFG%, opponent 3P%, opponent turnover rate (forced), defensive rebound %, opponent free throw rate |
 | Style | Pace (shown as context, not judged good or bad) |
 
-- A one-line summary sits above the chart: "Best at: … · Worst at: …", from
-  the three strongest and three weakest ranks.
+- No summary line: the chart and its ranks are the section.
 - Every stat name has the site's hover explanation.
 - For early seasons without the inputs, the bars simply don't show, as the
   current Four Factors does.
 
-### 2. Who drives it (new)
+### 2. Player breakdown (new)
 
-A selector for the area to look at:
+A selector for the area to look at (default: the first one):
 
 | Area | Team stat | Player measures |
 |---|---|---|
@@ -73,8 +76,8 @@ It shows:
 - a compact chart of the rotation (players with 10+ games for the team), each
   player's measure next to the league's median line for that measure, sized
   by minutes;
-- a one-line read, generated from the numbers, e.g. "Most of BOS's threes
-  come from Tatum and Brown, both above league median at 37%+".
+- the numbers behind the chart in a compact table (player, minutes, the
+  measures, the league median). No generated sentence reads them.
 
 Clicking a player opens him on the Players page, which is step 2 to step 3.
 
@@ -194,14 +197,14 @@ read them merge.
     opponent 3P%, opponent 3-point attempt rate.
 - **`mart_player_percentiles`** (grain: season × player): percentile within
   the season among qualified players (the dashboard's qualification rule,
-  moved into SQL) for each radar and "who drives it" measure.
+  moved into SQL) for each radar and player-breakdown measure.
 - **`mart_player_defense`** (grain: season × player):
   - on-court defensive rating, the team's season defensive rating, minutes
     share;
   - estimated off-court rating and on − off, for single-team seasons with
     500+ minutes from 1996-97 (null otherwise);
   - personal fouls per 36.
-- **"Who drives it":** reads `mart_player_team_season` (per-team stints) for
+- **Player breakdown:** reads `mart_player_team_season` (per-team stints) for
   minutes and volume, and `mart_player_season` for rates.
   - A traded player's rates cover his whole season, not just his time on
     this team; the caption says so.
