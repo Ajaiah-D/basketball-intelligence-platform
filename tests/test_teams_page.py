@@ -89,8 +89,9 @@ def test_an_early_season_has_no_profile_and_no_error(con):
     at = _app(EARLY)
     assert "How they rank in the league" not in _text(at)
     assert not at.info
-    # The breakdown still shows the rotation where the box scores allow.
     assert not at.exception
+    # The breakdown still shows the rotation where the box scores allow.
+    assert "Player breakdown" in _text(at)
 
 
 @pytest.fixture

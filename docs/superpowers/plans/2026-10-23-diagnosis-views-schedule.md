@@ -200,20 +200,15 @@ per team-season in `mart_team_season`.
   - **Defense:** defensive rating, opp eFG%, opp 3P%, opp turnover rate,
     def. rebound %, opp FT rate;
   - **Style:** pace.
-- (`summary_line` and `driver_read` below were built in Task 3 and removed
-  in Task 5: the owner wants evidence, not verdicts, so no sentence words
-  the numbers.)
+- `Measure` is a NamedTuple `col, label, term, kind` (kind: pct, share,
+  ratio, num or signed), with `format(value)` as the one place values print.
 - `Area` is a NamedTuple:
-  `key, label, team_stat, team_rank_col, player_cols (list of (col, label, higher_is_better)), defensive (bool), caption`.
+  `key, label, team_stat, team_rank_col, measures (list[Measure]), defensive (bool), caption`.
   `AREAS: list[Area]` is the spec's table, all 10 areas, including "Defense
   on/off (estimate)" and "Fouling".
-- `driver_read(area, team_label, rows) -> str`: one plain sentence from the
-  numbers. Examples:
-  - `"Most of BOS's threes come from Tatum and Brown (52% of attempts), both above league median at 37%+."`
-  - `"BOS defends 4.6 points per 100 better with Holiday on the floor - an estimate; see the caption."`
-
-  Deterministic, with a fallback sentence when the data is thin. Unit-test
-  every area with small DataFrames.
+- No generated sentences: `summary_line` and `driver_read` were built in
+  Task 3 and removed in Task 5, because the owner wants evidence, not
+  verdicts.
 
 **`dashboard/lib/data/diagnosis.py`:**
 - `profile_available() -> bool` (`objects_exist` for the three new marts).
@@ -298,8 +293,8 @@ warehouse. Then start Phase B.
 ### Task 5: Player breakdown
 
 **Files:**
-- Create `dashboard/views/teams/drivers.py`.
-- Add `drivers_chart(rows, area) -> go.Figure` to `viz_diagnosis.py`.
+- Create `dashboard/views/teams/breakdown.py`.
+- Add `drivers_chart(rows, area, team) -> go.Figure` to `viz_diagnosis.py`.
 - Navigation helper: `dashboard/lib/nav.py`, plus app.py registering pages
   into it. Tests.
 
