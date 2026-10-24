@@ -8,7 +8,7 @@ Kept apart from viz.py, which is already ~1,000 lines.
 from __future__ import annotations
 
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import pandas as pd
@@ -441,3 +441,170 @@ def _minutes_line(row: Any) -> str:
     if not diagnosis.missing(games):
         parts.append(f"{int(games)} games for this team")
     return " · ".join(parts)
+
+
+# --- The any-two-stats scatter -------------------------------------------------------
+
+# Dot diameters: the picked team's is the larger, so it stands out in a
+# crowd of 30 without a legend.
+_SCATTER_DOT_PX = 10
+_SCATTER_PICK_PX = 17
+
+
+def lower_is_better(df: pd.DataFrame, col: str) -> bool:
+    """Whether the league's #1 end of `col` is its low end, read off the
+    `<col>_rank` column (rank 1 sits nearer the minimum than the maximum).
+    The marts' ranks are the one place that knows which direction helps, so
+    this asks them instead of keeping a list. False without ranks or values."""
+    rank_col = f"{col}_rank"
+    if col not in df.columns or rank_col not in df.columns:
+        return False
+    both = df[[col, rank_col]].dropna()
+    if both.empty:
+        return False
+    top = float(both.loc[both[rank_col] == both[rank_col].min(), col].mean())
+    low, high = float(both[col].min()), float(both[col].max())
+    return abs(top - low) < abs(top - high)
+
+
+def _default_fmt(key: str, value: float) -> str:
+    return f"{value:.1f}"
+
+
+def _standing(df: pd.DataFrame, col: str, i: int, n: int) -> str:
+    """' (#3 of 30)' for row i, or '' when the frame carries no rank."""
+    rank_col = f"{col}_rank"
+    if rank_col not in df.columns or diagnosis.missing(df[rank_col].iloc[i]):
+        return ""
+    return f" (#{int(df[rank_col].iloc[i])} of {n})"
+
+
+def _axis(label: str, reversed_: bool, vertical: bool) -> dict[str, Any]:
+    """One scatter axis. A reversed axis says so in its title, since up (or
+    right) then means a lower number."""
+    side = "up" if vertical else "right"
+    text = f"{label} (reversed: {side} = lower)" if reversed_ else label
+    axis: dict[str, Any] = {
+        "title": {"text": text, "font": {"color": T.MUTED, "size": 11}},
+        "gridcolor": T.GRID,
+        "tickfont": {"color": T.MUTED},
+        "fixedrange": True,
+        "automargin": True,
+        "zeroline": False,
+    }
+    if reversed_:
+        axis["autorange"] = "reversed"
+    return axis
+
+
+def _furthest(df: pd.DataFrame, x: str, y: str, count: int, skip: set[int]) -> set[int]:
+    """Positions of the `count` points furthest from the average in
+    standard-deviation units on both axes (leaving out `skip`): the ones
+    worth a name."""
+    zx = (df[x] - df[x].mean()) / (df[x].std(ddof=0) or 1.0)
+    zy = (df[y] - df[y].mean()) / (df[y].std(ddof=0) or 1.0)
+    dist = (zx**2 + zy**2).reset_index(drop=True).drop(index=list(skip))
+    return set(dist.sort_values(ascending=False, kind="stable").index[: max(count, 0)])
+
+
+def stat_scatter(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    label_col: str,
+    color_col: str,
+    highlight: str | None = None,
+    x_label: str | None = None,
+    y_label: str | None = None,
+    label_top: int = 12,
+    invert: Iterable[str] = (),
+    name_col: str | None = None,
+    fmt: Callable[[str, float], str] | None = None,
+) -> go.Figure:
+    """Any two columns of `df` against each other, a dot per row.
+
+    Dots take the team colour of `color_col` (an abbreviation); the row
+    whose `label_col` equals `highlight` is drawn larger and outlined, on
+    top. Dashed lines mark the average of each column, so position reads
+    against the league instead of an arbitrary zero, and are the only
+    labelled reference: no quadrant is named good or bad.
+
+    `invert` lists the columns whose axis runs high to low, so up and right
+    always lead to the better end; the axis title says so. `label_top`
+    names that many dots (the picked one always, then the furthest from
+    the averages) so a crowd stays readable; the rest are unlabelled but
+    still hover. A hover shows `name_col` (default `label_col`), both
+    values through `fmt(column, value)` and, when `df` has `<column>_rank`,
+    both ranks as "#3 of 30". Rows missing either column are skipped."""
+    fmt = fmt or _default_fmt
+    data = df.dropna(subset=[x, y]).reset_index(drop=True)
+    if data.empty:
+        return _empty("No data for these stats this season")
+
+    n = len(data)
+    inverted = set(invert)
+    names = data[name_col or label_col].tolist()
+    labels = data[label_col].tolist()
+    pick = [label == highlight for label in labels] if highlight is not None else [False] * n
+    picked = {i for i in range(n) if pick[i]}
+    # The pick is always named and counts against the cap.
+    named = picked | _furthest(data, x, y, label_top - len(picked), picked)
+
+    hovers = [
+        f"<b>{names[i]}</b><br>{x_label or x} {fmt(x, float(data[x][i]))}"
+        f"{_standing(data, x, i, n)}<br>{y_label or y} {fmt(y, float(data[y][i]))}"
+        f"{_standing(data, y, i, n)}"
+        for i in range(n)
+    ]
+    colors = [T.team_color(str(c)) for c in data[color_col]]
+
+    def trace(rows: list[int], is_pick: bool) -> go.Scatter:
+        return go.Scatter(
+            x=[data[x][i] for i in rows],
+            y=[data[y][i] for i in rows],
+            mode="markers+text",
+            text=[str(labels[i]) if i in named else "" for i in rows],
+            textposition="top center",
+            textfont={"color": T.INK if is_pick else T.INK_2, "size": 11 if is_pick else 9},
+            marker={
+                "size": _SCATTER_PICK_PX if is_pick else _SCATTER_DOT_PX,
+                "color": colors[rows[0]] if is_pick else [colors[i] for i in rows],
+                # The pick's ring is the page's ink; the others' a page-coloured
+                # gap that keeps overlapping dots apart.
+                "line": {"color": T.INK if is_pick else T.PAGE, "width": 2.5 if is_pick else 1.5},
+            },
+            hovertext=[hovers[i] for i in rows],
+            hovertemplate="%{hovertext}<extra></extra>",
+            cliponaxis=False,
+            showlegend=False,
+        )
+
+    fig = go.Figure()
+    fig.add_trace(trace([i for i in range(n) if not pick[i]], False))
+    if any(pick):
+        fig.add_trace(trace([i for i in range(n) if pick[i]][:1], True))
+    fig.add_vline(
+        x=float(data[x].mean()), line_color=T.MUTED, line_width=1, line_dash="dash", layer="below"
+    )
+    fig.add_hline(
+        y=float(data[y].mean()), line_color=T.MUTED, line_width=1, line_dash="dash", layer="below"
+    )
+    fig.add_annotation(
+        x=float(data[x].mean()),
+        y=1,
+        xref="x",
+        yref="paper",
+        yanchor="bottom",
+        text="league average",
+        showarrow=False,
+        font={"color": T.MUTED, "size": 11},
+    )
+    fig.update_layout(
+        **_layout(
+            showlegend=False,
+            margin={"l": 8, "r": 8, "t": 24, "b": 8},
+            xaxis=_axis(x_label or x, x in inverted, vertical=False),
+            yaxis=_axis(y_label or y, y in inverted, vertical=True),
+        )
+    )
+    return fig

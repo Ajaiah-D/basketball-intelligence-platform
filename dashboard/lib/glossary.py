@@ -167,6 +167,12 @@ TERMS = {
         "turnovers, the fewest points allowed. Pace and 3-pt rate are style, "
         "shown in gray, ranked from the fastest and the most threes taken."
     ),
+    "Compare two stats": (
+        "Each dot is a team that season, on the two stats you pick. The "
+        "dashed lines mark the league average of each. Where lower numbers "
+        "help a team (points allowed, turnovers), the axis is reversed so up "
+        "and right always lead toward first in the league."
+    ),
     "3-pt rate": (
         "Three-point attempt rate: the share of a team's shots taken from "
         "three. A style choice, ranked from the most threes taken."

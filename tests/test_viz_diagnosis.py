@@ -216,3 +216,151 @@ def test_the_hover_names_the_value_the_median_and_the_glossary():
 def test_no_rotation_gives_the_placeholder():
     fig = viz_diagnosis.drivers_chart(_rotation().iloc[0:0], AREAS["fouling"], "OKC")
     assert not fig.data
+
+
+# --- The any-two-stats scatter -------------------------------------------------------
+
+
+def _league(n: int = 30) -> pd.DataFrame:
+    """n teams with an "off" stat (higher is better) and a "dfn" stat (lower
+    is better), each with the 1-n rank the mart would give it."""
+    off = [100.0 + i for i in range(n)]
+    dfn = [120.0 - 0.5 * i + (i % 3) for i in range(n)]
+    df = pd.DataFrame(
+        {
+            "team_abbreviation": [f"T{i:02d}" for i in range(n)],
+            "team_name": [f"Team {i}" for i in range(n)],
+            "off": off,
+            "dfn": dfn,
+        }
+    )
+    df["off_rank"] = df["off"].rank(ascending=False, method="min").astype(int)
+    df["dfn_rank"] = df["dfn"].rank(ascending=True, method="min").astype(int)
+    return df
+
+
+def _scatter(df=None, **kwargs):
+    kwargs.setdefault("label_top", 30)
+    return viz_diagnosis.stat_scatter(
+        _league() if df is None else df,
+        "off",
+        "dfn",
+        "team_abbreviation",
+        "team_abbreviation",
+        **kwargs,
+    )
+
+
+def test_scatter_draws_one_dot_per_team_and_the_pick_as_its_own_trace():
+    fig = _scatter(highlight="T07")
+    assert sum(len(t.x) for t in fig.data) == 30
+    pick = [t for t in fig.data if list(t.text) == ["T07"] and len(t.x) == 1]
+    assert len(pick) == 1
+    others = next(t for t in fig.data if t is not pick[0])
+    assert len(others.x) == 29
+    # Bigger and outlined against the rest, and still in the team's colour.
+    assert pick[0].marker.size > others.marker.size
+    assert pick[0].marker.line.width > others.marker.line.width
+    assert pick[0].marker.color == T.team_color("T07")
+
+
+def test_scatter_dots_take_the_team_colours():
+    fig = _scatter(highlight="T07", label_top=40)
+    others = fig.data[0]
+    codes = [a for a in _league()["team_abbreviation"] if a != "T07"]
+    assert list(others.text) == codes
+    assert list(others.marker.color) == [T.team_color(a) for a in codes]
+
+
+def test_scatter_without_a_highlight_has_one_trace():
+    fig = _scatter()
+    assert len(fig.data) == 1 and len(fig.data[0].x) == 30
+
+
+def test_scatter_dashed_league_average_lines_at_the_means():
+    df = _league()
+    fig = _scatter(df)
+    dashed = [s for s in fig.layout.shapes if s.line.dash == "dash"]
+    xs = [s.x0 for s in dashed if s.x0 == s.x1]
+    ys = [s.y0 for s in dashed if s.y0 == s.y1]
+    assert xs == [df["off"].mean()] and ys == [df["dfn"].mean()]
+    # Only the average is labelled; the quadrants carry no verdicts.
+    notes = [a.text for a in fig.layout.annotations]
+    assert notes == ["league average"]
+
+
+def test_scatter_caps_the_labels_but_always_names_the_pick():
+    fig = _scatter(highlight="T03", label_top=5)
+    labelled = [t for tr in fig.data for t in tr.text if t]
+    assert len(labelled) == 5
+    assert "T03" in labelled
+    # Unlabelled dots keep an empty label, so every dot still has a hover.
+    assert len(fig.data[0].text) == 29
+
+
+def test_scatter_labels_the_dots_furthest_from_the_average():
+    df = _league()
+    # Both stats run straight along the index, so the ends are furthest.
+    df["dfn"] = [120.0 - i for i in range(30)]
+    fig = _scatter(df, label_top=2)
+    labelled = {t for tr in fig.data for t in tr.text if t}
+    assert labelled == {"T00", "T29"}
+
+
+def test_scatter_inverted_axis_is_reversed_and_says_so():
+    fig = _scatter(invert=("dfn",), x_label="Offense", y_label="Defense")
+    assert fig.layout.yaxis.autorange == "reversed"
+    assert fig.layout.xaxis.autorange is None
+    assert "reversed" in fig.layout.yaxis.title.text
+    assert fig.layout.yaxis.title.text.startswith("Defense")
+    assert fig.layout.xaxis.title.text == "Offense"
+    both = _scatter(invert=("off", "dfn"))
+    assert both.layout.xaxis.autorange == "reversed"
+    assert "reversed" in both.layout.xaxis.title.text
+
+
+def test_scatter_hover_has_the_team_both_values_and_both_ranks():
+    df = _league()
+    fig = _scatter(df, name_col="team_name", fmt=lambda key, v: f"{v:.1f}!")
+    hover = fig.data[0].hovertext[3]
+    assert "Team 3" in hover
+    assert "103.0!" in hover
+    assert f"#{df['dfn_rank'][3]} of 30" in hover
+    assert f"#{df['off_rank'][3]} of 30" in hover
+    assert fig.data[0].hovertemplate == "%{hovertext}<extra></extra>"
+
+
+def test_scatter_without_rank_columns_hovers_values_only():
+    df = _league().drop(columns=["off_rank", "dfn_rank"])
+    hover = _scatter(df).data[0].hovertext[0]
+    assert "#" not in hover and "T00" in hover
+
+
+def test_scatter_skips_teams_missing_either_stat():
+    df = _league()
+    df.loc[0, "off"] = math.nan
+    df.loc[1, "dfn"] = math.nan
+    fig = _scatter(df)
+    assert len(fig.data[0].x) == 28
+
+
+def test_scatter_with_nothing_to_plot_is_a_sentence():
+    df = _league()
+    df["off"] = math.nan
+    fig = _scatter(df)
+    assert len(fig.data) == 0 and len(fig.layout.annotations) == 1
+
+
+def test_scatter_of_a_stat_against_itself_still_draws():
+    fig = viz_diagnosis.stat_scatter(
+        _league(), "off", "off", "team_abbreviation", "team_abbreviation"
+    )
+    assert len(fig.data[0].x) == 30
+
+
+def test_lower_is_better_comes_from_the_ranks():
+    df = _league()
+    assert viz_diagnosis.lower_is_better(df, "dfn") is True
+    assert viz_diagnosis.lower_is_better(df, "off") is False
+    assert viz_diagnosis.lower_is_better(df.drop(columns=["dfn_rank"]), "dfn") is False
+    assert viz_diagnosis.lower_is_better(df.assign(off=math.nan), "off") is False
