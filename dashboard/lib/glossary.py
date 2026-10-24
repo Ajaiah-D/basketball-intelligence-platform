@@ -49,6 +49,9 @@ TERMS = {
     # Box score abbreviations
     "GP": "Games played.",
     "MIN": "Minutes played per game.",
+    "PTS": "Points scored.",
+    "REB": "Rebounds: missed shots he grabbed, at either end of the floor.",
+    "AST": "Assists: passes that led straight to a teammate's basket.",
     "FG%": "Field goal percentage: the share of shots made, free throws not included.",
     "FGA": "Field goal attempts per game - shots taken, 2s and 3s together.",
     "3PM": "Three-pointers made per game.",

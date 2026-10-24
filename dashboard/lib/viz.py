@@ -63,65 +63,6 @@ def _layout(**overrides) -> dict:
     return base
 
 
-def player_trend(games: pd.DataFrame) -> go.Figure:
-    """Points per game (context bars) + 5-game rolling average (emphasis line),
-    against the season average as a reference.
-
-    The rolling line only starts once there are five games behind it. With
-    min_periods=1 the first point was just that game's score wearing a
-    "5-game average" label, which reads as a wild early swing that never
-    actually happened."""
-    df = games.copy()
-    window = min(5, len(df))
-    df["roll"] = df["points"].rolling(window, min_periods=window).mean()
-    season_avg = df["points"].mean()
-
-    fig = go.Figure()
-    fig.add_bar(
-        x=df["game_date"],
-        y=df["points"],
-        name="Points",
-        marker={"color": T.BASELINE},
-        hovertemplate="%{x|%b %d} vs %{customdata}<br>%{y} pts<extra></extra>",
-        customdata=df["matchup"].str[-3:],
-    )
-    # A flat season average turns the rolling line into a story: this is
-    # where the player was running hot or cold relative to their own year.
-    fig.add_hline(y=season_avg, line_color=T.MUTED, line_width=1, line_dash="dot")
-    # Annotation x values go through a stricter serializer than the traces
-    # do, and a pandas Timestamp is not JSON serializable there.
-    fig.add_annotation(
-        x=df["game_date"].iloc[0].to_pydatetime(),
-        y=season_avg,
-        text=f"season avg {season_avg:.1f}",
-        showarrow=False,
-        yshift=10,
-        xanchor="left",
-        font={"color": T.MUTED, "size": 10},
-    )
-    fig.add_scatter(
-        x=df["game_date"],
-        y=df["roll"],
-        name=f"{window}-game avg",
-        mode="lines",
-        line={"color": T.ACCENT, "width": 2},
-        connectgaps=False,
-        hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
-    )
-    if df["roll"].notna().any():
-        last = df.dropna(subset=["roll"]).iloc[-1]
-        fig.add_annotation(
-            x=last["game_date"].to_pydatetime(),
-            y=last["roll"],
-            text=f"{last['roll']:.1f}",
-            showarrow=False,
-            xshift=22,
-            font={"color": T.ACCENT, "size": 12},
-        )
-    fig.update_layout(**_layout(hovermode="x unified", bargap=0.45))
-    return fig
-
-
 def career_trend(
     seasons_df: pd.DataFrame, stat: str, label: str, weight: str = "gp", as_rate: bool = False
 ) -> go.Figure:

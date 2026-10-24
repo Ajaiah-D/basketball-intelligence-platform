@@ -14,6 +14,7 @@ from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from core.text import fold
 from dashboard.lib import glossary, media, viz
@@ -21,6 +22,7 @@ from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
 from dashboard.lib.stats import percentile_of
+from dashboard.views.players import game_log
 
 TABLE_COLS = [
     "player",
@@ -125,9 +127,10 @@ class Filters(NamedTuple):
     search: str
 
 
-def _filter_bar(season: str) -> Filters:
-    """Title, scope toggle, season / team / min-games / search controls."""
-    head = st.container()  # title renders here once the scope toggle is known
+def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
+    """Title (into `head`, the page's container above the tabs, once the
+    scope toggle is known), scope toggle, season / team / min-games /
+    search controls."""
     f0, fs, f1, f2, f3 = st.columns([2, 2, 2, 2, 3])
     scope = (
         f0.segmented_control(
@@ -396,12 +399,36 @@ def _career_detail(row) -> None:
     s4.markdown(T.kpi("Record in games", f"{row.wins}-{row.gp - row.wins}"), unsafe_allow_html=True)
 
 
+def _game_tiles(games: pd.DataFrame) -> None:
+    """Home and away scoring, the season high and his teams' record in his games."""
+    home = games[~games.is_away]
+    away = games[games.is_away]
+    s1, s2, s3, s4 = st.columns(4)
+    s1.markdown(
+        T.kpi("Home PPG", f"{home.pts.mean():.1f}" if len(home) else "-"), unsafe_allow_html=True
+    )
+    s2.markdown(
+        T.kpi("Away PPG", f"{away.pts.mean():.1f}" if len(away) else "-"), unsafe_allow_html=True
+    )
+    s3.markdown(T.kpi("Season high", f"{games.pts.max():.0f}"), unsafe_allow_html=True)
+    s4.markdown(
+        T.kpi("Record in games", f"{int(games.is_win.sum())}-{int((~games.is_win).sum())}"),
+        unsafe_allow_html=True,
+    )
+
+
 def _season_detail(row, row_season: str) -> None:
-    games = players.player_game_log(int(row.player_id), row_season)
+    # A warehouse published before mart_player_game has no games to list:
+    # one notice, and the season-level charts still draw.
+    has_games = players.player_games_available()
+    games = players.player_games(int(row.player_id), row_season) if has_games else None
+    figures = game_log.season_figures(row)
     c1, c2 = st.columns([3, 2])
     with c1:
-        st.markdown("**Scoring trend**")
-        st.plotly_chart(viz.player_trend(games), config=viz.PLOTLY_CONFIG, width="stretch")
+        if games is None:
+            st.info("The game log and game-by-game trend arrive with the next data refresh.")
+        else:
+            game_log.render_trend(games, figures)
     with c2:
         st.markdown("**Shooting vs league** (labels show attempts/game)")
         st.plotly_chart(
@@ -422,27 +449,17 @@ def _season_detail(row, row_season: str) -> None:
         )
         st.plotly_chart(viz.percentile_bars(ranks), config=viz.PLOTLY_CONFIG, width="stretch")
 
-    home = games[~games.is_away_game]
-    away = games[games.is_away_game]
-    s1, s2, s3, s4 = st.columns(4)
-    s1.markdown(
-        T.kpi("Home PPG", f"{home.points.mean():.1f}" if len(home) else "-"), unsafe_allow_html=True
-    )
-    s2.markdown(
-        T.kpi("Away PPG", f"{away.points.mean():.1f}" if len(away) else "-"), unsafe_allow_html=True
-    )
-    s3.markdown(T.kpi("Season high", f"{games.points.max():.0f}"), unsafe_allow_html=True)
-    s4.markdown(
-        T.kpi("Record in games", f"{int(games.is_win.sum())}-{int((~games.is_win).sum())}"),
-        unsafe_allow_html=True,
-    )
+    if games is not None:
+        _game_tiles(games)
+        game_log.render_game_log(games, figures)
 
 
-def render() -> None:
+def render_stats(head: DeltaGenerator) -> None:
+    """The Stats tab. `head` is the container the page title goes in."""
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
     _apply_preset(season)
 
-    f = _filter_bar(season)
+    f = _filter_bar(season, head)
     view, others = _filter_rows(f, season)
     _stats_table(view, others, f, season)
 

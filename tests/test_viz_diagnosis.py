@@ -385,3 +385,91 @@ def test_scatter_draws_every_row_matching_the_highlight_in_the_pick_trace():
     pick = fig.data[1]
     assert len(pick.x) == 2
     assert sum(len(t.x) for t in fig.data) == 30
+
+
+# --- The game-by-game trend ---------------------------------------------------------
+
+
+def _games(n: int = 8) -> pd.DataFrame:
+    """n games, oldest first, in data.players.player_games' columns."""
+    return pd.DataFrame(
+        {
+            "game_date": pd.date_range("2025-10-22", periods=n, freq="2D"),
+            "opp": [f"T{i:02d}" for i in range(n)],
+            "is_away": [i % 2 == 1 for i in range(n)],
+            "pts": [10 + 2 * i for i in range(n)],
+            "reb": [5] * n,
+            "ast": list(range(n)),
+            "tpm": [1] * n,
+            "ts_pct": [50.0 + i for i in range(n)],
+            "shot_poss": [10.0] * n,
+            "plus_minus": [(-1) ** i * i for i in range(n)],
+        }
+    )
+
+
+def test_trend_draws_a_bar_per_game_and_a_five_game_line():
+    fig = viz_diagnosis.stat_trend(_games(), "PTS", season_avg=17.0)
+    bars, line = fig.data[:2]
+    assert bars.type == "bar" and list(bars.y) == [10, 12, 14, 16, 18, 20, 22, 24]
+    assert bars.marker.color == T.BASELINE
+    # The line waits for five games behind it rather than calling one game
+    # a 5-game average.
+    assert [v != v for v in line.y[:4]] == [True] * 4
+    assert list(line.y[4:]) == [14.0, 16.0, 18.0, 20.0]
+    assert line.line.color == T.ACCENT
+
+
+def test_trend_title_names_the_stat():
+    titles = {
+        stat: viz_diagnosis.stat_trend(_games(), stat, season_avg=1.0).layout.title.text
+        for stat in viz_diagnosis.GAME_STATS
+    }
+    assert "Points" in titles["PTS"] and "Assists" in titles["AST"]
+    assert len(set(titles.values())) == len(viz_diagnosis.GAME_STATS)
+
+
+def test_trend_has_a_dashed_line_at_the_season_average():
+    fig = viz_diagnosis.stat_trend(_games(), "AST", season_avg=3.5)
+    (shape,) = fig.layout.shapes
+    assert shape.y0 == shape.y1 == 3.5 and shape.line.dash == "dash"
+    # Named in the legend, by a trace with no points of its own.
+    (key,) = [t for t in fig.data if t.name.startswith("season avg")]
+    assert key.name == "season avg 3.5" and key.line.dash == "dash"
+
+
+def test_trend_without_a_season_average_draws_no_reference_line():
+    fig = viz_diagnosis.stat_trend(_games(), "TS%", season_avg=math.nan)
+    assert len(fig.layout.shapes) == 0 and len(fig.data) == 2
+
+
+def test_trend_true_shooting_averages_over_shot_volume():
+    games = _games(5)
+    games["ts_pct"] = [100.0, 50.0, 50.0, 50.0, 50.0]
+    games["shot_poss"] = [1.0, 20.0, 20.0, 20.0, 20.0]  # one shot at 100%, then 80 at 50%
+    line = viz_diagnosis.stat_trend(games, "TS%", season_avg=50.6).data[1]
+    assert round(line.y[-1], 2) == round((100 * 1 + 50 * 80) / 81, 2)
+
+
+def test_trend_skips_a_game_with_no_shots_rather_than_drawing_zero():
+    games = _games(6)
+    games.loc[2, ["ts_pct", "shot_poss"]] = [math.nan, 0.0]
+    fig = viz_diagnosis.stat_trend(games, "TS%", season_avg=52.0)
+    assert fig.data[0].y[2] != fig.data[0].y[2]  # NaN: no bar
+    # The rolling line still runs, over the shots that were taken.
+    assert fig.data[1].y[-1] == fig.data[1].y[-1]
+
+
+def test_trend_plus_minus_bars_go_below_zero():
+    fig = viz_diagnosis.stat_trend(_games(), "+/-", season_avg=0.5)
+    assert min(fig.data[0].y) < 0
+
+
+def test_trend_hover_names_the_opponent():
+    fig = viz_diagnosis.stat_trend(_games(3), "REB", season_avg=5.0)
+    assert list(fig.data[0].customdata) == ["vs T00", "@ T01", "vs T02"]
+
+
+def test_trend_with_no_games_is_a_sentence():
+    fig = viz_diagnosis.stat_trend(_games().iloc[0:0], "PTS", season_avg=math.nan)
+    assert len(fig.data) == 0 and len(fig.layout.annotations) == 1

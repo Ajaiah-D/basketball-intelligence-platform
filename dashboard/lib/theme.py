@@ -271,6 +271,14 @@ table.bip-table td.name {{ color: {INK}; font-weight: 600; white-space: nowrap; 
 .bip-table-wrap table.bip-table tr > :first-child {{ position: sticky; left: 0;
                                                     background: #1b1b1a; }}
 table.bip-table td.hi {{ color: {INK}; font-weight: 800; }}
+/* lib/tables.py max_height: a long table scrolls in its box, header pinned */
+.bip-scroll {{ overflow-y: auto; margin-bottom: .4rem; }}
+.bip-scroll table.bip-table th {{ position: sticky; top: 0; z-index: 1; background: #1b1b1a; }}
+.bip-scroll table.bip-table tr > th:first-child {{ z-index: 2; }}
+/* the game log: a game above or below his own season average. "tr td" so
+   the row hover, which is as specific and comes first, doesn't wash it out */
+table.bip-table tr td.above {{ background: {rgba(GOOD, 0.18)}; color: {INK}; }}
+table.bip-table tr td.below {{ background: {rgba(CRITICAL, 0.18)}; color: {INK}; }}
 table.bip-table tr.bip-foot td {{ border-top: 1px solid {BORDER}; color: {INK};
                                   font-weight: 700; }}
 table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weight: 600; }}
