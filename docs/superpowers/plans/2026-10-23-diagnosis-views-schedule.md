@@ -2,16 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Help a fan diagnose what a team is good and bad at, see which players
-drive it, and put it in league context. Add a Schedule page and a much
-simpler Predictions page.
+**Goal:** Help a fan see where a team ranks in the league stat by stat, look
+at its players' numbers in each of those areas, and compare them with the
+rest of the league: evidence to judge from, not a verdict. Add a Schedule
+page and a much simpler Predictions page.
 
 **Architecture:** see `docs/superpowers/specs/2026-10-23-diagnosis-views-schedule-design.md`.
 
 - **Phase A (Tasks 1-3):** new dbt marts and data-layer functions. They are
   merged and **published by a real refresh before Phase B merges**: expand
   then contract.
-- **Phase B (Tasks 4-11):** the pages.
+- **Phase B (Tasks 4-11):** the pages. Task 7 adds one more dbt object,
+  `mart_player_game`, which takes its own expand step before the pages
+  merge (see Rollout at the end).
 - **Code layout:**
   - pure logic in `dashboard/lib/diagnosis.py`;
   - charts in a new `dashboard/lib/viz_diagnosis.py` (`viz.py` is already
@@ -214,8 +217,9 @@ per team-season in `mart_team_season`.
 - `profile_available() -> bool` (`objects_exist` for the three new marts).
 - `team_profile(season) -> pd.DataFrame` (all columns).
 - `team_drivers(season, team) -> pd.DataFrame`:
-  - the rotation for that team-season: players with 10+ games for the team,
-    from `mart_player_team_season`;
+  - the rotation for that team-season: players with 10+ games for the team
+    (or the season's `qualification_games`, when that is lower early in a
+    season), from `mart_player_team_season`;
   - joined to `mart_player_season` rates, `mart_player_percentiles` and
     `mart_player_defense` on (season, player_id);
   - columns: `player_id, player, games_played, minutes, minutes_per_game,
@@ -338,8 +342,9 @@ warehouse. Then start Phase B.
 
 - **Section:** two selectboxes over the profile stats.
   - Default: offensive rating (x) vs defensive rating (y), with the y axis
-    inverted so up = better defence, and quadrant captions kept (port the
-    existing quadrant labelling).
+    inverted so up = better defence. The dashed lines are labelled "league
+    average" and no quadrant is named: the owner wants evidence, not
+    verdicts.
   - Dots in team colours, the selected team highlighted (bigger, outlined),
     dashed league-average lines.
   - Hover shows the team, both values and both ranks.
@@ -373,6 +378,11 @@ warehouse. Then start Phase B.
   points-only trend.
 - **Preset pick:** honour `state.PLAYERS_PICK_KEY` set by Teams (Task 5) or
   Schedule.
+- **Data (added in this task):** `mart_player_game`, a dbt view of one row
+  per player per game with the result and per-game TS% (plus `shot_poss`,
+  its weight). The page checks for it and shows one notice line without
+  it. It is a new published object, so it needs the expand step under
+  Rollout.
 - **Tests:** AppTest on Luka Dončić 2025-26: the game log has 64 rows; the
   picker switches the chart title; `stat_trend` unit test; a preset pick
   opens that player.
@@ -504,3 +514,12 @@ page and the three marts), glossary terms already added, ADR 0006 (add the
 - Retake the screenshots with Playwright: the same 1500-px full-page style as
   the existing `site_pictures`, against the worktree app.
 - **Commit:** "Document the diagnosis views, schedule and predictions".
+
+## Rollout (after the final review)
+
+1. Land `mart_player_game` alone on main (an expand PR with the dbt view
+   and its tests), with Linux CI.
+2. Run a real publishing refresh and confirm the view is in the published
+   warehouse.
+3. Then open the pages PR, run CI and merge. Remind the owner to reboot the
+   Streamlit app.

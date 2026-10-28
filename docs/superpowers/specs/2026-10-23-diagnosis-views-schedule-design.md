@@ -73,8 +73,9 @@ A selector for the area to look at (default: the first one):
 It shows:
 
 - the team's rank in that area;
-- a compact chart of the rotation (players with 10+ games for the team), each
-  player's measure next to the league's median line for that measure, sized
+- a compact chart of the rotation (players with 10+ games for the team;
+  early in a season, when the season's qualification cut is lower, that cut
+  instead, said in one caption), each player's measure next to the league's median line for that measure, sized
   by minutes;
 - the numbers behind the chart in a compact table (player, minutes, the
   measures, the league median). No generated sentence reads them.
@@ -111,8 +112,9 @@ of this replaces film.
 ### 3. Team scatter (replaces the fixed offense-vs-defense chart)
 
 - Two stat pickers over the profile stats.
-- Default: offensive rating vs defensive rating, with the quadrant labels
-  kept.
+- Default: offensive rating vs defensive rating. The dashed lines are
+  labelled "league average" and no quadrant is named (evidence, not
+  verdicts).
 - All 30 teams in their colours; the selected team is highlighted; dashed
   lines at the league average.
 
@@ -124,8 +126,8 @@ of this replaces film.
   rebounds, assists, 3PM, TS%, plus-minus. Each stat is tinted green or red
   against his season average.
 - **Trend chart:** a stat picker (points, rebounds, assists, 3PM, TS%,
-  plus-minus) with a 5-game rolling line. It replaces today's points-only
-  trend.
+  plus-minus) with a 5-game rolling line from the fifth game. It replaces
+  today's points-only trend.
 
 ### Scatter
 
@@ -133,7 +135,8 @@ of this replaces film.
   shooting %), a minimum-games filter (default 25, or the season's
   qualification threshold early in a season) and a team filter.
 - **Chart:** every qualified player is a team-coloured dot, with dashed lines
-  at the league average. About 12 standout players are labelled: the
+  at the average of the players shown (labelled so: the min-games filter
+  leaves part of the league). About 12 standout players are labelled: the
   farthest from the average point, plus the selected team's players.
 - **Hover:** shows the player's line.
 - No headshots: hundreds of embedded images would make the page slow.
@@ -208,6 +211,14 @@ read them merge.
   minutes and volume, and `mart_player_season` for rates.
   - A traded player's rates cover his whole season, not just his time on
     this team; the caption says so.
+- **`mart_player_game`** (grain: player × game; a dbt view, added with the
+  game log): each game's box score line beside the result, with per-game
+  TS% by the same formula as the season line and `shot_poss`, the weight
+  that averages games' TS% correctly. The game log and the trend read it.
+  - It came after Phase A was published, so it needs its own expand step:
+    land the view alone on main, publish it with a real refresh, then
+    merge the pages. Until then the season detail shows one notice line
+    in place of the game log and trend.
 - **Schedule:** reads only existing published objects.
 
 ## Testing

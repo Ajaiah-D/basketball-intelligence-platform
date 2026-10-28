@@ -17,7 +17,7 @@ Status / roadmap below.
 picker, shooting-vs-league percentiles and a colour-coded game log
 ![Players](site_pictures/players.png)
 
-**Teams** - one team in depth: where it ranks in the league on about 17
+**Teams** - one team in depth: where it ranks in the league on 15
 stats, then a breakdown of its players in each area
 ![Teams](site_pictures/teams.png)
 
@@ -196,7 +196,7 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   and pace with league ranks, the team's payroll, home/away, last-10, streak,
   close-game and vs-winning-team records and a per-game margin chart. Three
   views for investigating a team: *How they rank in the league* (percentile
-  bars for about 17 stats, with the value and rank printed on each),
+  bars for 15 stats, with the value and rank printed on each),
   *Player breakdown* (pick an area, such as scoring efficiency, ball
   security, rebounding or fouling, and see the rotation's numbers against
   the league median; "defense on/off" is an estimate, see
@@ -368,7 +368,7 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (10 models), intermediate (1) and marts (15), plus salary
-      cap history and team code seeds; 132 dbt tests and 917 pytest cases.
+      cap history and team code seeds; 132 dbt tests and 930 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
       era the tests check; the 9 tests that need all seasons are marked
