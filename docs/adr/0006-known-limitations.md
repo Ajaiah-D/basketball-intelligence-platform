@@ -66,6 +66,23 @@ current architecture:
    backfilled: `ingestion/nba_ingest.py --all-pbp` can do it, at about
    1,300 API calls per season.
 
+6. **The defensive on/off on the Teams page is an estimate.** The NBA
+   publishes each player's defensive rating while he is on the court, but
+   not the team's rating while he is off it. The page estimates it as
+   `(team - s * on) / (1 - s)`, where `team` is the team's season
+   defensive rating, `on` the player's on-court rating and
+   `s = minutes / (team games * 48)`, his share of the team's minutes
+   (`mart_player_defense`). It is only computed for seasons from 1996-97
+   (when the NBA's on-court ratings start), for players with 500 or more
+   minutes, and for seasons spent entirely with one team, since a traded
+   player's on-court rating mixes two teams. It is also noisy: it moves
+   with lineups and teammates, so a stopper who guards stars next to the
+   starters can look worse than he is. A check on 2024-25 found the
+   expected names near the top (Holiday at -4.6, a negative number
+   meaning the team defends better with him on), and Dort at +1.5 shows
+   the noise. The page labels it an estimate, and none of it replaces
+   film.
+
 ## Consequences
 
 Writing these down makes the operational, data and business risk profile
@@ -88,3 +105,6 @@ Limitation 4 is a model change: refit the spread and the home edge, bump
 `model_version`, and let the track record show the new version
 separately. Limitation 5 is a backfill run, limited by the API's rate
 rather than by code.
+Limitation 6 is inherent to the source: the on/off figures would need
+lineup data (possession-level substitutions), which the roadmap lists as
+not built.

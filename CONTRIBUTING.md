@@ -108,14 +108,14 @@ python -m pytest -q                            # everything, against your local 
 python -m pytest -q -m "not full_warehouse"    # what CI runs
 ```
 
-The full run is 657 tests and takes about a minute. Tests read the real
+The full run is about 917 tests and takes about two minutes. Tests read the real
 warehouse and assert facts that are true of the data itself, not row counts
 that change every week.
 
 CI can't reach stats.nba.com, so it builds a small warehouse from
 `data/fixtures/` (real data, cut down to a few seasons; its
 [README](data/fixtures/README.md) says what each file is for) and
-deselects the 6 tests marked `full_warehouse`. It also sets `CI`, and then
+deselects the 9 tests marked `full_warehouse`. It also sets `CI`, and then
 any skipped test fails the run: a skip in CI means a gap in the fixtures is
 hiding a test.
 

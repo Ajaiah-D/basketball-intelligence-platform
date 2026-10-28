@@ -4,8 +4,8 @@
 
 A local-first NBA data platform: ingest NBA stats and team salaries, warehouse
 them in DuckDB, model them with dbt, and serve a public dashboard covering
-players, teams, games, advanced stats, team finances and game predictions
-across 47 seasons of NBA history. Natural-language Q&A is not built yet; see
+players, teams, games, the schedule, advanced stats, team finances and game
+predictions across 47 seasons of NBA history. Natural-language Q&A is not built yet; see
 Status / roadmap below.
 
 ## Screenshots
@@ -13,12 +13,12 @@ Status / roadmap below.
 **Overview** - best record, league and efficiency leaders, conference standings
 ![Overview](site_pictures/overview.png)
 
-**Players** - season stats table; player detail with scoring trend and
-shooting-vs-league comparison
+**Players** - a player's detail on the Stats tab: scoring trend with a stat
+picker, shooting-vs-league percentiles and a colour-coded game log
 ![Players](site_pictures/players.png)
 
-**Teams** - one team in depth: ratings with league ranks, the Four Factors,
-record splits and its roster, with full standings in their own tab
+**Teams** - one team in depth: where it ranks in the league on about 17
+stats, then a breakdown of its players in each area
 ![Teams](site_pictures/teams.png)
 
 **Games** - results browser; game detail with a score-margin flow chart and
@@ -33,8 +33,12 @@ and a per-player percentile profile
 with a plain-English summary and the team's biggest contracts
 ![Finances](site_pictures/finances.png)
 
-**Predictions** - upcoming games as cards with each team's win probability
-and the expected margin, plus the model's track record
+**Schedule** - a month calendar with a day view: finals with each game's top
+scorer and a link to the game, or tip-offs with the model's pick
+![Schedule](site_pictures/schedule.png)
+
+**Predictions** - the next week of games as a compact list with the model's
+pick, chance and margin, plus its track record
 ![Predictions](site_pictures/predictions.png)
 
 **Arcade** - Higher or Lower, Mystery Player, and Build a team: build or
@@ -61,9 +65,11 @@ dbt (dbt-duckdb)
                         (both hand-curated)
         - staging       clean, rename, type raw tables (views)
         - intermediate  pair each team-game with its opponent
-        - marts         every number the site shows: player seasons, stints
-                        and careers, team seasons, standings, game features,
-                        team finances, contracts, graded predictions
+        - marts         every number the site shows: player seasons, stints,
+                        careers and game logs, team seasons, standings,
+                        league ranks and percentiles, defensive on/off,
+                        game features, team finances, contracts, graded
+                        predictions
         |
         v
 ml/                                Elo + ridge model; appends predictions to
@@ -156,9 +162,10 @@ ml/                                # Elo ratings, ridge model, backtest, predict
 dashboard/app.py                   # Streamlit app entry point
 dashboard/lib/data/                # read-only queries, one module per domain
 dashboard/lib/                     # charts, cards, theme, simulator, franchise lineage,
-                                   # payroll wording, stat glossary
-dashboard/views/                   # one module per page; arcade/ is a package with
-                                   # one module per game
+                                   # payroll wording, stat glossary, matchup and
+                                   # compare helpers
+dashboard/views/                   # one module per page; arcade/, players/ and teams/
+                                   # are packages (one module per game or tab)
 data/predictions/history.csv       # every published prediction (committed)
 data/fixtures/                     # small real-data slices CI builds its warehouse from
 tests/                             # pytest suite
@@ -177,19 +184,35 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Overview**: the team with the best record, league leaders, efficiency
   leaders (true shooting, usage, game score, assist-to-turnover), conference
   standings, latest games
-- **Players**: filterable season stats table; player detail with scoring
-  trend (5-game rolling average) and shooting-vs-league comparison; a career
-  view pooling every season
+- **Players**: three tabs. *Stats* has the filterable season stats table, a
+  career view pooling every season, and a player detail with a trend for any
+  stat (5-game rolling average), shooting-vs-league percentiles and a
+  game log tinted green or red against his own season average. *Scatter*
+  plots any two player stats for a season, with a minimum-games and team
+  filter. *Compare* sets two player-seasons from any era side by side: a
+  percentile radar, with each player ranked against his own season's
+  qualified players, plus per-game bars
 - **Teams**: a Team tab with record and seed, net/offensive/defensive rating
-  and pace with league ranks, the team's payroll, the Four Factors (shooting,
-  turnovers, rebounding, free throws - offense and defense, against the
-  league average), home/away, last-10, streak, close-game and vs-winning-team
-  records, a per-game margin chart and its roster; a Standings tab with
-  last-5 form for either conference or the whole league. A player traded
-  mid-season counts on each roster only for the games he played there, and
-  the Players and Advanced tables label him with both teams (CHI → BOS)
+  and pace with league ranks, the team's payroll, home/away, last-10, streak,
+  close-game and vs-winning-team records and a per-game margin chart. Three
+  views for investigating a team: *How they rank in the league* (percentile
+  bars for about 17 stats, with the value and rank printed on each),
+  *Player breakdown* (pick an area, such as scoring efficiency, ball
+  security, rebounding or fouling, and see the rotation's numbers against
+  the league median; "defense on/off" is an estimate, see
+  [ADR 0006](docs/adr/0006-known-limitations.md)) and *Compare two stats*
+  (any two team stats across all 30 teams). The roster follows, and a
+  Standings tab has last-5 form for either conference or the whole league. A
+  player traded mid-season counts on each roster only for the games he
+  played there, and the Players and Advanced tables label him with both
+  teams (CHI → BOS)
 - **Games**: results browser; game detail with box scores and, for games
   with play-by-play ingested, a game-flow (score margin) chart and shot chart
+- **Schedule**: a month calendar, one cell per day with its game count. A
+  day opens as a list: finals with each game's top scorer and an "Open game"
+  button that goes to the Games page, or upcoming games with tip-off (Eastern)
+  and the model's pick. Picking a team shows its opponent on each day and its
+  whole season with a running record
 - **Advanced**: rate metrics (true shooting, usage, assist/rebound/steal/block
   rates, game score) with a minutes floor, efficiency leaderboards, a
   percentile profile per player, and a two-player head-to-head. Official NBA
@@ -203,11 +226,13 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   original Charlotte Hornets' with New Orleans. Seasons where the source's
   salary data is incomplete show as gaps rather than misleadingly low totals,
   and the page says when the salary data was last updated
-- **Predictions**: upcoming games grouped by date, each a card with the
-  tip-off time (Eastern), a two-team win-probability bar and a verdict like
-  "BOS by 6 · 65%". Once games settle: accuracy, Brier score, margin error, a
-  calibration chart (how often a 70% favorite actually won) and recent
-  results with ✓/✗. Currently Elo ratings only - rolling-form features
+- **Predictions**: the next 7 days as a compact list grouped by date: tip-off
+  (Eastern), the matchup with the favourite in its team colour, its chance
+  and the margin ("by 6"), with games under 55% marked a toss-up. Once games
+  settle: accuracy, Brier score and margin error, a calibration chart (how
+  often a 70% favorite actually won) in a collapsed section, and the 10 most
+  recent results with ✓/✗, all read from the `mart_settled_predictions`
+  mart. Later games are on the Schedule page. Currently Elo ratings only - rolling-form features
   (recent record, rest days) aren't computed for future games yet, so treat
   it as a first pass rather than the model's intended accuracy
 - **Arcade**: games on top of the full history. *Higher or Lower* (which
@@ -342,11 +367,11 @@ explains why it works this way.
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging (10 models), intermediate (1) and marts (11), plus salary
-      cap history and team code seeds; 113 dbt tests and 657 pytest cases.
+- [x] dbt staging (10 models), intermediate (1) and marts (15), plus salary
+      cap history and team code seeds; 132 dbt tests and 917 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
-      era the tests check; the 6 tests that need all seasons are marked
+      era the tests check; the 9 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors. Official NBA advanced stats pulled for 1996-97 onward (one API
