@@ -292,6 +292,32 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
 .bip-box-head .sc.winner {{ color: {INK}; }}
 .bip-box-dnp {{ font-size: .75rem; color: {MUTED}; margin-top: .55rem; }}
 
+/* ---- Schedule page (views/schedule.py): month calendar and day rows ----
+   Scoped to the page's keyed containers (Streamlit gives a container with
+   key=k the class st-key-k). A day button's label is "23 *12 games*": the
+   italic detail follows a middle dot here and drops to a small second line
+   on a phone (below). */
+.bip-sched-month {{ text-align: center; font-weight: 800; font-size: 1.05rem; color: {INK}; }}
+.bip-sched-wd {{ text-align: center; font-size: .68rem; text-transform: uppercase;
+                 letter-spacing: .08em; color: {MUTED}; font-weight: 700; }}
+.bip-sched-month {{ min-width: 9.5rem; }}  /* the arrows stay put month to month */
+.st-key-sched_cal {{ gap: .35rem; }}
+.st-key-sched_cal [data-testid="stHorizontalBlock"] {{ gap: .35rem; }}
+/* Streamlit pulls a markdown block up by its paragraph margin, which here
+   tucked the weekday names under the first week's buttons. */
+.st-key-sched_cal [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-sched_cal button {{ min-height: 2.9rem; padding: .25rem .45rem; }}
+.st-key-sched_cal button p {{ font-size: .85rem; font-variant-numeric: tabular-nums;
+                              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.st-key-sched_cal button em {{ font-style: normal; opacity: .72; }}
+.st-key-sched_cal button em::before {{ content: "· "; }}
+.bip-sched-head {{ font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+                   color: {MUTED}; font-weight: 700; margin-bottom: .2rem; }}
+.st-key-sched_dayview {{ max-width: 760px; }}
+.st-key-sched_finals {{ gap: .25rem; }}
+.bip-sched-row {{ font-size: .95rem; color: {INK_2}; font-variant-numeric: tabular-nums; }}
+.bip-sched-row b {{ color: {INK}; font-weight: 800; }}
+
 /* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----
    Desktop is untouched: these rules only exist on phone-width viewports.
    Streamlit stacks every column full-width there; tile-shaped content
@@ -309,6 +335,17 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
   .bip-hero-title {{ font-size: 1.45rem; }}
   .bip-hero-spot {{ text-align: left; }}
   [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.45rem; }}
+  /* The calendar: seven narrow day buttons in a row (st.columns wrap=False,
+     let shrink past Streamlit's own minimum), the detail a small second line. */
+  .st-key-sched_cal [data-testid="stHorizontalBlock"] {{ gap: 3px; }}
+  .st-key-sched_cal [data-testid="stColumn"] {{ min-width: 0 !important; }}
+  .st-key-sched_cal button {{ min-height: 2.6rem; padding: 2px 1px; }}
+  .st-key-sched_cal button p {{ font-size: .78rem; line-height: 1.15; white-space: normal; }}
+  .st-key-sched_cal button em {{ display: block; font-size: .56rem; white-space: nowrap;
+                                 overflow: hidden; text-overflow: clip; }}
+  .st-key-sched_cal button em::before {{ content: none; }}
+  .bip-sched-wd {{ font-size: .58rem; letter-spacing: .02em; }}
+  .bip-sched-row {{ font-size: .82rem; }}
 }}
 </style>
 """
