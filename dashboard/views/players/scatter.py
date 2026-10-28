@@ -14,6 +14,7 @@ import streamlit as st
 
 from dashboard.lib import glossary, viz, viz_diagnosis
 from dashboard.lib import state as shared_state
+from dashboard.lib import theme as T
 from dashboard.lib.data import diagnosis, players, seasons
 from dashboard.lib.stats import qualification_threshold
 
@@ -117,7 +118,9 @@ def _pick_season() -> str:
 def _pick_min_games(season: str) -> int:
     """The minimum-games slider, set to the qualification rule whenever the
     season changes and the reader's own after that."""
-    if st.session_state.get(_MIN_GP_FOR_KEY) != season:
+    # Streamlit drops a widget's state on a run where it isn't rendered (another
+    # tab or page); the slider would come back at 1, so a lost value resets too.
+    if st.session_state.get(_MIN_GP_FOR_KEY) != season or MIN_GP_KEY not in st.session_state:
         st.session_state[_MIN_GP_FOR_KEY] = season
         st.session_state[MIN_GP_KEY] = qualification_threshold(players.player_season_stats(season))
     return st.slider(
@@ -159,13 +162,13 @@ def render_scatter() -> None:
     """The Scatter tab."""
     left, right = st.columns(2)
     with left:
-        season = _pick_season()
-    with right:
         x = _pick("Horizontal", X_KEY, DEFAULT_X)
-    left, right = st.columns(2)
-    with left:
-        y = _pick("Vertical", Y_KEY, DEFAULT_Y)
     with right:
+        y = _pick("Vertical", Y_KEY, DEFAULT_Y)
+    season_box, games_box, team_box = st.columns(3)
+    with season_box:
+        season = _pick_season()
+    with games_box:
         min_games = _pick_min_games(season)
 
     rows = diagnosis.league_player_rows(season, min_games)
@@ -177,8 +180,7 @@ def render_scatter() -> None:
     if st.session_state.get(TEAM_KEY) not in teams:
         st.session_state.pop(TEAM_KEY, None)
     st.session_state.setdefault(TEAM_KEY, ALL_TEAMS)
-    left, _ = st.columns(2)
-    with left:
+    with team_box:
         team = st.selectbox(
             "Team",
             teams,
@@ -190,7 +192,14 @@ def render_scatter() -> None:
         st.info(f"No player has {min_games}+ games in {season}. Lower the minimum.")
         return
 
-    caption = f"{len(rows)} players with {min_games}+ games"
+    # The chart skips players missing either stat (usage, AST% and PIE are null
+    # in the older seasons), so the count is of the dots drawn.
+    drawn = int(rows[[x, y]].notna().all(axis=1).sum())
+    if not drawn:
+        st.info(f"No player has both {METRICS[x].label} and {METRICS[y].label} in {season}.")
+        return
+
+    caption = f"{drawn} players with {min_games}+ games"
     caption += f", {team} highlighted." if team != ALL_TEAMS else "."
     st.caption(f"{caption} Dashed lines are the average of these players.")
 
@@ -216,6 +225,9 @@ def render_scatter() -> None:
         name_col="hover_name",
         fmt=format_value,
         detail_col="games",
+        # A traded player's dot would carry his last team's colour; with a team
+        # picked, all of its players take that team's.
+        highlight_color=None if team == ALL_TEAMS else T.team_color(team),
     )
     if fig.data:
         fig.data[0].marker.size = DOT_PX
