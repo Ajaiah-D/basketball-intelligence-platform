@@ -1,19 +1,35 @@
-"""Upcoming game predictions and the model's public track record."""
+"""Upcoming game predictions and the model's public track record.
+
+The next week's games are a compact list, one table a day, each row the
+matchup with the model's favourite marked (lib/matchup.py, the format the
+Schedule page uses too), its chance and the margin it expects. Below it,
+the track record: three numbers, the details behind them, and the latest
+settled games.
+"""
 
 from __future__ import annotations
 
+import html
+from datetime import date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
 
-from core.constants import HOME_PICK_THRESHOLD
-from dashboard.lib import glossary, stats, viz
+from dashboard.lib import glossary, matchup, nav, stats, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import predictions
+from dashboard.lib.tables import Col, html_table
 
-EASTERN = ZoneInfo("America/New_York")
+DAYS_AHEAD = 7  # the upcoming list: today and the six days after it
+RECENT_GAMES = 10  # settled games listed under the track record
+DETAILS = "How the model works and how well-calibrated it is"
+
+
+def today() -> date:
+    """Today in US Eastern time, the clock the schedule's dates are on.
+    Tests replace it, so they don't depend on the day they run."""
+    return datetime.now(matchup.EASTERN).date()
 
 
 def _day(d) -> str:
@@ -21,69 +37,14 @@ def _day(d) -> str:
     return f"{d:%a, %b} {d.day}"
 
 
-def _eastern_tipoff(tipoff_utc):
-    """The tip-off as a US Eastern Timestamp, or None when it isn't known."""
-    if tipoff_utc is None or pd.isna(tipoff_utc):
-        return None
-    return pd.Timestamp(tipoff_utc).tz_localize("UTC").tz_convert(EASTERN)
-
-
-def _clock(t) -> str:
-    if t is None:
-        return "TBD"
-    return f"{t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'} ET"
-
-
-def _split(win_probability: float) -> tuple[int, int]:
-    """Whole-number (home %, away %) that always add to 100."""
-    home = round(float(win_probability) * 100)
-    return home, 100 - home
-
-
-def prediction_card(r, tip: str) -> str:
-    """One upcoming game: tip-off time, both teams, a two-color probability
-    bar and a plain-English verdict. `r` is a row of an upcoming_predictions
-    frame; `tip` is the already-formatted tip-off label."""
-    home, away = r.home_team_abbreviation, r.away_team_abbreviation
-    home_pct, away_pct = _split(r.win_probability)
-    # Trust the probability over the margin's sign if they ever disagree.
-    home_fav = float(r.win_probability) >= HOME_PICK_THRESHOLD
-    fav, fav_pct = (home, home_pct) if home_fav else (away, away_pct)
-    # Never "by 0": a pick that is a coin flip is still a pick by a point.
-    by = max(1, round(abs(float(r.predicted_margin))))
-    # The underdog's side is dimmed so the favorite reads at a glance; the
-    # small gap keeps the split visible when both teams share a color.
-    away_op, home_op = (0.5, 1) if home_fav else (1, 0.5)
-    bar = (
-        f'<div style="display:flex;gap:2px;flex:1;height:8px;margin:0 .55rem;'
-        f'border-radius:4px;overflow:hidden">'
-        f'<div style="width:{away_pct}%;background:{T.team_color(away)};'
-        f'opacity:{away_op}"></div>'
-        f'<div style="width:{home_pct}%;background:{T.team_color(home)};'
-        f'opacity:{home_op}"></div></div>'
-    )
-    return (
-        f'<div class="bip-game">'
-        f'<div class="bip-game-date">{tip}</div>'
-        f'<div class="bip-game-line"><span class="tm">{T.team_dot(away)}{away}</span></div>'
-        f'<div class="bip-game-line"><span class="tm">{T.team_dot(home)}{home}</span></div>'
-        f'<div class="bip-game-line" style="margin-top:.35rem">'
-        f'<span class="tm">{away} {away_pct}%</span>{bar}'
-        f'<span class="tm">{home} {home_pct}%</span></div>'
-        f'<div class="bip-game-line" style="margin-top:.2rem">'
-        f'<span class="tm winner">{fav} by {by} · {fav_pct}%</span></div>'
-        f"</div>"
-    )
-
-
 def _upcoming(upcoming: pd.DataFrame) -> pd.DataFrame:
-    """Adds the Eastern tip-off, and the Eastern date games are grouped by
+    """Adds the tip-off label, and the Eastern date games are grouped by
     (falls back to the schedule date when the tip-off isn't known)."""
     df = upcoming.copy()
     # Plain lists, not a Timestamp column: pandas turns a None in a column of
     # tz-aware Timestamps into NaT, and NaT.date() is NaT, which groupby drops.
-    tips = [_eastern_tipoff(t) for t in df["tipoff_utc"]]
-    df["tip_label"] = [_clock(t) for t in tips]
+    tips = [matchup.eastern_tipoff(t) for t in df["tipoff_utc"]]
+    df["tip_label"] = [matchup.tipoff_label(t) for t in df["tipoff_utc"]]
     df["day_et"] = [
         t.date() if t is not None else pd.Timestamp(g).date()
         for t, g in zip(tips, df["game_date"], strict=True)
@@ -93,8 +54,82 @@ def _upcoming(upcoming: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values(["day_et", "sort_key", "game_id"], kind="stable")
 
 
-def _how_it_works() -> None:
-    with st.expander("How these predictions are made"):
+def _day_table(day: date, games: pd.DataFrame) -> str:
+    """One day's games as a four-column table, the date heading its
+    tip-off column."""
+    trios = list(
+        zip(
+            games["away_team_abbreviation"],
+            games["home_team_abbreviation"],
+            games["win_probability"],
+            strict=True,
+        )
+    )
+    rows = pd.DataFrame(
+        {
+            "tip": games["tip_label"].tolist(),
+            "game": [matchup.matchup_html(a, h, p) for a, h, p in trios],
+            "chance": [matchup.chance_html(a, h, p) for a, h, p in trios],
+            "margin": [matchup.margin_label(m) for m in games["predicted_margin"]],
+        }
+    )
+    cols = [
+        Col("tip", _day(day), left=True),
+        Col("game", "Matchup", fmt=str, left=True, help=glossary.TERMS["Model pick"]),
+        Col("chance", "Chance", fmt=str, left=True, help=glossary.TERMS["Chance"]),
+        Col("margin", "Margin", help=glossary.TERMS["Predicted margin"]),
+    ]
+    return f'<div class="bip-upcoming">{html_table(rows, cols)}</div>'
+
+
+def _upcoming_section(upcoming: pd.DataFrame) -> None:
+    if upcoming.empty:
+        st.info(f"No games in the next {DAYS_AHEAD} days.")
+    else:
+        day: Any  # a date; pandas-stubs type groupby keys as any scalar
+        for day, group in _upcoming(upcoming).groupby("day_et", sort=True):
+            st.markdown(_day_table(day, group), unsafe_allow_html=True)
+    if st.button(
+        "Later games are on the Schedule page",
+        key="pred_to_schedule",
+        type="tertiary",
+        icon=":material/calendar_month:",
+    ):
+        nav.go("schedule")
+
+
+def _track_record(upcoming: pd.DataFrame) -> bool:
+    """The KPI row, or one line saying why there is none. Whether any game
+    has settled."""
+    st.markdown("#### Track record")
+    if not predictions.settled_available():
+        # A warehouse published before mart_settled_predictions existed.
+        st.info("The track record appears after the next data refresh.")
+        return False
+    record = predictions.prediction_track_record()
+    if record["n"] == 0:
+        if upcoming.empty:
+            st.info(
+                "No predictions have been settled yet. Check back after the first games are played."
+            )
+        else:
+            first = _upcoming(upcoming).iloc[0]["day_et"]
+            st.info(f"The first predictions settle after opening night ({_day(first)}).")
+        return False
+
+    tiles = [
+        ("Accuracy", f"{record['accuracy'] * 100:.1f}%"),
+        ("Brier score", f"{record['brier']:.3f}"),
+        ("Margin error", f"{record['margin_mae']:.1f}"),
+    ]
+    for col, (label, value) in zip(st.columns(3), tiles, strict=True):
+        col.markdown(T.kpi(label, value, help=glossary.TERMS[label]), unsafe_allow_html=True)
+    st.caption(f"Settled games: {record['n']:,}")
+    return True
+
+
+def _details(settled: bool) -> None:
+    with st.expander(DETAILS):
         st.markdown(
             "Every team carries an Elo rating, a running score that rises with wins "
             "and falls with losses, adjusted for how strong the opponent was. A "
@@ -104,111 +139,53 @@ def _how_it_works() -> None:
             "step converts that margin into a "
             f"win probability{T.tip(glossary.TERMS['Win probability'])}. Recent form "
             "and rest days are not yet worked out for future games, so for now these "
-            "picks lean on ratings alone: a solid first pass, not the model's full "
-            "strength.",
+            "picks lean on ratings alone.",
             unsafe_allow_html=True,
         )
+        # calibration_bins is empty below its 50-game minimum: a chart of a
+        # handful of games would only show noise.
+        bins = stats.calibration_bins(predictions.settled_predictions()) if settled else None
+        if bins is not None and not bins.empty:
+            st.markdown(
+                f"**Calibration**{T.tip(glossary.TERMS['Calibration'])}", unsafe_allow_html=True
+            )
+            st.caption("When the model gave the home team a chance, how often it won.")
+            st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG, width="stretch")
 
 
-def _upcoming_section(upcoming: pd.DataFrame) -> None:
-    df = _upcoming(upcoming)
-    for day, group in df.groupby("day_et", sort=True):
-        st.markdown(f"#### {_day(day)}", unsafe_allow_html=True)
-        cols = st.columns(3)
-        r: Any  # see _recent_results
-        for i, r in enumerate(group.itertuples()):
-            cols[i % 3].markdown(prediction_card(r, r.tip_label), unsafe_allow_html=True)
-
-
-def _recent_results(recent: pd.DataFrame) -> pd.DataFrame:
+def _recent_table(recent: pd.DataFrame) -> str:
     rows = []
     # pandas-stubs type each itertuples field as any scalar; the columns are
     # only known at runtime.
     r: Any
     for r in recent.itertuples():
-        # A coin flip is a home pick - the card's favorite and the accuracy
-        # KPI (predictions.prediction_track_record) use the same rule.
-        home_pick = float(r.win_probability) >= HOME_PICK_THRESHOLD
+        # A coin flip is a home pick, the rule the accuracy KPI grades with.
+        home_pick, pct = matchup.favourite_pct(r.win_probability)
         pick = r.home if home_pick else r.away
-        pick_pct = _split(r.win_probability)[0 if home_pick else 1]
-        home_won = r.home_pts > r.away_pts
-        winner = r.home if home_won else r.away
+        winner = r.home if r.home_pts > r.away_pts else r.away
         hi, lo = max(r.home_pts, r.away_pts), min(r.home_pts, r.away_pts)
         rows.append(
             {
-                "Date": _day(pd.Timestamp(r.game_date)),
-                "Matchup": f"{r.away} @ {r.home}",
-                "Pick": f"{pick} {pick_pct}%",
-                "Final": f"{winner} {hi}-{lo}",
-                "Correct": "✓" if r.correct else "✗",
+                "game": f"{r.away} @ {r.home}",
+                "pick": f'<b style="color:{T.team_color(pick)}">{html.escape(pick)}</b>',
+                "chance": f"{pct}%",
+                "final": f"{winner} {hi}-{lo}",
+                "correct": "✓" if r.correct else "✗",
             }
         )
-    return pd.DataFrame(rows)
-
-
-def _track_record(upcoming: pd.DataFrame) -> None:
-    st.markdown("#### Track record", unsafe_allow_html=True)
-    record = predictions.prediction_track_record()
-    if record.get("n", 0) == 0:
-        if upcoming.empty:
-            st.info(
-                "No predictions have been settled yet. Check back after the first games are played."
-            )
-        else:
-            first = _upcoming(upcoming).iloc[0]["day_et"]
-            st.info(f"The first predictions settle after opening night ({_day(first)}).")
-        return
-
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(
-        T.kpi(
-            "Accuracy",
-            f"{record['accuracy'] * 100:.1f}%",
-            f"over {record['n']} games",
-            help=glossary.TERMS["Accuracy"],
+    cols = [
+        Col("game", "Matchup", left=True),
+        Col("pick", "Pick", fmt=str, left=True, help=glossary.TERMS["Pick"]),
+        Col("chance", "Chance", help=glossary.TERMS["Chance"]),
+        Col("final", "Final", left=True, help=glossary.TERMS["Final"]),
+        Col(
+            "correct",
+            "Correct",
+            help=glossary.TERMS["Correct"],
+            css=lambda v: "pos" if v == "✓" else "neg",
         ),
-        unsafe_allow_html=True,
-    )
-    c2.markdown(
-        T.kpi(
-            "Brier score",
-            f"{record['brier']:.3f}",
-            "lower is better; 0.25 is a coin flip",
-            help=glossary.TERMS["Brier score"],
-        ),
-        unsafe_allow_html=True,
-    )
-    c3.markdown(
-        T.kpi(
-            "Margin error",
-            f"{record['margin_mae']:.1f}",
-            "average points off",
-            help=glossary.TERMS["Margin error"],
-        ),
-        unsafe_allow_html=True,
-    )
-
-    bins = stats.calibration_bins(predictions.settled_predictions())
-    if not bins.empty:
-        st.markdown(
-            f"#### Calibration{T.tip(glossary.TERMS['Calibration'])}", unsafe_allow_html=True
-        )
-        st.caption("When the model gave the home team a chance, how often it won.")
-        st.plotly_chart(viz.calibration_chart(bins), config=viz.PLOTLY_CONFIG, width="stretch")
-
-    recent = predictions.recent_settled_predictions()
-    if not recent.empty:
-        st.markdown("#### Recent results")
-        grid = _recent_results(recent)
-        st.dataframe(
-            grid,
-            hide_index=True,
-            width="stretch",
-            row_height=38,
-            # Tall enough for every row: a short list should not scroll.
-            height=38 * (len(grid) + 1) + 3,
-            column_config={"Correct": st.column_config.TextColumn("Correct", width="small")},
-        )
+    ]
+    return f'<div class="bip-recent">{html_table(pd.DataFrame(rows), cols)}</div>'
 
 
 def render() -> None:
@@ -222,14 +199,16 @@ def render() -> None:
         return
 
     st.caption(
-        "Each card shows the model's chance of a win for either team and the "
-        "margin it expects the favorite to win by."
+        f"The model's pick for each game in the next {DAYS_AHEAD} days, and how "
+        "its settled picks have done."
     )
+    now = today()
+    upcoming = predictions.upcoming_predictions(now, now + timedelta(days=DAYS_AHEAD - 1))
+    _upcoming_section(upcoming)
 
-    upcoming = predictions.upcoming_predictions()
-    if upcoming.empty:
-        st.info("No upcoming games on the schedule right now.")
-    else:
-        _upcoming_section(upcoming)
-    _how_it_works()
-    _track_record(upcoming)
+    settled = _track_record(upcoming)
+    _details(settled)
+    if settled:
+        recent = predictions.recent_settled_predictions(RECENT_GAMES)
+        st.markdown("#### Recent results")
+        st.markdown(_recent_table(recent), unsafe_allow_html=True)

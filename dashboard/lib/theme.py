@@ -318,6 +318,31 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
 .bip-sched-row {{ font-size: .95rem; color: {INK_2}; font-variant-numeric: tabular-nums; }}
 .bip-sched-row b {{ color: {INK}; font-weight: 800; }}
 
+/* ---- Predictions page (views/predictions.py) ----
+   One table per day, its date in the first header cell. Fixed column
+   widths line the days' tables up under each other; below the min-width
+   a phone scrolls the table in its own box (bip-table-wrap), not the page. */
+.bip-upcoming, .bip-recent {{ max-width: 620px; }}
+.bip-upcoming {{ margin-bottom: .9rem; }}
+.bip-upcoming table.bip-table {{ table-layout: fixed; min-width: 26rem; }}
+/* These tables fit a phone, so the first column needn't stick (and paint
+   its solid backing over the page) */
+.bip-upcoming table.bip-table tr > :first-child,
+.bip-recent table.bip-table tr > :first-child {{ position: static; background: none; }}
+.bip-upcoming table.bip-table th:nth-child(1) {{ width: 6.4rem; color: {INK_2}; }}
+.bip-upcoming table.bip-table th:nth-child(3) {{ width: 8.6rem; }}
+.bip-upcoming table.bip-table th:nth-child(4) {{ width: 5rem; }}
+.bip-upcoming table.bip-table td {{ height: 36px; padding-top: 0; padding-bottom: 0; }}
+.bip-upcoming table.bip-table td:nth-child(2) {{ color: {INK_2}; }}
+.bip-upcoming table.bip-table td b, .bip-recent table.bip-table td b {{ font-weight: 800; }}
+/* matchup.chance_html: "65%" and a thin bar from 50% (empty) to 100% */
+.bip-chance {{ display: inline-flex; align-items: center; gap: .55rem; }}
+.bip-chance-pct {{ min-width: 2.4rem; text-align: right; color: {INK}; }}
+.bip-chance-bar {{ display: inline-block; width: 4.5rem; height: 4px;
+                   background: rgba(255,255,255,.08); }}
+.bip-chance-bar > span {{ display: block; height: 100%; }}
+.bip-chance-toss {{ width: 4.5rem; color: {MUTED}; font-size: .75rem; }}
+
 /* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----
    Desktop is untouched: these rules only exist on phone-width viewports.
    Streamlit stacks every column full-width there; tile-shaped content
@@ -335,6 +360,23 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
   .bip-hero-title {{ font-size: 1.45rem; }}
   .bip-hero-spot {{ text-align: left; }}
   [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.45rem; }}
+  /* Predictions: narrower fixed columns and a shorter bar, so the matchup
+     keeps room for "NYK @ BOS" on a 360px screen. */
+  .bip-upcoming table.bip-table, .bip-recent table.bip-table {{ font-size: .8rem; }}
+  .bip-upcoming table.bip-table th, .bip-upcoming table.bip-table td,
+  .bip-recent table.bip-table th, .bip-recent table.bip-table td {{
+    padding-left: .3rem; padding-right: .3rem; }}
+  .bip-upcoming table.bip-table th, .bip-recent table.bip-table th {{ letter-spacing: .02em; }}
+  .bip-recent table.bip-table th, .bip-recent table.bip-table td {{
+    padding-left: .22rem; padding-right: .22rem; }}
+  .bip-upcoming table.bip-table {{ min-width: 21rem; }}
+  .bip-upcoming table.bip-table th:nth-child(1) {{ width: 4.9rem; }}
+  .bip-upcoming table.bip-table th:nth-child(3) {{ width: 5.6rem; }}
+  .bip-upcoming table.bip-table th:nth-child(4) {{ width: 4.6rem; }}
+  .bip-chance {{ gap: .35rem; }}
+  .bip-chance-pct {{ min-width: 2.1rem; }}
+  .bip-chance-bar, .bip-chance-toss {{ width: 2.5rem; }}
+  .bip-chance-toss {{ font-size: .7rem; }}
   /* The calendar: seven narrow day buttons in a row (st.columns wrap=False,
      let shrink past Streamlit's own minimum), the detail a small second line. */
   .st-key-sched_cal [data-testid="stHorizontalBlock"] {{ gap: 3px; }}
