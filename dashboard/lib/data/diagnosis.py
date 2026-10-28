@@ -1,12 +1,13 @@
 """The numbers behind the diagnosis views: each team's profile of league
 ranks, the rotation behind it (the player breakdown), one player's
-percentiles, and the player scatter's source.
+percentiles, and the player scatter's and compare's sources.
 
 The three marts these read (mart_team_profile, mart_player_percentiles,
 mart_player_defense) are newer than some published warehouses, so a page
 checks profile_available() before calling anything else here.
 league_player_rows() reads only mart_player_season and works on any
-warehouse.
+warehouse. The Compare tab needs just the percentiles mart
+(percentiles_available()).
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ def profile_available() -> bool:
     """Whether the warehouse has all three diagnosis marts. A warehouse
     published before them has none, and the pages show a notice instead."""
     return objects_exist(*PROFILE_MARTS)
+
+
+def percentiles_available() -> bool:
+    """Whether the warehouse has mart_player_percentiles, the only mart the
+    Players page's Compare tab needs."""
+    return objects_exist("main_marts.mart_player_percentiles")
 
 
 def team_profile(season: str) -> pd.DataFrame:
@@ -214,3 +221,74 @@ def league_player_rows(season: str, min_games: int) -> pd.DataFrame:
         """,
         (season, int(min_games)),
     )
+
+
+def top_scorers(season: str, limit: int) -> pd.DataFrame:
+    """The `limit` qualified players in `season` with the most points per
+    game, best first: the player_id, season, player, team (his last),
+    team_label and points_per_game the Compare tab's pickers list."""
+    return q(
+        """
+        select
+            player_id,
+            season,
+            player_name  as player,
+            team_abbreviation as team,
+            team_label,
+            points_per_game
+        from main_marts.mart_player_percentiles
+        where season = ? and is_qualified
+        order by points_per_game desc, player_id
+        limit ?
+        """,
+        (season, int(limit)),
+    )
+
+
+def compare_line(season: str, player_id: int) -> pd.Series | None:
+    """One player-season for the Compare tab, or None when the percentiles
+    mart has no such row: who he was (player, team his last, team_label,
+    games_played), whether he qualified, the per-game line and each radar
+    measure's value with its `<measure>_pctile`.
+
+    Percentiles are null for a player below the games cut and for a measure
+    the era's box scores cannot give."""
+    df = q(
+        """
+        select
+            p.season,
+            p.player_id,
+            p.player_name             as player,
+            p.team_abbreviation       as team,
+            p.team_label,
+            p.games_played,
+            p.is_qualified,
+            s.minutes_per_game,
+            p.points_per_game,
+            p.points_per_game_pctile,
+            p.true_shooting_pct,
+            p.true_shooting_pct_pctile,
+            p.rebounds_per_game,
+            p.rebound_pct,
+            p.rebound_pct_pctile,
+            p.assists_per_game,
+            p.assist_pct,
+            p.assist_pct_pctile,
+            p.turnover_pct,
+            p.turnover_pct_pctile,
+            p.steals_per_game,
+            p.steal_pct,
+            p.steal_pct_pctile,
+            p.blocks_per_game,
+            p.block_pct,
+            p.block_pct_pctile,
+            p.threes_made_per_game,
+            p.threes_made_per_game_pctile
+        from main_marts.mart_player_percentiles p
+        left join main_marts.mart_player_season s
+               on s.season = p.season and s.player_id = p.player_id
+        where p.season = ? and p.player_id = ?
+        """,
+        (season, int(player_id)),
+    )
+    return None if df.empty else df.iloc[0]
