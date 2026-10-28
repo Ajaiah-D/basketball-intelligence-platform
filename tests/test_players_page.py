@@ -168,26 +168,25 @@ def test_latest_seasons_search_ignores_case_and_accents(con):
 # --- A player preset by another page (Teams' "Open on Players") ------------------
 
 
-def _short_season_player(con, season: str) -> tuple[str, int]:
-    """A player with 10-24 games that season: in a team's rotation, but
-    under the page's default 25-game floor."""
+def _short_season_player(con) -> tuple[str, str, int]:
+    """The newest season with a player on 10-24 games (in a team's rotation,
+    but under a full season's 25-game floor), and that player. The newest
+    season itself has nobody on 10+ games in its first weeks."""
     row = con.execute(
         """
-        select player_name, games_played
+        select season, player_name, games_played
         from main_marts.mart_player_season
-        where season = ? and games_played between 10 and 24
-        order by player_name
+        where games_played between 10 and 24
+        order by season desc, player_name
         limit 1
-        """,
-        [season],
+        """
     ).fetchone()
-    assert row, f"no 10-24 game player in {season}"
-    return row[0], int(row[1])
+    assert row, "no 10-24 game player in any season"
+    return row[0], row[1], int(row[2])
 
 
 def test_a_preset_player_opens_even_under_the_games_floor(con):
-    season = seasons.latest_season()
-    name, games = _short_season_player(con, season)
+    season, name, games = _short_season_player(con)
     at = AppTest.from_string(SCRIPT, default_timeout=60)
     at.session_state["season"] = season
     at.session_state[PLAYERS_PICK_KEY] = name
@@ -289,8 +288,7 @@ def test_the_trend_picker_switches_the_chart(con):
 
 
 def test_a_preset_player_gets_his_own_game_log(con):
-    season = seasons.latest_season()
-    name, games = _short_season_player(con, season)
+    season, name, games = _short_season_player(con)
     at = _preset_app(season, name)
     assert at.selectbox(key="players_pick").value == name
     assert _game_log_rows(at) == games
