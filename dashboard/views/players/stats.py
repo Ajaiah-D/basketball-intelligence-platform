@@ -21,7 +21,7 @@ from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
-from dashboard.lib.stats import percentile_of
+from dashboard.lib.stats import percentile_of, qualification_threshold
 from dashboard.views.players import game_log
 
 TABLE_COLS = [
@@ -87,7 +87,26 @@ PLAYERS_SEASON_KEY = "players_season"
 PLAYERS_SEASON_ALL_KEY = "players_season_all"
 PLAYERS_DETAIL_KEY = "players_pick"
 PLAYERS_MIN_GP_KEY = "players_min_gp"
-SEASON_MIN_GP = 25
+# The season the min-games slider was last reset for.
+_MIN_GP_FOR_KEY = "players_min_gp_season"
+
+
+def _reset_min_games(season: str) -> None:
+    """Set the min-games slider to the season's qualification rule (25 games,
+    fewer early in a live season) whenever the season changes, and leave the
+    reader's own value after that. A fixed 25 empties the table for the
+    first weeks of a season."""
+    # Streamlit drops a widget's state on a run where it isn't rendered
+    # (Career scope, another tab or page); the slider would come back at 1,
+    # so a lost value resets too.
+    if (
+        st.session_state.get(_MIN_GP_FOR_KEY) != season
+        or PLAYERS_MIN_GP_KEY not in st.session_state
+    ):
+        st.session_state[_MIN_GP_FOR_KEY] = season
+        st.session_state[PLAYERS_MIN_GP_KEY] = qualification_threshold(
+            players.player_season_stats(season)
+        )
 
 
 def _apply_preset(season: str) -> None:
@@ -97,7 +116,8 @@ def _apply_preset(season: str) -> None:
     drops to his games when he has fewer than it asks for (a team's
     rotation starts at 10 games), so he is in the table and the picker and
     stays there as the page reruns. A name nobody has this season is
-    ignored."""
+    ignored. Runs after _reset_min_games, so a new season's reset doesn't
+    undo the lowered slider."""
     preset = st.session_state.pop(PLAYERS_PICK_KEY, None)
     if not preset:
         return
@@ -107,7 +127,7 @@ def _apply_preset(season: str) -> None:
         return
     st.session_state[PLAYERS_DETAIL_KEY] = preset
     games = int(match["gp"].min())
-    if games < st.session_state.get(PLAYERS_MIN_GP_KEY, SEASON_MIN_GP):
+    if games < st.session_state[PLAYERS_MIN_GP_KEY]:
         st.session_state[PLAYERS_MIN_GP_KEY] = games
 
 
@@ -169,10 +189,10 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
         min_gp = f2.slider("Min career games", 1, 1500, 200)
     else:
         stats = players.player_season_stats(season)
-        # Keyed, so a preset player (_apply_preset) can lower it; set before
-        # the slider rather than passed as its value, which Streamlit would
-        # warn about alongside a value set through session state.
-        st.session_state.setdefault(PLAYERS_MIN_GP_KEY, SEASON_MIN_GP)
+        # Keyed, so _reset_min_games and a preset player (_apply_preset) can
+        # set it; set before the slider rather than passed as its value,
+        # which Streamlit would warn about alongside a value set through
+        # session state.
         min_gp = f2.slider("Min games", 1, 82, key=PLAYERS_MIN_GP_KEY)
 
     with head:
@@ -457,6 +477,7 @@ def _season_detail(row, row_season: str) -> None:
 def render_stats(head: DeltaGenerator) -> None:
     """The Stats tab. `head` is the container the page title goes in."""
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
+    _reset_min_games(season)
     _apply_preset(season)
 
     f = _filter_bar(season, head)

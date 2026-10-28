@@ -227,6 +227,50 @@ def test_a_short_rotation_gets_one_button_per_player(con, switched, monkeypatch)
     assert switched == ["players-page"]
 
 
+# A week into 2026-27 nobody has 10 games: the full warehouse only.
+LIVE = "2026-27"
+FULL = "2025-26"
+
+
+@pytest.mark.full_warehouse
+def test_early_in_a_season_the_breakdown_lowers_its_cut_and_says_so(con):
+    assert seasons.seasons()[0] == LIVE
+    cut = diagnosis_data.rotation_min_games(LIVE)
+    assert cut < diagnosis_data.ROTATION_MIN_GAMES
+    team = _team_names(con, LIVE)[0]
+    at = _app(LIVE, team)
+    assert "Player breakdown" in _text(at)
+    assert f"Early in the season: players with {cut}+ games for the team." in _captions(at)
+    assert at.selectbox(key=breakdown.OPEN_KEY).options
+
+
+@pytest.mark.full_warehouse
+def test_a_full_season_keeps_the_ten_game_rotation(con):
+    assert diagnosis_data.rotation_min_games(FULL) == 10
+    team = _team_names(con, FULL)[0]
+    code = con.execute(
+        "select team_abbreviation from main_marts.mart_team_standings"
+        " where season = ? and team_name = ?",
+        [FULL, team],
+    ).fetchone()[0]
+    assert (diagnosis_data.team_drivers(FULL, code)["games_played"] >= 10).all()
+    at = _app(FULL, team)
+    assert "Player breakdown" in _text(at)
+    assert "Early in the season" not in _captions(at)
+
+
+def test_a_team_without_a_rotation_gets_one_line(con):
+    at = AppTest.from_string(BREAKDOWN_SCRIPT, default_timeout=60)
+    at.session_state["season"] = MODERN
+    at.session_state["team"] = "ZZZ"
+    at.run()
+    assert not at.exception, at.exception
+    assert "Player breakdown" in _text(at)
+    assert len(at.caption) == 1
+    assert at.caption[0].value == "No ZZZ player has 10+ games for the team in 2024-25."
+    assert not at.get("plotly_chart")
+
+
 # --- The two-stat scatter -------------------------------------------------------------
 
 

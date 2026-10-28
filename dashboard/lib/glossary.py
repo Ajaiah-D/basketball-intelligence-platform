@@ -213,9 +213,9 @@ TERMS = {
     "Vs winning teams": "Record against teams that finished the season above .500.",
     # The player breakdown under the profile
     "Player breakdown": (
-        "Each dot is one rotation player (10+ games for this team), sized by "
-        "his minutes for it. The dashed line is the league median among "
-        "qualified players that season."
+        "Each dot is one rotation player (10+ games for this team, fewer early "
+        "in a season), sized by his minutes for it. The dashed line is the "
+        "league median among qualified players that season."
     ),
     # Predictions
     "Accuracy": "The share of games where the predicted winner actually won.",

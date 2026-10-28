@@ -95,7 +95,13 @@ def diagnosis_warehouse(tmp_path):
                 "game_score": 9.0,
             }
         )
-        pct = {"season": SEASON, "player_id": pid, "is_qualified": qualified}
+        # Games run to 25 (Eve's), so the leaderboard cut is 60% of it: 15.
+        pct = {
+            "season": SEASON,
+            "player_id": pid,
+            "is_qualified": qualified,
+            "qualification_games": 15,
+        }
         for col in D.driver_measures():
             pct[f"{col}_pctile"] = 50.0 if qualified else None
         pct_rows.append(pct)
@@ -192,6 +198,25 @@ def test_the_rotation_is_ten_games_for_this_team(diagnosis_warehouse):
     assert rows["player"].tolist() == ["Ann Alpha", "Bob Beta"]
     assert rows["games_played"].tolist() == [20, 12]
     assert rows["minutes"].tolist() == [640, 350]
+
+
+def test_the_rotation_cut_is_ten_once_the_leaderboard_cut_passes_it(diagnosis_warehouse):
+    assert diagnosis.rotation_min_games(SEASON) == diagnosis.ROTATION_MIN_GAMES == 10
+
+
+def test_early_in_a_season_the_rotation_cut_drops_to_the_leaderboards(diagnosis_warehouse):
+    # A week in, the most games anyone has is 4 and the leaderboard cut 2.
+    with duckdb.connect(str(diagnosis_warehouse)) as con:
+        con.execute("update main_marts.mart_player_percentiles set qualification_games = 2")
+    data_core.clear_caches()
+    assert diagnosis.rotation_min_games(SEASON) == 2
+    # Cid Gamma's 9 games now count.
+    rows = diagnosis.team_drivers(SEASON, "AAA")
+    assert rows["player"].tolist() == ["Ann Alpha", "Bob Beta", "Cid Gamma"]
+
+
+def test_a_season_without_players_keeps_the_full_cut(diagnosis_warehouse):
+    assert diagnosis.rotation_min_games("1999-00") == diagnosis.ROTATION_MIN_GAMES
 
 
 def test_three_point_share_is_of_the_teams_attempts(diagnosis_warehouse):
