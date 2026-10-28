@@ -174,6 +174,13 @@ TERMS = {
         "turnovers, the fewest points allowed. Pace and 3-pt rate are style, "
         "shown in gray, ranked from the fastest and the most threes taken."
     ),
+    "Player percentile": (
+        "Where a player-season ranks among that season's qualified players "
+        "(those with enough games to be ranked: 60% of the most anyone "
+        "played, between 1 and 25): 100 is the top of the season, 50 the "
+        "middle. Turnover rate is ranked the other way, so fewer turnovers "
+        "is a higher percentile."
+    ),
     "Compare two stats": (
         "Each dot is a team that season, on the two stats you pick. The "
         "dashed lines mark the league average of each. Where lower numbers "

@@ -169,6 +169,31 @@ def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.
     )
 
 
+def player_seasons_matching(name: str, limit: int = 50) -> pd.DataFrame:
+    """Every season of each player whose name contains `name` (matched as
+    player_latest_seasons does), newest first and then by points per game:
+    player_id, season, player, team (his last), team_label, gp and ppg. At
+    most `limit` rows, so a short search such as "a" stays a list."""
+    matches = _names_containing(fold(name).strip())
+    return q(
+        """
+        select
+            player_id,
+            season,
+            player_name       as player,
+            team,
+            team_label,
+            games_played      as gp,
+            points_per_game   as ppg
+        from main_marts.mart_player_season
+        where list_contains(?, player_name)
+        order by season desc, points_per_game desc nulls last, player_id
+        limit ?
+        """,
+        (matches, int(limit)),
+    )
+
+
 def player_career_stats(min_games: int = 1) -> pd.DataFrame:
     """One row per player pooled across every ingested season. `team` is the
     most recent; percentages are computed from summed makes/attempts."""
