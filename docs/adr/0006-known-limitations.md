@@ -66,13 +66,6 @@ current architecture:
    backfilled: `ingestion/nba_ingest.py --all-pbp` can do it, at about
    1,300 API calls per season.
 
-6. **The settled-predictions query exists twice until the next publish.**
-   `mart_settled_predictions` is newer than the published warehouse, so the
-   dashboard keeps an identical copy of its SQL
-   (`dashboard/lib/data/predictions.py`), held equal by
-   `tests/test_settled_predictions.py`. This is the open contract step in
-   `0008-dbt-marts-as-the-single-source-of-truth.md`.
-
 ## Consequences
 
 Writing these down makes the operational, data and business risk profile
@@ -94,6 +87,4 @@ Limitation 3 is fixed by splitting the affected codes' rows in
 Limitation 4 is a model change: refit the spread and the home edge, bump
 `model_version`, and let the track record show the new version
 separately. Limitation 5 is a backfill run, limited by the API's rate
-rather than by code. Limitation 6 ends on its own schedule: once a refresh
-has published the mart, the dashboard reads it, and the copy and its
-equality test are deleted.
+rather than by code.

@@ -1,11 +1,8 @@
-"""The settled-predictions query exists twice: as dbt's
-mart_settled_predictions, which ml/evaluate.py reads, and as the dashboard's
-own copy in dashboard/lib/data/predictions.py, which stays until a warehouse
-with the model is published. These tests fail the moment the two differ, in
-text or in output. The metric math is duplicated too (the dashboard can't
-import ml), so the track records are compared as well."""
+"""The graded predictions, read from dbt's mart_settled_predictions by both
+the dashboard and ml/evaluate.py. These check the mart's grading rules on
+synthetic games and on real ones, and that the dashboard's track record is
+ml's numbers (the dashboard can't import ml, so the two score separately)."""
 
-import re
 import shutil
 
 import duckdb
@@ -18,43 +15,10 @@ from dashboard.lib.data import predictions
 from ml import evaluate
 from ml.train import evaluate as ml_metrics
 
-MODEL = (
-    paths.PROJECT_ROOT
-    / "dbt"
-    / "basketball_intelligence"
-    / "models"
-    / "marts"
-    / "mart_settled_predictions.sql"
-)
-
-
-def _model_query() -> str:
-    """The model's real query (the branch built when main.predictions exists),
-    with its Jinja references written out as the tables they resolve to."""
-    text = MODEL.read_text(encoding="utf-8")
-    match = re.search(r"\{%-? else -?%\}(.*)\{%-? endif -?%\}", text, re.S)
-    assert match, "mart_settled_predictions.sql lost its else/endif branch"
-    return (
-        match.group(1)
-        .replace("{{ predictions }}", "main.predictions")
-        .replace("{{ ref('fct_team_game') }}", "main_marts.fct_team_game")
-    )
-
-
-def _normalized(sql: str) -> str:
-    without_comments = re.sub(r"--[^\n]*", "", sql)
-    return " ".join(without_comments.split())
-
-
-def test_the_dashboard_query_is_the_model_word_for_word():
-    query = _model_query()
-    assert "{{" not in query and "{%" not in query, "an unresolved Jinja reference"
-    assert _normalized(predictions.SETTLED_PREDICTIONS_SQL) == _normalized(query)
-
 
 @pytest.fixture
-def synthetic_warehouse(tmp_path):
-    """Predictions and results shaped to exercise every rule of the query: a
+def synthetic_warehouse(tmp_path, add_settled_mart):
+    """Predictions and results shaped to exercise every rule of the mart: a
     game predicted twice (only the first is graded), a tie on predicted_at
     (prediction_id decides), a no-contest 0-0 game, and a prediction for a
     game not yet played."""
@@ -90,12 +54,13 @@ def synthetic_warehouse(tmp_path):
             ('g2', -4, false, 99, 103),
             ('g3', 0, false, 0, 0)
     """)
+    add_settled_mart(con)
     con.close()
     with data_core.use_warehouse(path):
         yield path
 
 
-def test_the_query_applies_every_grading_rule(synthetic_warehouse):
+def test_the_mart_applies_every_grading_rule(synthetic_warehouse):
     settled = predictions.settled_predictions()
     # g1 graded on its first prediction, g2 on b1 (the tie on predicted_at
     # goes to prediction_id), g3 is a no-contest and g4 is unplayed.
@@ -103,6 +68,67 @@ def test_the_query_applies_every_grading_rule(synthetic_warehouse):
         ["g1", 0.60],
         ["g2", 0.48],
     ]
+
+
+@pytest.fixture
+def mart_only_warehouse(tmp_path):
+    """The mart as a plain table and nothing it is built from: whatever the
+    dashboard returns can only have come from the mart."""
+    path = tmp_path / "mart_only.duckdb"
+    with duckdb.connect(str(path)) as con:
+        con.execute("create schema main_marts")
+        con.execute("create schema main_staging")
+        con.execute("""
+            create table main_marts.mart_settled_predictions as
+            select * from (values
+                ('g1', 'ridge-v1', date '2026-10-21', 3.0, 0.60, 7, true, 110, 103),
+                ('g2', 'ridge-v1', date '2026-10-22', -1.0, 0.48, -4, false, 99, 103),
+                ('g3', 'ridge-v1', date '2026-10-23', 2.0, 0.70, -2, false, 100, 102)
+            ) t(game_id, model_version, game_date, predicted_margin, win_probability,
+                margin, home_won, home_points, away_points)
+        """)
+        con.execute("""
+            create table main_staging.stg_schedule as
+            select * from (values
+                ('g1', date '2026-10-21', 'BOS', 'NYK'),
+                ('g2', date '2026-10-22', 'LAL', 'PHI'),
+                ('g3', date '2026-10-23', 'MIA', 'DEN')
+            ) t(game_id, game_date, home_team_abbreviation, away_team_abbreviation)
+        """)
+    with data_core.use_warehouse(path):
+        yield path
+
+
+def test_the_dashboard_reads_the_graded_games_from_the_mart(mart_only_warehouse):
+    assert predictions.settled_available()
+    settled = predictions.settled_predictions()
+    assert settled["game_id"].tolist() == ["g1", "g2", "g3"]
+    record = predictions.prediction_track_record()
+    # g1 and g2 called right, g3's 70% home pick lost.
+    assert record["n"] == 3
+    assert record["accuracy"] == pytest.approx(2 / 3)
+    assert record["brier"] == pytest.approx((0.4**2 + 0.48**2 + 0.7**2) / 3)
+    assert record["margin_mae"] == pytest.approx((4 + 3 + 4) / 3)
+    recent = predictions.recent_settled_predictions()
+    assert recent["away"].tolist() == ["DEN", "PHI", "NYK"]  # newest first
+    assert recent["correct"].tolist() == [False, True, True]
+
+
+def test_a_warehouse_without_the_mart_has_no_track_record(tmp_path):
+    # A warehouse published before the mart: the raw tables are there, but
+    # the dashboard grades nothing itself any more.
+    path = tmp_path / "no_mart.duckdb"
+    with duckdb.connect(str(path)) as con:
+        con.execute("create schema main_marts")
+        con.execute("create table main.predictions (game_id varchar, win_probability double)")
+        con.execute("insert into main.predictions values ('g1', 0.6)")
+        con.execute("create table main_marts.fct_team_game (game_id varchar, home_won boolean)")
+        con.execute("insert into main_marts.fct_team_game values ('g1', true)")
+    with data_core.use_warehouse(path):
+        assert not predictions.settled_available()
+        assert predictions.settled_predictions().empty
+        assert predictions.prediction_track_record() == {"n": 0}
+        assert predictions.recent_settled_predictions().empty
 
 
 # ml.train.evaluate clips probabilities to [1e-6, 1 - 1e-6] for log loss and
@@ -249,7 +275,7 @@ def _the_model(path) -> pd.DataFrame:
         ).df()
 
 
-def test_the_dbt_view_and_the_dashboard_agree_on_real_games(warehouse_copy):
+def test_the_mart_grades_real_games_on_their_first_prediction(warehouse_copy):
     path, expected = warehouse_copy
     dashboard = predictions.settled_predictions()
     pd.testing.assert_frame_equal(dashboard, _the_model(path))
