@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -323,3 +324,143 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
     _reset_caches()
     yield warehouse_with_player_impact
     _reset_caches()
+
+
+# --- A tiny season schedule --------------------------------------------------------
+#
+# For data/schedule.py and the Schedule page. One synthetic season covers the
+# shapes: a tie for top scorer, a neutral-site game whose result is oriented
+# the other way, a cancelled 0-0 game, a re-predicted game, a preseason game.
+
+SCHEDULE_SEASON = "2030-31"
+
+_SCHEDULE_IDS = {"BOS": 1, "NYK": 2, "MIA": 3, "DAL": 4}
+
+# (game_id, date, tipoff_utc, home, away)
+_SCHEDULE_GAMES = [
+    ("0013000001", "2030-10-10", "2030-10-10 23:00:00", "BOS", "NYK"),  # preseason
+    ("0023000001", "2030-10-20", "2030-10-20 23:30:00", "BOS", "NYK"),
+    ("0023000002", "2030-10-22", "2030-10-23 00:00:00", "NYK", "BOS"),
+    ("0023000003", "2030-10-22", "2030-10-22 19:00:00", "MIA", "DAL"),  # neutral
+    ("0023000004", "2030-10-25", "2030-10-25 23:00:00", "BOS", "MIA"),  # upcoming
+    ("0023000005", "2030-11-02", "2030-11-02 23:00:00", "BOS", "DAL"),  # cancelled
+]
+
+# fct_team_game rows: (game_id, home, away, home_points, away_points).
+# The neutral game is oriented DAL-home there, the other way round.
+_SCHEDULE_RESULTS = [
+    ("0023000001", "BOS", "NYK", 112, 105),
+    ("0023000002", "NYK", "BOS", 100, 99),
+    ("0023000003", "DAL", "MIA", 90, 95),
+    ("0023000005", "BOS", "DAL", 0, 0),
+]
+
+# (game_id, player, points)
+_SCHEDULE_LOGS = [
+    ("0023000001", "Zed Zulu", 30),
+    ("0023000001", "Abe Able", 30),
+    ("0023000001", "Cal Cole", 12),
+    ("0023000002", "Cal Cole", 41),
+    ("0023000003", "Dan Dee", None),
+    ("0023000003", "Eli Eck", 22),
+]
+
+# (prediction_id, predicted_at, game_id, win_probability, predicted_margin)
+_SCHEDULE_PREDICTIONS = [
+    ("p1", "2030-10-19 10:00:00", "0023000001", 0.61, 3.0),
+    ("p2", "2030-10-23 10:00:00", "0023000004", 0.55, 1.5),
+    ("p3", "2030-10-24 10:00:00", "0023000004", 0.65, 5.0),
+]
+
+
+def _schedule_table(con, name, df):
+    con.register("df_view", df)
+    con.execute(f"create table {name} as select * from df_view")
+    con.unregister("df_view")
+
+
+def _build_schedule_warehouse(path, with_predictions=True):
+    con = duckdb.connect(str(path))
+    con.execute("create schema main_staging")
+    con.execute("create schema main_marts")
+    _schedule_table(
+        con,
+        "main_staging.stg_schedule",
+        pd.DataFrame(
+            [
+                {
+                    "season": SCHEDULE_SEASON,
+                    "game_id": gid,
+                    "game_date": pd.Timestamp(day).date(),
+                    "tipoff_utc": pd.Timestamp(tip),
+                    "home_team_id": _SCHEDULE_IDS[home],
+                    "home_team_abbreviation": home,
+                    "away_team_id": _SCHEDULE_IDS[away],
+                    "away_team_abbreviation": away,
+                    "game_status": 1 if gid == "0023000004" else 3,
+                    "is_regular_season": gid.startswith("002"),
+                }
+                for gid, day, tip, home, away in _SCHEDULE_GAMES
+            ]
+        ),
+    )
+    _schedule_table(
+        con,
+        "main_marts.fct_team_game",
+        pd.DataFrame(
+            [
+                {
+                    "season": SCHEDULE_SEASON,
+                    "game_id": gid,
+                    "home_team_id": _SCHEDULE_IDS[home],
+                    "home_team_abbreviation": home,
+                    "away_team_id": _SCHEDULE_IDS[away],
+                    "away_team_abbreviation": away,
+                    "home_points": hp,
+                    "away_points": ap,
+                }
+                for gid, home, away, hp, ap in _SCHEDULE_RESULTS
+            ]
+        ),
+    )
+    logs = pd.DataFrame(_SCHEDULE_LOGS, columns=["game_id", "player_name", "points"])
+    logs["season"] = SCHEDULE_SEASON
+    logs["points"] = logs["points"].astype("Int64")
+    _schedule_table(con, "main_staging.stg_player_game_logs", logs)
+    # The sidebar season box (seasons.seasons()) reads this.
+    _schedule_table(
+        con,
+        "main_staging.stg_team_game_logs",
+        pd.DataFrame({"season": [SCHEDULE_SEASON]}),
+    )
+    if with_predictions:
+        preds = pd.DataFrame(
+            _SCHEDULE_PREDICTIONS,
+            columns=[
+                "prediction_id",
+                "predicted_at",
+                "game_id",
+                "win_probability",
+                "predicted_margin",
+            ],
+        )
+        preds["predicted_at"] = pd.to_datetime(preds["predicted_at"])
+        _schedule_table(con, "main.predictions", preds)
+    con.close()
+    return path
+
+
+@pytest.fixture
+def schedule_warehouse(tmp_path):
+    path = _build_schedule_warehouse(tmp_path / "schedule.duckdb")
+    with data_core.use_warehouse(path):
+        yield path
+
+
+@pytest.fixture
+def schedule_warehouse_without_predictions(tmp_path):
+    path = _build_schedule_warehouse(
+        tmp_path / "schedule_no_predictions.duckdb", with_predictions=False
+    )
+    with data_core.use_warehouse(path):
+        yield path

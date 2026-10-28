@@ -110,6 +110,7 @@ from dashboard.views import (
     overview,
     players,
     predictions,
+    schedule,
     teams,
 )
 
@@ -123,6 +124,9 @@ explore = {
     "teams": st.Page(teams.render, title="Teams", icon=":material/groups:", url_path="teams"),
     "games": st.Page(
         games.render, title="Games", icon=":material/sports_basketball:", url_path="games"
+    ),
+    "schedule": st.Page(
+        schedule.render, title="Schedule", icon=":material/calendar_month:", url_path="schedule"
     ),
     "advanced": st.Page(
         advanced.render, title="Advanced", icon=":material/insights:", url_path="advanced"

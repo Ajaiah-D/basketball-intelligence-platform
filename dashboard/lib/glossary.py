@@ -241,6 +241,18 @@ TERMS = {
         "teams given 70% win about 70% of those games, and the dots sit "
         "on the dashed line."
     ),
+    # Schedule
+    "Top scorer": (
+        "The player who scored the most points in the game. A tie goes to "
+        "the name that sorts first."
+    ),
+    "Model pick": (
+        "The team the model gives the better chance of winning, in bold in "
+        "its team colour, with that chance. Under 55% neither team is "
+        "marked and the game reads as a toss-up."
+    ),
+    "Result": "W or L, then the score with this team's points first.",
+    "Record": "Wins and losses after each game, counting finished games only.",
     # Arcade team builder
     "Impact": (
         "The team builder's rating of one player-season: about how many points "

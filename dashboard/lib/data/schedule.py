@@ -103,6 +103,28 @@ def schedule(season: str) -> pd.DataFrame:
     ]
 
 
+def schedule_seasons() -> pd.DataFrame:
+    """Every season the published schedule holds, newest first, with the
+    first and last day of its regular season (first_day, last_day, as
+    dates). The sidebar's seasons come from the game logs instead, so a
+    season scheduled but not yet started is only here."""
+    df = q(
+        """
+        select
+            season,
+            min(game_date) as first_day,
+            max(game_date) as last_day
+        from main_staging.stg_schedule
+        where is_regular_season
+        group by season
+        order by season desc
+        """
+    )
+    for col in ("first_day", "last_day"):
+        df[col] = [d.date() for d in pd.to_datetime(df[col])]
+    return df
+
+
 def month_counts(season: str, year: int, month: int) -> dict[date, int]:
     """{day: regular-season games} for each day of the month that has any;
     a day without games is absent, and a month without any is {}."""

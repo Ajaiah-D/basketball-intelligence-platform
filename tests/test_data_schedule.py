@@ -8,13 +8,12 @@ game, a re-predicted game, a preseason game) and the real one the facts."""
 
 from datetime import date
 
-import duckdb
 import pandas as pd
 import pytest
 
-from dashboard.lib.data import core as data_core
 from dashboard.lib.data import schedule
 
+# The season conftest.py's schedule_warehouse holds.
 SEASON = "2030-31"
 
 COLUMNS = [
@@ -33,129 +32,6 @@ COLUMNS = [
     "top_scorer",
     "top_points",
 ]
-
-IDS = {"BOS": 1, "NYK": 2, "MIA": 3, "DAL": 4}
-
-# (game_id, date, tipoff_utc, home, away)
-GAMES = [
-    ("0013000001", "2030-10-10", "2030-10-10 23:00:00", "BOS", "NYK"),  # preseason
-    ("0023000001", "2030-10-20", "2030-10-20 23:30:00", "BOS", "NYK"),
-    ("0023000002", "2030-10-22", "2030-10-23 00:00:00", "NYK", "BOS"),
-    ("0023000003", "2030-10-22", "2030-10-22 19:00:00", "MIA", "DAL"),  # neutral
-    ("0023000004", "2030-10-25", "2030-10-25 23:00:00", "BOS", "MIA"),  # upcoming
-    ("0023000005", "2030-11-02", "2030-11-02 23:00:00", "BOS", "DAL"),  # cancelled
-]
-
-# fct_team_game rows: (game_id, home, away, home_points, away_points).
-# The neutral game is oriented DAL-home there, the other way round.
-RESULTS = [
-    ("0023000001", "BOS", "NYK", 112, 105),
-    ("0023000002", "NYK", "BOS", 100, 99),
-    ("0023000003", "DAL", "MIA", 90, 95),
-    ("0023000005", "BOS", "DAL", 0, 0),
-]
-
-# (game_id, player, points)
-LOGS = [
-    ("0023000001", "Zed Zulu", 30),
-    ("0023000001", "Abe Able", 30),
-    ("0023000001", "Cal Cole", 12),
-    ("0023000002", "Cal Cole", 41),
-    ("0023000003", "Dan Dee", None),
-    ("0023000003", "Eli Eck", 22),
-]
-
-# (prediction_id, predicted_at, game_id, win_probability, predicted_margin)
-PREDICTIONS = [
-    ("p1", "2030-10-19 10:00:00", "0023000001", 0.61, 3.0),
-    ("p2", "2030-10-23 10:00:00", "0023000004", 0.55, 1.5),
-    ("p3", "2030-10-24 10:00:00", "0023000004", 0.65, 5.0),
-]
-
-
-def _table(con, name, df):
-    con.register("df_view", df)
-    con.execute(f"create table {name} as select * from df_view")
-    con.unregister("df_view")
-
-
-def _build(path, with_predictions=True):
-    con = duckdb.connect(str(path))
-    con.execute("create schema main_staging")
-    con.execute("create schema main_marts")
-    _table(
-        con,
-        "main_staging.stg_schedule",
-        pd.DataFrame(
-            [
-                {
-                    "season": SEASON,
-                    "game_id": gid,
-                    "game_date": pd.Timestamp(day).date(),
-                    "tipoff_utc": pd.Timestamp(tip),
-                    "home_team_id": IDS[home],
-                    "home_team_abbreviation": home,
-                    "away_team_id": IDS[away],
-                    "away_team_abbreviation": away,
-                    "game_status": 1 if gid == "0023000004" else 3,
-                    "is_regular_season": gid.startswith("002"),
-                }
-                for gid, day, tip, home, away in GAMES
-            ]
-        ),
-    )
-    _table(
-        con,
-        "main_marts.fct_team_game",
-        pd.DataFrame(
-            [
-                {
-                    "season": SEASON,
-                    "game_id": gid,
-                    "home_team_id": IDS[home],
-                    "home_team_abbreviation": home,
-                    "away_team_id": IDS[away],
-                    "away_team_abbreviation": away,
-                    "home_points": hp,
-                    "away_points": ap,
-                }
-                for gid, home, away, hp, ap in RESULTS
-            ]
-        ),
-    )
-    logs = pd.DataFrame(LOGS, columns=["game_id", "player_name", "points"])
-    logs["season"] = SEASON
-    logs["points"] = logs["points"].astype("Int64")
-    _table(con, "main_staging.stg_player_game_logs", logs)
-    if with_predictions:
-        preds = pd.DataFrame(
-            PREDICTIONS,
-            columns=[
-                "prediction_id",
-                "predicted_at",
-                "game_id",
-                "win_probability",
-                "predicted_margin",
-            ],
-        )
-        preds["predicted_at"] = pd.to_datetime(preds["predicted_at"])
-        _table(con, "main.predictions", preds)
-    con.close()
-    return path
-
-
-@pytest.fixture
-def schedule_warehouse(tmp_path):
-    path = _build(tmp_path / "schedule.duckdb")
-    with data_core.use_warehouse(path):
-        yield path
-
-
-@pytest.fixture
-def schedule_warehouse_without_predictions(tmp_path):
-    path = _build(tmp_path / "schedule_no_predictions.duckdb", with_predictions=False)
-    with data_core.use_warehouse(path):
-        yield path
 
 
 def _game(df, game_id):
@@ -246,6 +122,15 @@ def test_team_schedule_for_a_team_without_games(schedule_warehouse):
     assert {"opponent", "is_home", "result", "record"} <= set(none.columns)
 
 
+def test_schedule_seasons_span_the_regular_season(schedule_warehouse):
+    spans = schedule.schedule_seasons()
+    assert list(spans.columns) == ["season", "first_day", "last_day"]
+    # The preseason game on 10-10 is not part of the span.
+    assert spans.to_dict("records") == [
+        {"season": SEASON, "first_day": date(2030, 10, 20), "last_day": date(2030, 11, 2)}
+    ]
+
+
 # --- The real warehouse ----------------------------------------------------------
 
 UPCOMING_SEASON = "2026-27"
@@ -310,3 +195,12 @@ def test_a_finished_2025_26_game(con):
     assert (okc.iloc[0]["result"], okc.iloc[0]["record"]) == ("W 125-124", "1-0")
     wins, losses = map(int, okc.iloc[-1]["record"].split("-"))
     assert wins + losses == 82
+
+
+def test_real_schedule_seasons(con):
+    spans = schedule.schedule_seasons().set_index("season")
+    # Newest first, and every season the schedule holds.
+    assert spans.index[0] == UPCOMING_SEASON
+    assert spans.index.is_monotonic_decreasing
+    assert spans.loc[UPCOMING_SEASON, "first_day"] == date(2026, 10, 20)
+    assert spans.loc[UPCOMING_SEASON, "last_day"].year == 2027

@@ -10,7 +10,7 @@ from dashboard.lib import theme as T
 from dashboard.lib.cards import game_card
 from dashboard.lib.data import games as game_data
 from dashboard.lib.data import seasons
-from dashboard.lib.state import SEASON_KEY
+from dashboard.lib.state import GAMES_PICK_KEY, SEASON_KEY
 from dashboard.lib.tables import Col
 
 
@@ -78,6 +78,39 @@ def box_score_html(rows: pd.DataFrame, team: str, side: str, pts: int, won: bool
     )
 
 
+# Session-state keys: the filters and the game picker are keyed so a preset
+# game (_apply_preset) can clear the filters and choose the game.
+GAMES_TEAM_KEY = "games_team"
+GAMES_ONLY_PBP_KEY = "games_only_pbp"
+GAMES_DETAIL_KEY = "games_pick"
+# The picker lists this many games, newest first (plus the chosen one).
+PICKER_GAMES = 200
+
+
+def game_label(r, pbp_ids: set[str]) -> str:
+    """The game picker's line for a games_list row."""
+    return f"{r.game_date:%b %d} | {r.away} {r.away_pts} @ {r.home} {r.home_pts}" + (
+        "  [PBP]" if r.game_id in pbp_ids else ""
+    )
+
+
+def _apply_preset(games: pd.DataFrame, pbp_ids: set[str]) -> None:
+    """Open the game another page asked for (state.GAMES_PICK_KEY, set with
+    the season by the Schedule page's "Open game"). It is read once: the
+    filters clear, so the game is in the list, and it becomes the picker's
+    choice, which then stays put like any other. A game this season
+    doesn't have is ignored."""
+    preset = st.session_state.pop(GAMES_PICK_KEY, None)
+    if not preset:
+        return
+    match = games[games["game_id"] == preset]
+    if match.empty:
+        return
+    st.session_state[GAMES_TEAM_KEY] = "All teams"
+    st.session_state[GAMES_ONLY_PBP_KEY] = False
+    st.session_state[GAMES_DETAIL_KEY] = game_label(next(match.itertuples()), pbp_ids)
+
+
 def render() -> None:
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
     st.markdown(
@@ -87,11 +120,12 @@ def render() -> None:
 
     games = game_data.games_list(season)
     pbp_ids = game_data.pbp_game_ids()
+    _apply_preset(games, pbp_ids)
 
     teams = ["All teams", *sorted(set(games.home) | set(games.away))]
     f1, f2 = st.columns([2, 3])
-    team = f1.selectbox("Team", teams, label_visibility="collapsed")
-    only_pbp = f2.toggle("Only games with play-by-play", value=False)
+    team = f1.selectbox("Team", teams, key=GAMES_TEAM_KEY, label_visibility="collapsed")
+    only_pbp = f2.toggle("Only games with play-by-play", key=GAMES_ONLY_PBP_KEY)
 
     view = games
     if team != "All teams":
@@ -106,14 +140,16 @@ def render() -> None:
 
     st.markdown("#### Game detail")
     view = view.copy()
-    view["label"] = view.apply(
-        lambda r: (
-            f"{r.game_date:%b %d} | {r.away} {r.away_pts} @ {r.home} {r.home_pts}"
-            + ("  [PBP]" if r.game_id in pbp_ids else "")
-        ),
-        axis=1,
+    view["label"] = [game_label(r, pbp_ids) for r in view.itertuples()]
+    options = view["label"].head(PICKER_GAMES).tolist()
+    # A game chosen from further back (a preset from the Schedule page) stays
+    # in the list, or the picker would drop it on the next rerun.
+    chosen = st.session_state.get(GAMES_DETAIL_KEY)
+    if chosen not in options and chosen in set(view["label"]):
+        options.insert(0, chosen)
+    pick: str | None = st.selectbox(
+        "Game", options, key=GAMES_DETAIL_KEY, label_visibility="collapsed"
     )
-    pick: str | None = st.selectbox("Game", view["label"].head(200), label_visibility="collapsed")
     if not pick:
         return
     g = view[view.label == pick].iloc[0]
