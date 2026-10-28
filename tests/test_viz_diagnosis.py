@@ -387,6 +387,89 @@ def test_scatter_draws_every_row_matching_the_highlight_in_the_pick_trace():
     assert sum(len(t.x) for t in fig.data) == 30
 
 
+def _players(n: int = 40) -> pd.DataFrame:
+    """n players on four teams, labelled by name, with no rank columns (the
+    player frame has none)."""
+    return pd.DataFrame(
+        {
+            "player": [f"Player {i:02d}" for i in range(n)],
+            "team": [f"T{i % 4:02d}" for i in range(n)],
+            "pts": [float(i) for i in range(n)],
+            "ts": [50.0 + (i * 7) % 11 for i in range(n)],
+            "gp": [30 + i for i in range(n)],
+        }
+    )
+
+
+def _player_scatter(df=None, **kwargs):
+    kwargs.setdefault("label_top", 12)
+    return viz_diagnosis.stat_scatter(
+        _players() if df is None else df,
+        "pts",
+        "ts",
+        "player",
+        "team",
+        **kwargs,
+    )
+
+
+def test_scatter_highlights_on_another_column_than_the_label():
+    fig = _player_scatter(highlight="T01", highlight_col="team")
+    pick = fig.data[1]
+    assert len(pick.x) == 10 and sum(len(t.x) for t in fig.data) == 40
+    # Every one of the team's dots is the large outlined kind and named by
+    # player, not by the column it was picked on.
+    assert pick.marker.size > fig.data[0].marker.size
+    assert set(pick.text) == {f"Player {i:02d}" for i in range(1, 40, 4)}
+    assert "T01" not in set(fig.data[0].text)
+
+
+def test_scatter_highlight_defaults_to_the_label_column():
+    fig = _player_scatter(highlight="Player 05")
+    assert [list(t.text) for t in fig.data[1:]] == [["Player 05"]]
+
+
+def test_scatter_names_every_highlighted_dot_past_the_label_cap():
+    # Ten dots are picked and the cap is 4: the cap must not drop any of
+    # them, and with the picks using it up no other dot is named.
+    fig = _player_scatter(highlight="T02", highlight_col="team", label_top=4)
+    assert all(fig.data[1].text)
+    assert len([t for t in fig.data[1].text if t]) == 10
+    assert not any(fig.data[0].text)
+
+
+def test_scatter_spends_the_rest_of_the_cap_on_the_furthest_dots():
+    fig = _player_scatter(highlight="T02", highlight_col="team", label_top=12)
+    labelled = [t for tr in fig.data for t in tr.text if t]
+    assert len(labelled) == 12
+    assert len([t for t in fig.data[1].text if t]) == 10
+
+
+def test_scatter_highlight_that_matches_nothing_has_one_trace():
+    fig = _player_scatter(highlight="T99", highlight_col="team")
+    assert len(fig.data) == 1
+
+
+def test_scatter_hover_without_ranks_is_the_name_the_values_and_a_detail_line():
+    df = _players()
+    df["who"] = df["player"] + " (" + df["team"] + ")"
+    df["games"] = df["gp"].astype(str) + " GP"
+    fig = _player_scatter(df, name_col="who", detail_col="games", x_label="PTS", y_label="TS%")
+    hover = fig.data[0].hovertext[3]
+    assert hover.split("<br>") == [
+        "<b>Player 03 (T03)</b>",
+        "PTS 3.0",
+        "TS% 60.0",
+        "33 GP",
+    ]
+    assert "#" not in hover
+
+
+def test_scatter_without_a_detail_column_has_no_extra_line():
+    hover = _player_scatter().data[0].hovertext[3]
+    assert len(hover.split("<br>")) == 3
+
+
 # --- The game-by-game trend ---------------------------------------------------------
 
 
