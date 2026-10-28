@@ -13,6 +13,8 @@ tests/test_settled_predictions.py checks they give ml's numbers.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from core.constants import HOME_PICK_THRESHOLD
@@ -66,13 +68,15 @@ def predictions_available() -> bool:
     return objects_exist("main.predictions")
 
 
-def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
-    """The most recent prediction for each not-yet-played game, soonest first."""
+def upcoming_predictions(first_day: date, last_day: date) -> pd.DataFrame:
+    """The most recent prediction for each not-yet-played game scheduled
+    from `first_day` to `last_day` (Eastern dates, as the schedule keeps
+    them), soonest first."""
     return q(
         f"""
         select
             l.game_id,
-            l.game_date,
+            s.game_date,
             s.tipoff_utc,
             l.win_probability,
             l.predicted_margin,
@@ -81,10 +85,10 @@ def upcoming_predictions(limit: int = 30) -> pd.DataFrame:
         from ({LATEST_PREDICTIONS_SQL}) l
         join main_staging.stg_schedule s on s.game_id = l.game_id
         where s.game_status = 1
-        order by l.game_date, l.game_id
-        limit ?
+          and s.game_date between ? and ?
+        order by s.game_date, s.tipoff_utc nulls last, l.game_id
         """,
-        (limit,),
+        (first_day, last_day),
     )
 
 

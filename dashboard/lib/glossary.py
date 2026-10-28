@@ -235,6 +235,17 @@ TERMS = {
         "How many points the model expects the favorite to win by. "
         "It is a best guess, and real margins swing widely around it."
     ),
+    "Chance": (
+        "The model's chance that its pick wins. The bar runs from 50%, a "
+        "coin flip, to 100%. Under 55% the game reads as a toss-up and "
+        "neither team is marked."
+    ),
+    "Pick": (
+        "The team the model gave the better chance of winning, from its "
+        "first prediction for the game. A 50% call counts as a home pick."
+    ),
+    "Final": "The winning team and the final score.",
+    "Correct": "✓ when the model's pick won the game, ✗ when it lost.",
     "Calibration": (
         "Whether the percentages can be trusted. Games are grouped by the "
         "chance the model gave the home team; if it is well calibrated, "
