@@ -108,7 +108,7 @@ python -m pytest -q                            # everything, against your local 
 python -m pytest -q -m "not full_warehouse"    # what CI runs
 ```
 
-The full run is about 917 tests and takes about two minutes. Tests read the real
+The full run is about 930 tests and takes about two minutes. Tests read the real
 warehouse and assert facts that are true of the data itself, not row counts
 that change every week.
 
