@@ -18,6 +18,7 @@ from core import paths
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY
+from dashboard.lib.stats import qualification_threshold
 from dashboard.views.players.game_log import TREND_KEY
 
 # The sidebar box from dashboard/app.py, then the page.
@@ -70,6 +71,47 @@ def test_career_scope_shows_all_seasons_and_no_season_choice(con):
     assert not at.exception, at.exception
     box = at.selectbox(key="players_season_all")
     assert box.disabled and box.value == "All seasons"
+
+
+# --- The min-games slider follows the season -------------------------------------
+
+LIVE = "2026-27"
+FULL = "2025-26"
+
+
+@pytest.mark.full_warehouse
+def test_early_in_a_season_the_table_still_lists_players(con):
+    # A week into 2026-27 nobody has 25 games; the default scales down.
+    at = _app()
+    assert at.selectbox(key="players_season").value == LIVE
+    expected = qualification_threshold(players.player_season_stats(LIVE))
+    assert expected < 25
+    assert at.slider(key="players_min_gp").value == expected
+    assert len(at.dataframe[0].value) > 0
+
+
+@pytest.mark.full_warehouse
+def test_a_full_season_defaults_to_25_games_and_a_new_season_resets_it(con):
+    at = _app()
+    at.selectbox(key="season").select(FULL).run()
+    assert not at.exception, at.exception
+    assert at.slider(key="players_min_gp").value == 25
+    at.slider(key="players_min_gp").set_value(40).run()
+    assert at.slider(key="players_min_gp").value == 40
+    at.selectbox(key="season").select(LIVE).run()
+    assert at.slider(key="players_min_gp").value < 25
+
+
+def test_the_slider_comes_back_at_the_rule_after_career_scope(con):
+    # Career scope drops the keyed slider's state; back in Season scope it
+    # returns at the season's rule, not at 1.
+    newest = seasons.seasons()[0]
+    expected = qualification_threshold(players.player_season_stats(newest))
+    at = _app()
+    at.button_group[0].set_value("Career").run()
+    at.button_group[0].set_value("Season").run()
+    assert not at.exception, at.exception
+    assert at.slider(key="players_min_gp").value == expected
 
 
 # --- Search finds players outside the selected season -------------------------
@@ -207,7 +249,10 @@ def test_a_preset_nobody_has_is_ignored(con):
     at.session_state[PLAYERS_PICK_KEY] = "Nobody At All"
     at.run()
     assert not at.exception, at.exception
-    assert at.slider(key="players_min_gp").value == 25
+    # The slider stays at the newest season's default.
+    newest = seasons.seasons()[0]
+    expected = qualification_threshold(players.player_season_stats(newest))
+    assert at.slider(key="players_min_gp").value == expected
     assert PLAYERS_PICK_KEY not in at.session_state
 
 

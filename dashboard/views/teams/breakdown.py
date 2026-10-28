@@ -150,11 +150,15 @@ def render_breakdown(season: str, team: str) -> None:
     Players links."""
     if not diagnosis_data.profile_available():
         return
+    cut = diagnosis_data.rotation_min_games(season)
     rows = diagnosis_data.team_drivers(season, team)
-    if rows.empty:
-        return
 
     section("Player breakdown", glossary.TERMS["Player breakdown"])
+    if rows.empty:
+        st.caption(f"No {team} player has {cut}+ games for the team in {season}.")
+        return
+    if cut < diagnosis_data.ROTATION_MIN_GAMES:
+        st.caption(f"Early in the season: players with {cut}+ games for the team.")
     by_label = {a.label: a for a in diagnosis.AREAS}
     pick_col, chip_col = st.columns([2, 3], vertical_alignment="center")
     label = pick_col.selectbox("Area", list(by_label), key=AREA_KEY, label_visibility="collapsed")

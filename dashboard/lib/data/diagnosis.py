@@ -22,7 +22,8 @@ PROFILE_MARTS = (
     "main_marts.mart_player_defense",
 )
 
-# The rotation: players with this many games for the team.
+# The rotation: players with this many games for the team, once the
+# season has run long enough (rotation_min_games).
 ROTATION_MIN_GAMES = 10
 
 
@@ -36,6 +37,25 @@ def percentiles_available() -> bool:
     """Whether the warehouse has mart_player_percentiles, the only mart the
     Players page's Compare tab needs."""
     return objects_exist("main_marts.mart_player_percentiles")
+
+
+def rotation_min_games(season: str) -> int:
+    """The games for the team a player needs to be in the rotation in
+    `season`: ROTATION_MIN_GAMES, or the season's leaderboard cut when that
+    is lower. A week into a season nobody has 10 games, so the cut scales
+    with the schedule the same way qualification does
+    (mart_player_percentiles.qualification_games, the qualification_games
+    macro). A season with no players keeps the full cut."""
+    df = q(
+        """
+        select least(?, max(qualification_games)) as games
+        from main_marts.mart_player_percentiles
+        where season = ?
+        """,
+        (ROTATION_MIN_GAMES, season),
+    )
+    games = df["games"].iloc[0] if len(df) else None
+    return ROTATION_MIN_GAMES if pd.isna(games) else int(games)
 
 
 def team_profile(season: str) -> pd.DataFrame:
@@ -53,8 +73,8 @@ def team_profile(season: str) -> pd.DataFrame:
 
 
 def team_drivers(season: str, team: str) -> pd.DataFrame:
-    """The team's rotation in `season` (10+ games for it), most minutes
-    first, with every measure diagnosis.AREAS reads.
+    """The team's rotation in `season` (rotation_min_games(season)+ games
+    for it), most minutes first, with every measure diagnosis.AREAS reads.
 
     Games, minutes and the three-point volume and accuracy are the player's
     stint with this team (mart_player_team_season); team_three_pa_share is
@@ -165,7 +185,7 @@ def team_drivers(season: str, team: str) -> pd.DataFrame:
         where st.games_played >= ?
         order by m.minutes desc nulls last, st.player_name, st.player_id
         """,
-        (season, team, season, team, season, ROTATION_MIN_GAMES),
+        (season, team, season, team, season, rotation_min_games(season)),
     )
 
 
