@@ -2,10 +2,10 @@
 -- that has a prediction, the earliest one. Later re-runs for the same game
 -- exist in main.predictions, but grading the latest would let a model be
 -- scored on a prediction made after the result was known. ml/evaluate.py
--- scores this model, and the dashboard's track record reads the same query
--- (dashboard/lib/data/predictions.py keeps a copy until a warehouse with
--- this model is published; tests/test_settled_predictions.py fails if the
--- two differ).
+-- scores this model, and the dashboard's track record reads this mart
+-- directly (dashboard/lib/data/predictions.py), so the pipeline and the
+-- page grade the same rows. A page that meets a warehouse published before
+-- this mart existed shows a notice instead.
 --
 -- A view, unlike the other marts: ml/predict.py appends to main.predictions
 -- after dbt has run, and ml/evaluate.py grades straight after that, so a
