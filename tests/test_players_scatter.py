@@ -7,6 +7,7 @@ never writes back to it, so the Stats tab's season is not disturbed.
 
 import json
 
+import plotly.graph_objects as go
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -82,6 +83,9 @@ def test_it_opens_on_points_against_true_shooting_for_the_sidebar_season(con):
     n = len(diagnosis.league_player_rows(season, expected))
     assert _dots(fig) == n
     assert _caption(at).startswith(f"{n} players with {expected}+ games")
+    # The dashed lines average the players drawn, not the whole league.
+    notes = [a["text"] for a in fig["layout"]["annotations"]]
+    assert notes == ["average of these players"]
 
 
 def test_every_metric_has_a_glossary_hover_and_a_column_the_data_layer_returns(con):
@@ -256,3 +260,14 @@ def test_the_sidebar_season_moves_the_scatter_season(con):
     at.selectbox(key="season").select(every[1]).run()
     assert not at.exception, at.exception
     assert at.selectbox(key=scatter.SEASON_KEY).value == every[1]
+
+
+def test_staggering_labels_leaves_an_empty_trace_alone():
+    # With a team picked, every drawn player can be on it: the faded
+    # "everyone else" trace is then empty.
+    trace = go.Scatter(x=[], y=[], text=[])
+    scatter._stagger_labels(trace)
+    assert not trace.x
+    named = go.Scatter(x=[1.0, 2.0], y=[1.0, 2.0], text=["A", "B"])
+    scatter._stagger_labels(named)
+    assert len(named.textposition) == 2

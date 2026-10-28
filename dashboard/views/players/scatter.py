@@ -145,7 +145,10 @@ def _stagger_labels(trace: go.Scatter) -> None:
     """Spread the named dots' labels around their dots, left to right, so
     neighbours (a team's rotation sits in one clump) don't print over each
     other, and turn the ones at the right edge inward so a long name isn't
-    cut off."""
+    cut off. An empty trace (every drawn player on the picked team leaves
+    the faded rest with none) is left as it is."""
+    if trace.x is None or not len(trace.x):
+        return
     xs = [float(v) for v in trace.x]
     low, span = min(xs), (max(xs) - min(xs)) or 1.0
     named = sorted((i for i, text in enumerate(trace.text) if text), key=lambda i: xs[i])
@@ -228,6 +231,9 @@ def render_scatter() -> None:
         # A traded player's dot would carry his last team's colour; with a team
         # picked, all of its players take that team's.
         highlight_color=None if team == ALL_TEAMS else T.team_color(team),
+        # The min-games filter leaves part of the league: the lines average
+        # the players drawn.
+        average_label="average of these players",
     )
     if fig.data:
         fig.data[0].marker.size = DOT_PX

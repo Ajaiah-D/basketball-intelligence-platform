@@ -141,8 +141,9 @@ def _roster(season: str, team: str) -> None:
 def _footnote(a: pd.Series | None) -> None:
     """One footnote for the whole tab instead of a caption under every block."""
     notes = [
-        "Ranks are out of every team that season, 1st = best (fewest points "
-        "allowed for defensive rating, fastest for pace)."
+        "Ranks are out of every team that season. 1st is the highest net and "
+        "offensive rating, the fewest points allowed for defensive rating, the "
+        "fastest pace and the biggest payroll."
     ]
     if a is not None:
         notes.append(f"Ratings are {a.ratings_source}.")
