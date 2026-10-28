@@ -2,9 +2,11 @@
 tint rule and the table it draws. Pure: hand-built games, no warehouse."""
 
 import math
+import re
 
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
 from dashboard.lib import theme as T
 from dashboard.views.players import game_log
@@ -101,7 +103,10 @@ def test_every_header_has_a_glossary_hover():
 
 
 def test_the_tints_use_the_status_colours():
-    assert T.rgba(T.GOOD, 0.18) in T.CSS and T.rgba(T.CRITICAL, 0.18) in T.CSS
+    # Attached to the cell classes the log uses, not just somewhere in the CSS.
+    rules = dict(re.findall(r"td\.(above|below)\s*\{([^}]*)\}", T.CSS))
+    assert T.rgba(T.GOOD, 0.18) in rules["above"]
+    assert T.rgba(T.CRITICAL, 0.18) in rules["below"]
 
 
 def test_a_missing_value_in_a_nullable_column_is_a_plain_dash():
@@ -111,3 +116,68 @@ def test_a_missing_value_in_a_nullable_column_is_a_plain_dash():
     games.loc[1, ["plus_minus", "pts"]] = pd.NA
     rows = _rows(game_log.game_log_html(games, AVERAGES))
     assert rows[1].count("<td>-</td>") == 3  # PTS, TS% and +/-
+
+
+def test_a_stat_with_no_values_all_season_is_not_offered():
+    # Before 1996-97 the box score has no +/-: a column of nulls.
+    games = _games().astype({"plus_minus": "Int32"})
+    games["plus_minus"] = pd.array([pd.NA] * 3, dtype="Int32")
+    assert "+/-" not in game_log.available_stats(games)
+    assert game_log.available_stats(_games()) == list(game_log.GAME_STATS)
+    # One game with a value is enough to draw a chart.
+    games.loc[0, "plus_minus"] = 5
+    assert "+/-" in game_log.available_stats(games)
+
+
+def test_an_old_season_has_no_plus_minus_in_the_picker_or_the_log():
+    def page():
+        import pandas as pd
+
+        from dashboard.views.players import game_log
+
+        games = pd.DataFrame(
+            {
+                "game_date": pd.to_datetime(["1991-01-04", "1991-01-06"]),
+                "opp": ["BOS", "NYK"],
+                "is_away": [False, True],
+                "is_win": [True, False],
+                "team_pts": [100, 90],
+                "opp_pts": [95, 99],
+                "min": [30, 32],
+                "pts": [20, 10],
+                "reb": [5, 6],
+                "ast": [3, 4],
+                "tpm": [0, 1],
+                "ts_pct": [55.0, 48.0],
+                "shot_poss": [16.0, 12.0],
+                "plus_minus": pd.array([pd.NA, pd.NA], dtype="Int32"),
+            }
+        )
+        figures = {
+            "PTS": 15.0,
+            "REB": 5.5,
+            "AST": 3.5,
+            "3PM": 0.5,
+            "TS%": 52.0,
+            "+/-": float("nan"),
+        }
+        game_log.render_trend(games, figures)
+        # A pick left over from a season that had +/-.
+        game_log.render_game_log(games, figures)
+
+    at = AppTest.from_function(page, default_timeout=30)
+    at.session_state[game_log.TREND_KEY] = "+/-"
+    at.run()
+    assert not at.exception, at.exception
+    picker = at.selectbox(key=game_log.TREND_KEY)
+    assert "+/-" not in picker.options
+    assert picker.value == "PTS"
+    log = next(m.value for m in at.markdown if "bip-scroll" in m.value)
+    assert log.count("<td>-</td>") == 2  # the +/- cell of each game
+
+
+def test_the_opponent_label_is_built_in_one_place():
+    from core.fmt import matchup
+
+    assert matchup(True, "BOS") == "@ BOS"
+    assert matchup(False, "BOS") == "vs BOS"

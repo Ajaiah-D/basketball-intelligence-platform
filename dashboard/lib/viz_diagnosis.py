@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 import pandas as pd
 import plotly.graph_objects as go
 
-from core.fmt import ordinal
+from core.fmt import matchup, ordinal
 
 from . import diagnosis, glossary
 from . import theme as T
@@ -681,8 +681,7 @@ def stat_trend(games: pd.DataFrame, stat: str, season_avg: float) -> go.Figure:
         name="Game",
         marker={"color": T.BASELINE},
         customdata=[
-            f"{'@' if away else 'vs'} {opp}"
-            for away, opp in zip(games["is_away"], games["opp"], strict=True)
+            matchup(away, opp) for away, opp in zip(games["is_away"], games["opp"], strict=True)
         ],
         hovertemplate=f"%{{customdata}}: %{{y{value_fmt}}} {stat}<extra></extra>",
     )
