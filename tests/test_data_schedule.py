@@ -127,7 +127,8 @@ def test_schedule_seasons_span_the_regular_season(schedule_warehouse):
     assert list(spans.columns) == ["season", "first_day", "last_day"]
     # The preseason game on 10-10 is not part of the span.
     assert spans.to_dict("records") == [
-        {"season": SEASON, "first_day": date(2030, 10, 20), "last_day": date(2030, 11, 2)}
+        {"season": SEASON, "first_day": date(2030, 10, 20), "last_day": date(2030, 11, 2)},
+        {"season": "2029-30", "first_day": date(2029, 10, 23), "last_day": date(2029, 10, 23)},
     ]
 
 
