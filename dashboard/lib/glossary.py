@@ -56,6 +56,8 @@ TERMS = {
     "FGA": "Field goal attempts per game - shots taken, 2s and 3s together.",
     "3PM": "Three-pointers made per game.",
     "3PA": "Three-point attempts per game.",
+    "Minutes (game)": "Minutes played in this game.",
+    "3PM (game)": "Three-pointers made in this game.",
     "3P%": "Three-point percentage: the share of three-point shots made.",
     "FT%": "Free throw percentage: the share of free throws made.",
     "FTA": "Free throw attempts per game.",

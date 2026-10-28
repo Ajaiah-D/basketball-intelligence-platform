@@ -19,14 +19,14 @@ import pandas as pd
 from . import theme as T
 
 
-def _missing(v) -> bool:
+def is_missing(v) -> bool:
     # pd.isna covers None, NaN and pandas' NA, which a nullable integer
     # column holds for a missing value and which can't be compared.
     return v is None or bool(pd.isna(v))
 
 
 def _text(v) -> str:
-    if _missing(v):
+    if is_missing(v):
         return "-"
     return html.escape(str(v))
 
@@ -46,13 +46,13 @@ class Col:
 
 def signed(v) -> str:
     """+5, -3, 0; '-' when missing."""
-    if _missing(v):
+    if is_missing(v):
         return "-"
     return f"{int(v):+d}" if v else "0"
 
 
 def pos_neg(v) -> str:
-    if _missing(v) or v == 0:
+    if is_missing(v) or v == 0:
         return ""
     return "pos" if v > 0 else "neg"
 

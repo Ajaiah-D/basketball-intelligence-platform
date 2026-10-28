@@ -14,6 +14,7 @@ from collections.abc import Mapping
 import pandas as pd
 import streamlit as st
 
+from core.fmt import matchup
 from dashboard.lib import glossary, tables, viz, viz_diagnosis
 from dashboard.lib.tables import Col
 from dashboard.lib.viz_diagnosis import GAME_STATS
@@ -32,6 +33,10 @@ MIN_BAND = 0.5
 # +0.4 is a tenth of a point): a fixed 3 points either side instead.
 PLUS_MINUS_BAND = 3.0
 
+# The glossary entries worded for one game, where the plain term says "per
+# game" (the season tables' averages).
+GAME_TERMS = {"3PM": "3PM (game)"}
+
 # His season figure for each stat, by its column in mart_player_season's
 # row (data.players.player_season_stats).
 SEASON_COLUMNS = {
@@ -44,15 +49,11 @@ SEASON_COLUMNS = {
 }
 
 
-def _missing(v) -> bool:
-    return v is None or bool(pd.isna(v))
-
-
 def tint(value, avg, stat: str) -> str:
     """ "above", "below" or "" for one game's `stat` against his season
     figure `avg`: the cell's class. Plain when either is missing (no shots
     means no TS% to set against anything)."""
-    if _missing(value) or _missing(avg):
+    if tables.is_missing(value) or tables.is_missing(avg):
         return ""
     band = PLUS_MINUS_BAND if stat == "+/-" else max(BAND * abs(avg), MIN_BAND)
     if value > avg + band:
@@ -68,11 +69,11 @@ def season_figures(row) -> dict[str, float]:
 
 
 def _whole(v) -> str:
-    return "-" if _missing(v) else f"{int(v)}"
+    return "-" if tables.is_missing(v) else f"{int(v)}"
 
 
 def _one_decimal(v) -> str:
-    return "-" if _missing(v) else f"{v:.1f}"
+    return "-" if tables.is_missing(v) else f"{v:.1f}"
 
 
 def _date(d) -> str:
@@ -82,7 +83,7 @@ def _date(d) -> str:
 def _result(r) -> str:
     """His team's score first ("W 112-104"); the result alone without one."""
     wl = "W" if r.is_win else "L"
-    if _missing(r.team_pts) or _missing(r.opp_pts):
+    if tables.is_missing(r.team_pts) or tables.is_missing(r.opp_pts):
         return wl
     return f"{wl} {int(r.team_pts)}-{int(r.opp_pts)}"
 
@@ -94,7 +95,7 @@ def _stat_col(stat: str, avg: float) -> Col:
         spec.col,
         stat,
         fmt=fmt,
-        help=glossary.TERMS[stat],
+        help=glossary.TERMS[GAME_TERMS.get(stat, stat)],
         css=lambda v: tint(v, avg, stat),
     )
 
@@ -106,10 +107,7 @@ def game_log_html(games: pd.DataFrame, figures: Mapping[str, float]) -> str:
     newest = games.iloc[::-1]
     rows = newest.assign(
         when=newest["game_date"].map(_date),
-        vs=[
-            f"{'@' if away else 'vs'} {opp}"
-            for away, opp in zip(newest["is_away"], newest["opp"], strict=True)
-        ],
+        vs=[matchup(away, opp) for away, opp in zip(newest["is_away"], newest["opp"], strict=True)],
         result=[_result(r) for r in newest.itertuples(index=False)],
     )
     cols = [
@@ -117,7 +115,7 @@ def game_log_html(games: pd.DataFrame, figures: Mapping[str, float]) -> str:
         Col("vs", "Opp", left=True),
         Col("result", "Result", left=True),
         # Minutes stay plain: playing time is context, not better or worse.
-        Col("min", "MIN", fmt=_whole, help=glossary.TERMS["MIN"]),
+        Col("min", "MIN", fmt=_whole, help=glossary.TERMS["Minutes (game)"]),
         *(_stat_col(stat, figures[stat]) for stat in GAME_STATS),
     ]
     return tables.html_table(rows, cols, max_height=LOG_HEIGHT)
@@ -127,20 +125,32 @@ def render_game_log(games: pd.DataFrame, figures: Mapping[str, float]) -> None:
     st.markdown("**Game log**")
     st.markdown(game_log_html(games, figures), unsafe_allow_html=True)
     st.caption(
-        "Green or red: above or below his own season average, by more than "
-        "about 15% (3 points for +/-)."
+        "Green or red: above or below his own season average by more than about "
+        "15% (at least half a unit; 3 points for +/-)."
     )
+
+
+def available_stats(games: pd.DataFrame) -> list[str]:
+    """The GAME_STATS the trend picker offers for `games`: a stat the whole
+    season lacks (+/- before 1996-97 is null in every game) would draw empty
+    axes, so it is left out."""
+    offered = [s for s, spec in GAME_STATS.items() if games[spec.col].notna().any()]
+    return offered or list(GAME_STATS)
 
 
 def render_trend(games: pd.DataFrame, figures: Mapping[str, float]) -> None:
     """The stat picker and the chart of that stat game by game."""
-    options = list(GAME_STATS)
-    st.session_state.setdefault(TREND_KEY, options[0])
+    options = available_stats(games)
+    # A pick carried over from a season that had this stat is no longer offered.
+    if st.session_state.get(TREND_KEY) not in options:
+        st.session_state[TREND_KEY] = options[0]
     stat = st.selectbox(
         "Stat",
         options,
         key=TREND_KEY,
-        help=glossary.TERMS[st.session_state[TREND_KEY]],
+        help=glossary.TERMS[
+            GAME_TERMS.get(st.session_state[TREND_KEY], st.session_state[TREND_KEY])
+        ],
         width=200,
     )
     st.plotly_chart(
