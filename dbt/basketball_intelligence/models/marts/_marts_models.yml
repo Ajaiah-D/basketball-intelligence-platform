@@ -256,6 +256,39 @@ models:
       - name: shot_poss
         description: Shooting possessions over the career, FGA + 0.44 x FTA, unrounded.
 
+  - name: mart_player_game
+    description: >
+      One row per player per game (the stg_player_game_logs grain): his box
+      score line beside the game's result, for the Players page's game log.
+      A view, so the published warehouse carries no copy of the game logs.
+      Grain checked by assert_player_game_grain_is_unique.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: game_id
+        tests: [not_null]
+      - name: game_date
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: team_abbreviation
+        description: His team in this game.
+      - name: opp_team_abbreviation
+        description: The opponent's code; from the matchup string when the team logs lack the game.
+        tests: [not_null]
+      - name: is_away_game
+        description: True when the matchup reads "@" (both sides of a neutral-site game do).
+      - name: team_points
+        description: His team's score. Null only when the team logs lack the game.
+      - name: opp_points
+        description: The opponent's score, null with team_points.
+      - name: true_shooting_pct
+        description: >
+          points / (2 x (FGA + 0.44 x FTA)) x 100 for this game, 1 decimal;
+          null with no attempts or a null input.
+      - name: shot_poss
+        description: FGA + 0.44 x FTA in this game, the weight for averaging true_shooting_pct.
+
   - name: mart_league_shooting
     description: >
       One row per season: league-wide FG%, 3P% and FT%, weighted by volume
