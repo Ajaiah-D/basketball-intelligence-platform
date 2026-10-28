@@ -12,6 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 from dashboard.lib import glossary
 from dashboard.lib import stats as stats_lib
+from dashboard.lib import theme as T
 from dashboard.lib.data import diagnosis, players, seasons
 from dashboard.views.players import scatter
 
@@ -21,7 +22,10 @@ from dashboard.lib.data import seasons
 from dashboard.views import players
 with st.sidebar:
     st.selectbox("Season", seasons.seasons(), key="season")
-players.render()
+if st.session_state.get("away"):
+    st.write("another page")
+else:
+    players.render()
 """
 
 
@@ -85,8 +89,9 @@ def test_every_metric_has_a_glossary_hover_and_a_column_the_data_layer_returns(c
     for key, metric in scatter.METRICS.items():
         assert key in rows.columns, key
         assert metric.term in glossary.TERMS, metric.term
-    assert list(scatter.METRICS)[:2] == ["points_per_game", "rebounds_per_game"]
-    assert len(scatter.METRICS) == 20
+    # The two defaults are metrics, and the pickers open on them.
+    assert {scatter.DEFAULT_X, scatter.DEFAULT_Y} <= set(scatter.METRICS)
+    assert next(iter(scatter.METRICS)) == scatter.DEFAULT_X
 
 
 def test_changing_an_axis_changes_the_chart(con):
@@ -135,21 +140,96 @@ def test_the_team_filter_highlights_and_labels_all_of_its_players(con):
     assert len(fig["data"]) == 2
     mark = fig["data"][1]
     rows = diagnosis.league_player_rows(season, at.slider(key=scatter.MIN_GP_KEY).value)
-    on_team = rows[rows["team_label"].str.contains(team, regex=False)]
+    on_team = _on_team(rows, team)
     assert len(mark["x"]) == len(on_team) >= 1
     assert sorted(mark["text"]) == sorted(on_team["player"])
     assert f"{team} highlighted" in _caption(at)
+    # Every highlighted dot wears the filtered team's colour, whichever team
+    # a traded player finished with.
+    assert set(mark["marker"]["color"]) == {T.team_color(team)}
     # The highlighted team does not change who is plotted or the average.
     assert _dots(fig) == len(rows)
 
 
 def test_a_team_with_nobody_at_the_new_minimum_is_dropped_from_the_filter(con):
-    at = _app(_established_season(con))
-    team = at.selectbox(key=scatter.TEAM_KEY).options[1]
+    season = _established_season(con)
+    at = _app(season)
+    # A team on the list now that nobody has played the full 82 games for.
+    team = next(
+        t
+        for t in at.selectbox(key=scatter.TEAM_KEY).options[1:]
+        if _on_team(diagnosis.league_player_rows(season, 82), t).empty
+    )
     at.selectbox(key=scatter.TEAM_KEY).select(team).run()
+    assert at.selectbox(key=scatter.TEAM_KEY).value == team
     at.slider(key=scatter.MIN_GP_KEY).set_value(82).run()
     assert not at.exception, at.exception
-    assert at.selectbox(key=scatter.TEAM_KEY).value in at.selectbox(key=scatter.TEAM_KEY).options
+    assert team not in at.selectbox(key=scatter.TEAM_KEY).options
+    assert at.selectbox(key=scatter.TEAM_KEY).value == scatter.ALL_TEAMS
+
+
+def test_min_games_returns_to_the_qualification_default_when_its_widget_state_is_dropped(con):
+    season = _established_season(con)
+    at = _app(season)
+    expected = stats_lib.qualification_threshold(players.player_season_stats(season))
+    at.slider(key=scatter.MIN_GP_KEY).set_value(expected + 3).run()
+    assert at.slider(key=scatter.MIN_GP_KEY).value == expected + 3
+    # Streamlit drops a widget's state when the tab or page isn't rendered on a
+    # run; the slider is then rebuilt with nothing, which used to read as 1.
+    at.session_state["away"] = True
+    at.run()
+    assert not at.exception, at.exception
+    assert scatter.MIN_GP_KEY not in at.session_state
+    at.session_state["away"] = False
+    at.run()
+    assert not at.exception, at.exception
+    assert at.slider(key=scatter.MIN_GP_KEY).value == expected
+
+
+def _on_team(rows, team: str):
+    return rows[rows["team_label"].str.contains(team, regex=False)]
+
+
+def _plottable(season: str, x: str, y: str):
+    """The rows the scatter can draw at its default minimum: non-null on both."""
+    minimum = stats_lib.qualification_threshold(players.player_season_stats(season))
+    rows = diagnosis.league_player_rows(season, minimum)
+    return rows, rows.dropna(subset=[x, y])
+
+
+def test_the_caption_counts_the_dots_drawn_not_every_qualified_player(con):
+    # 1979-80 has no true shooting for part of the league: those players are
+    # qualified but cannot be plotted.
+    season = "1979-80"
+    rows, drawn = _plottable(season, "points_per_game", "true_shooting_pct")
+    assert 0 < len(drawn) < len(rows)
+    at = _app(season)
+    assert at.selectbox(key=scatter.SEASON_KEY).value == season
+    assert _dots(_chart(at)) == len(drawn)
+    assert _caption(at).startswith(f"{len(drawn)} players with ")
+
+
+@pytest.mark.parametrize(
+    ("season", "x"), [("1990-91", "player_impact_estimate"), ("1979-80", "usage_pct")]
+)
+def test_a_stat_nobody_has_that_season_is_one_info_line_and_no_chart(con, season, x):
+    # PIE is null before 1996-97 and usage before 1985-86.
+    _, drawn = _plottable(season, x, "true_shooting_pct")
+    assert drawn.empty
+    at = _app(season)
+    at.selectbox(key=scatter.X_KEY).select(x).run()
+    assert not at.exception, at.exception
+    assert [i.value for i in at.tabs[1].info] == [
+        f"No player has both {scatter.METRICS[x].label} and TS% in {season}."
+    ]
+    assert not at.tabs[1].get("plotly_chart")
+    assert not at.tabs[1].caption
+
+
+def test_the_same_stat_on_both_axes_renders(con):
+    at = _app(_established_season(con))
+    at.selectbox(key=scatter.Y_KEY).select(scatter.DEFAULT_X).run()
+    assert not at.exception, at.exception
 
 
 def test_its_own_season_leaves_the_stats_tabs_season_alone(con):

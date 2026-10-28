@@ -1,3 +1,5 @@
+import re
+
 from dashboard.lib import glossary
 from dashboard.lib import theme as T
 
@@ -22,3 +24,28 @@ def test_kpi_and_card_accept_help():
     assert 'class="bip-tip"' in T.kpi("Pace", "99.1", help=glossary.TERMS["Pace"])
     assert 'class="bip-tip"' not in T.kpi("Games", "1,230")
     assert 'class="bip-tip"' in T.card_html("Usage", "", help=glossary.TERMS["Usage"])
+
+
+# The site shows numbers and lets people judge; a hover may give a league
+# reference point but never grade a value.
+VERDICT_WORDS = (
+    "excellent",
+    "good",
+    "great",
+    "elite",
+    "poor",
+    "bad",
+    "strong",
+    "weak",
+    "solid",
+    "terrible",
+    "superb",
+)
+
+
+def test_no_term_grades_a_value_with_a_verdict_word():
+    pattern = re.compile(r"\b(" + "|".join(VERDICT_WORDS) + r")\b", re.IGNORECASE)
+    graded = {
+        term: m.group(0) for term, text in glossary.TERMS.items() if (m := pattern.search(text))
+    }
+    assert not graded, graded

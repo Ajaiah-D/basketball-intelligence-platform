@@ -424,6 +424,22 @@ def test_scatter_highlights_on_another_column_than_the_label():
     assert "T01" not in set(fig.data[0].text)
 
 
+def test_scatter_highlight_color_paints_every_highlighted_dot_one_colour():
+    # Highlighted dots are picked on a column other than the colour one (a
+    # traded player carries his last team's colour); a highlight colour
+    # overrides that for the highlighted dots and nothing else.
+    df = _players()
+    df["team"] = ["OKC" if i % 4 == 0 else "BOS" if i % 4 == 1 else "LAL" for i in range(len(df))]
+    df["picked"] = ["yes" if i % 4 in (0, 1) else "" for i in range(len(df))]
+    unpainted = _player_scatter(df, highlight="yes", highlight_col="picked")
+    assert len(set(unpainted.data[1].marker.color)) == 2
+    painted = _player_scatter(
+        df, highlight="yes", highlight_col="picked", highlight_color="#123456"
+    )
+    assert set(painted.data[1].marker.color) == {"#123456"}
+    assert list(painted.data[0].marker.color) == list(unpainted.data[0].marker.color)
+
+
 def test_scatter_highlight_defaults_to_the_label_column():
     fig = _player_scatter(highlight="Player 05")
     assert [list(t.text) for t in fig.data[1:]] == [["Player 05"]]

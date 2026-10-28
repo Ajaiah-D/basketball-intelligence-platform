@@ -17,8 +17,7 @@ MARK = "ⓘ"
 
 _TS = (
     "True shooting %: scoring efficiency that counts 3-pointers as worth more "
-    "and includes free throws. Around 57% has been league average in recent "
-    "seasons; 60%+ is excellent."
+    "and includes free throws. League average is usually around 57-58%."
 )
 _USG = (
     "Usage rate: the share of his team's plays a player finishes - with a shot, "
@@ -32,8 +31,8 @@ _REB = (
 )
 _GMSC = (
     "Game score: a one-number summary of a box score (John Hollinger's "
-    "formula), scaled like points. About 10 is an average game; 20+ is "
-    "excellent."
+    "formula), scaled like points. Qualified players usually average around "
+    "8-9 a game over a season."
 )
 _PIE = (
     "Player Impact Estimate: the NBA's own measure of a player's share of "
@@ -41,8 +40,7 @@ _PIE = (
 )
 _PLUS_MINUS = (
     "Plus/minus: how many points his team outscored opponents by while "
-    "he was on the court. Positive is good, but it depends heavily on "
-    "teammates."
+    "he was on the court. It depends heavily on teammates."
 )
 
 TERMS = {
@@ -121,9 +119,8 @@ TERMS = {
     "Rebound rate": _REB,
     "Impact (PIE)": _PIE,
     "AST/TO": (
-        "Assist-to-turnover ratio: assists per turnover. Higher means a "
-        "player sets up teammates without giving the ball away; about 3 is "
-        "excellent for a lead guard."
+        "Assist-to-turnover ratio: assists per turnover. Players averaging 5+ "
+        "assists usually sit around 2.5."
     ),
     # Team metrics
     "PCT": "Winning percentage: wins divided by games played.",

@@ -523,6 +523,7 @@ def stat_scatter(
     fmt: Callable[[str, float], str] | None = None,
     highlight_col: str | None = None,
     detail_col: str | None = None,
+    highlight_color: str | None = None,
 ) -> go.Figure:
     """Any two columns of `df` against each other, a dot per row.
 
@@ -539,7 +540,9 @@ def stat_scatter(
     crowd stays readable; the rest are unlabelled but still hover. A hover shows `name_col` (default `label_col`), both
     values through `fmt(column, value)` and, when `df` has `<column>_rank`,
     both ranks as "#3 of 30"; `detail_col`, when given, is a last hover line
-    of ready-made text. Rows missing either column are skipped."""
+    of ready-made text. `highlight_color`, when given, paints every highlighted
+    dot that one colour instead of its own row's (a team's players, whichever
+    team a traded one finished with). Rows missing either column are skipped."""
     fmt = fmt or _default_fmt
     # "of N" counts everything the stat was ranked across, so a team missing
     # the other stat does not shrink it (a rank column the mart left null
@@ -569,7 +572,10 @@ def stat_scatter(
         f"{'<br>' + str(data[detail_col][i]) if detail_col else ''}"
         for i in range(n)
     ]
-    colors = [T.team_color(str(c)) for c in data[color_col]]
+    colors = [
+        highlight_color if highlight_color and pick[i] else T.team_color(str(c))
+        for i, c in enumerate(data[color_col])
+    ]
 
     def trace(rows: list[int], is_pick: bool) -> go.Scatter:
         return go.Scatter(
