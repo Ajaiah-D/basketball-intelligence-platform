@@ -54,6 +54,8 @@ TERMS = {
     "AST": "Assists: passes that led straight to a teammate's basket.",
     "FG%": "Field goal percentage: the share of shots made, free throws not included.",
     "FGA": "Field goal attempts per game - shots taken, 2s and 3s together.",
+    "STL": "Steals per game: times he took the ball away from an opponent.",
+    "BLK": "Blocks per game: opponents' shots he swatted away.",
     "3PM": "Three-pointers made per game.",
     "3PA": "Three-point attempts per game.",
     "Minutes (game)": "Minutes played in this game.",
@@ -88,6 +90,9 @@ TERMS = {
     "FT rate (player)": (
         "Free throw rate: his free throw attempts per field goal attempt - how "
         "often he gets to the line for each shot he takes."
+    ),
+    "3PA rate (player)": (
+        "Three-point attempt rate: the share of his field goal attempts that are three-pointers."
     ),
     "3PA share": (
         "His share of the team's three-point attempts that season, out of every "

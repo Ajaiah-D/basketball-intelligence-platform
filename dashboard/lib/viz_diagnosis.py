@@ -521,22 +521,25 @@ def stat_scatter(
     invert: Iterable[str] = (),
     name_col: str | None = None,
     fmt: Callable[[str, float], str] | None = None,
+    highlight_col: str | None = None,
+    detail_col: str | None = None,
 ) -> go.Figure:
     """Any two columns of `df` against each other, a dot per row.
 
-    Dots take the team colour of `color_col` (an abbreviation); the row
-    whose `label_col` equals `highlight` is drawn larger and outlined, on
-    top. Dashed lines mark the average of each column, so position reads
+    Dots take the team colour of `color_col` (an abbreviation); the rows
+    whose `highlight_col` (default `label_col`) equals `highlight` are drawn
+    larger and outlined, on top. Dashed lines mark the average of each column, so position reads
     against the league instead of an arbitrary zero, and are the only
     labelled reference: no quadrant is named good or bad.
 
     `invert` lists the columns whose axis runs high to low, so up and right
     always lead to the better end; the axis title says so. `label_top`
-    names that many dots (the picked one always, then the furthest from
-    the averages) so a crowd stays readable; the rest are unlabelled but
-    still hover. A hover shows `name_col` (default `label_col`), both
+    names that many dots (the picked ones always, however many they are,
+    then the furthest from the averages while any of the count is left) so a
+    crowd stays readable; the rest are unlabelled but still hover. A hover shows `name_col` (default `label_col`), both
     values through `fmt(column, value)` and, when `df` has `<column>_rank`,
-    both ranks as "#3 of 30". Rows missing either column are skipped."""
+    both ranks as "#3 of 30"; `detail_col`, when given, is a last hover line
+    of ready-made text. Rows missing either column are skipped."""
     fmt = fmt or _default_fmt
     # "of N" counts everything the stat was ranked across, so a team missing
     # the other stat does not shrink it (a rank column the mart left null
@@ -550,15 +553,20 @@ def stat_scatter(
     inverted = set(invert)
     names = data[name_col or label_col].tolist()
     labels = data[label_col].tolist()
-    pick = [label == highlight for label in labels] if highlight is not None else [False] * n
+    # The highlight can match a column other than the one that names the
+    # dots (every player of one team, each labelled by name).
+    matched = data[highlight_col or label_col].tolist()
+    pick = [m == highlight for m in matched] if highlight is not None else [False] * n
     picked = {i for i in range(n) if pick[i]}
-    # The pick is always named and counts against the cap.
+    # The picks are always named and count against the cap; more of them than
+    # the cap leaves no room for the rest, but never loses a pick.
     named = picked | _furthest(data, x, y, label_top - len(picked), picked)
 
     hovers = [
         f"<b>{names[i]}</b><br>{x_label or x} {fmt(x, float(data[x][i]))}"
         f"{_standing(data, x, i, pools.get(x, 0))}<br>{y_label or y} {fmt(y, float(data[y][i]))}"
         f"{_standing(data, y, i, pools.get(y, 0))}"
+        f"{'<br>' + str(data[detail_col][i]) if detail_col else ''}"
         for i in range(n)
     ]
     colors = [T.team_color(str(c)) for c in data[color_col]]

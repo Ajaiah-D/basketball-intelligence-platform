@@ -259,8 +259,8 @@ def _busiest_player(con, season: str) -> tuple[str, int]:
 def test_the_page_has_stats_scatter_and_compare_tabs(con):
     at = _app()
     assert [t.label for t in at.tabs] == ["Stats", "Scatter", "Compare"]
-    # The tabs to come say what they will hold, in one line each.
-    assert len(at.tabs[1].caption) == 1 and len(at.tabs[2].caption) == 1
+    # The Compare tab to come says what it will hold, in one line.
+    assert len(at.tabs[2].caption) == 1
 
 
 def test_the_game_log_lists_every_game(con):
