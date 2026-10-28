@@ -289,6 +289,11 @@ def test_scatter_dashed_league_average_lines_at_the_means():
     assert notes == ["league average"]
 
 
+def test_scatter_reference_line_can_say_what_it_averages():
+    fig = _scatter(average_label="average of these players")
+    assert [a.text for a in fig.layout.annotations] == ["average of these players"]
+
+
 def test_scatter_caps_the_labels_but_always_names_the_pick():
     fig = _scatter(highlight="T03", label_top=5)
     labelled = [t for tr in fig.data for t in tr.text if t]
@@ -517,6 +522,20 @@ def test_trend_draws_a_bar_per_game_and_a_five_game_line():
     assert [v != v for v in line.y[:4]] == [True] * 4
     assert list(line.y[4:]) == [14.0, 16.0, 18.0, 20.0]
     assert line.line.color == T.ACCENT
+
+
+def test_trend_under_five_games_has_bars_and_no_rolling_line():
+    # Fewer than five games make no 5-game average; the bars and the season
+    # average are the whole chart.
+    fig = viz_diagnosis.stat_trend(_games(3), "PTS", season_avg=12.0)
+    assert [t.name for t in fig.data] == ["Game", "season avg 12.0"]
+    assert len(fig.layout.annotations) == 0
+
+
+def test_trend_line_is_always_the_five_game_average():
+    fig = viz_diagnosis.stat_trend(_games(5), "PTS", season_avg=14.0)
+    assert fig.data[1].name == "5-game avg"
+    assert list(fig.data[1].y[4:]) == [14.0]
 
 
 def test_trend_title_names_the_stat():

@@ -524,6 +524,7 @@ def stat_scatter(
     highlight_col: str | None = None,
     detail_col: str | None = None,
     highlight_color: str | None = None,
+    average_label: str = "league average",
 ) -> go.Figure:
     """Any two columns of `df` against each other, a dot per row.
 
@@ -542,7 +543,9 @@ def stat_scatter(
     both ranks as "#3 of 30"; `detail_col`, when given, is a last hover line
     of ready-made text. `highlight_color`, when given, paints every highlighted
     dot that one colour instead of its own row's (a team's players, whichever
-    team a traded one finished with). Rows missing either column are skipped."""
+    team a traded one finished with). `average_label` names the dashed
+    lines: the default suits a frame of the whole league, and a filtered one
+    says what it averages instead. Rows missing either column are skipped."""
     fmt = fmt or _default_fmt
     # "of N" counts everything the stat was ranked across, so a team missing
     # the other stat does not shrink it (a rank column the mart left null
@@ -614,7 +617,7 @@ def stat_scatter(
         xref="x",
         yref="paper",
         yanchor="bottom",
-        text="league average",
+        text=average_label,
         showarrow=False,
         font={"color": T.MUTED, "size": 11},
     )
@@ -678,12 +681,14 @@ def stat_trend(games: pd.DataFrame, stat: str, season_avg: float) -> go.Figure:
 
     The rolling line only starts once there are five games behind it: from
     the first game it would be one game's value wearing a "5-game average"
-    label, an early swing that never happened. A game without the stat (TS%
-    with no shots) has no bar and doesn't pull the line toward zero."""
+    label, an early swing that never happened. With fewer than five games
+    in all there is no rolling line, and the bars and the season average
+    are the chart. A game without the stat (TS% with no shots) has no bar
+    and doesn't pull the line toward zero."""
     if games.empty:
         return _empty("No games this season")
     spec = GAME_STATS[stat]
-    window = min(TREND_WINDOW, len(games))
+    window = TREND_WINDOW
     dates = games["game_date"]
     roll = _rolling(games, spec, window)
     value_fmt = f":.{spec.decimals}f"
@@ -699,15 +704,16 @@ def stat_trend(games: pd.DataFrame, stat: str, season_avg: float) -> go.Figure:
         ],
         hovertemplate=f"%{{customdata}}: %{{y{value_fmt}}} {stat}<extra></extra>",
     )
-    fig.add_scatter(
-        x=dates,
-        y=roll,
-        name=f"{window}-game avg",
-        mode="lines",
-        line={"color": T.ACCENT, "width": 2},
-        connectgaps=False,
-        hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
-    )
+    if len(games) >= window:
+        fig.add_scatter(
+            x=dates,
+            y=roll,
+            name=f"{window}-game avg",
+            mode="lines",
+            line={"color": T.ACCENT, "width": 2},
+            connectgaps=False,
+            hovertemplate=f"{window}-game avg: %{{y:.1f}}<extra></extra>",
+        )
     # His own season figure turns the rolling line into a story: where he
     # ran hot or cold against his year.
     if season_avg == season_avg:

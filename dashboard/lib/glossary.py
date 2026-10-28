@@ -17,7 +17,7 @@ MARK = "ⓘ"
 
 _TS = (
     "True shooting %: scoring efficiency that counts 3-pointers as worth more "
-    "and includes free throws. League average is usually around 57-58%."
+    "and includes free throws. League average is usually around 56-58%."
 )
 _USG = (
     "Usage rate: the share of his team's plays a player finishes - with a shot, "
