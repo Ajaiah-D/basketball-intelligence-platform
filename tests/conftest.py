@@ -3,6 +3,7 @@ assert facts that are true of the data itself, not row counts that shift
 on every refresh."""
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -490,3 +491,42 @@ def schedule_warehouse_without_predictions(tmp_path):
     )
     with data_core.use_warehouse(path):
         yield path
+
+
+# --- The settled-predictions mart in a tiny warehouse ----------------------------
+#
+# The dashboard reads dbt's mart_settled_predictions. A tiny warehouse gets
+# the mart as a view built from the model file itself, so a test grades
+# its predictions with the real model's rules rather than a copy of them.
+
+_SETTLED_MODEL = (
+    ROOT / "dbt" / "basketball_intelligence" / "models" / "marts" / "mart_settled_predictions.sql"
+)
+
+
+def settled_mart_query() -> str:
+    """mart_settled_predictions' real query (the branch built when
+    main.predictions exists), its Jinja references written out as the
+    tables they resolve to."""
+    text = _SETTLED_MODEL.read_text(encoding="utf-8")
+    match = re.search(r"\{%-? else -?%\}(.*)\{%-? endif -?%\}", text, re.S)
+    assert match, "mart_settled_predictions.sql lost its else/endif branch"
+    query = (
+        match.group(1)
+        .replace("{{ predictions }}", "main.predictions")
+        .replace("{{ ref('fct_team_game') }}", "main_marts.fct_team_game")
+    )
+    assert "{{" not in query and "{%" not in query, "an unresolved Jinja reference"
+    return query
+
+
+@pytest.fixture(scope="session")
+def add_settled_mart():
+    """A function that adds main_marts.mart_settled_predictions, as the
+    model's own view, to the warehouse open on `con`. The warehouse needs
+    main.predictions and main_marts.fct_team_game first."""
+
+    def add(con) -> None:
+        con.execute(f"create view main_marts.mart_settled_predictions as {settled_mart_query()}")
+
+    return add

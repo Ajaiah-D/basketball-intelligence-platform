@@ -1,57 +1,23 @@
 """The model's predictions: upcoming games, and the settled ones it is graded
 on.
 
-Nothing here imports ml: scikit-learn and scipy are dev-only and absent on
-the deployed app, which once crashed with ModuleNotFoundError the moment a
-real predictions table was published because this module imported
-ml.evaluate. The few lines of metric math are duplicated below instead;
+The grading itself (each game's first prediction beside its result, the
+no-contest game left out) is dbt's mart_settled_predictions, which
+ml/evaluate.py reads too. Nothing here imports ml: scikit-learn and scipy
+are dev-only and absent on the deployed app, which once crashed with
+ModuleNotFoundError the moment a real predictions table was published
+because this module imported ml.evaluate. The track record's three
+averages are taken in SQL over the mart's rows instead;
 tests/test_settled_predictions.py checks they give ml's numbers.
 """
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from core.constants import HOME_PICK_THRESHOLD
 
 from .core import objects_exist, q
-
-# The predictions graded against what happened: the earliest prediction per
-# game only (grading a later re-run would let a model be scored on a
-# prediction made after the result was known), joined to the result. dbt's
-# mart_settled_predictions is the same query, and ml/evaluate.py reads that
-# model; the dashboard keeps its own copy until a warehouse with the model
-# is published, and tests/test_settled_predictions.py fails if the two ever
-# differ.
-SETTLED_PREDICTIONS_SQL = """
-with first_prediction as (
-    select
-        *,
-        row_number() over (
-            partition by game_id order by predicted_at, prediction_id
-        ) as attempt
-    from main.predictions
-)
-
-select
-    p.game_id,
-    p.model_version,
-    p.game_date,
-    p.predicted_margin,
-    p.win_probability,
-    f.margin,
-    f.home_won,
-    f.home_points,
-    f.away_points
-from first_prediction p
-join main_marts.fct_team_game f on f.game_id = p.game_id
-where p.attempt = 1
-  -- A cancelled game recorded as a 0-0 final is not a result: grading it
-  -- would put a miss on the public track record for a game that never
-  -- happened. Same exclusion as mart_game_features and ml/predict.py.
-  and not (f.home_points = 0 and f.away_points = 0)
-"""
 
 # The most recent prediction for each game: a game is re-predicted every
 # day until it tips off, and the latest run has the freshest inputs.
@@ -137,34 +103,63 @@ def latest_predictions() -> pd.DataFrame:
     )
 
 
+def settled_available() -> bool:
+    """Whether the warehouse has the graded predictions. A warehouse
+    published before mart_settled_predictions existed lacks them; the page
+    shows a notice for the track record instead."""
+    return objects_exist("main_marts.mart_settled_predictions")
+
+
 def settled_predictions() -> pd.DataFrame:
-    """Every graded prediction (SETTLED_PREDICTIONS_SQL), by game. Empty when
-    the warehouse predates the predictions table or the game fact."""
-    if not objects_exist("main.predictions", "main_marts.fct_team_game"):
+    """Every graded prediction (mart_settled_predictions), by game. Empty
+    when the warehouse predates the mart."""
+    if not settled_available():
         return pd.DataFrame(columns=_SETTLED_COLUMNS)
-    # Sorted here rather than in the SQL, which has to stay the model's
-    # query word for word.
-    return q(SETTLED_PREDICTIONS_SQL).sort_values("game_id", ignore_index=True)
+    return q(
+        """
+        select
+            game_id,
+            model_version,
+            game_date,
+            predicted_margin,
+            win_probability,
+            margin,
+            home_won,
+            home_points,
+            away_points
+        from main_marts.mart_settled_predictions
+        order by game_id
+        """
+    )
 
 
 def prediction_track_record() -> dict:
     """The model's public accuracy record: accuracy, Brier score, margin
-    MAE and n - the numbers ml.evaluate.track_record() logs, computed here
-    because the dashboard can't import ml (see the module docstring).
-    {"n": 0} when nothing has settled yet."""
-    settled = settled_predictions()
-    if settled.empty:
+    MAE and n - the numbers ml.evaluate.track_record() logs, averaged here
+    over the mart's rows because the dashboard can't import ml (see the
+    module docstring). A coin flip counts as a home pick
+    (HOME_PICK_THRESHOLD). {"n": 0} when nothing has settled yet."""
+    if not settled_available():
         return {"n": 0}
-
-    home_won = settled["home_won"].astype(bool).to_numpy()
-    win_probability = settled["win_probability"].astype(float).to_numpy()
-    predicted_margin = settled["predicted_margin"].astype(float).to_numpy()
-    margin = settled["margin"].astype(float).to_numpy()
+    record = q(
+        """
+        select
+            count(*) as n,
+            count_if((win_probability >= ?) = home_won) / count(*) as accuracy,
+            avg(power(win_probability - home_won::double, 2)) as brier,
+            avg(abs(predicted_margin - margin)) as margin_mae
+        from main_marts.mart_settled_predictions
+        """,
+        (HOME_PICK_THRESHOLD,),
+    ).iloc[0]
+    n = int(record["n"])
+    if n == 0:
+        return {"n": 0}
     return {
-        "accuracy": float(((win_probability >= HOME_PICK_THRESHOLD) == home_won).mean()),
-        "brier": float(np.mean((win_probability - home_won.astype(float)) ** 2)),
-        "margin_mae": float(np.mean(np.abs(predicted_margin - margin))),
-        "n": len(settled),
+        "accuracy": float(record["accuracy"]),
+        "brier": float(record["brier"]),
+        "margin_mae": float(record["margin_mae"]),
+        "n": n,
     }
 
 
@@ -172,14 +167,12 @@ def recent_settled_predictions(n: int = 20) -> pd.DataFrame:
     """The latest graded predictions, newest first: who played, the final
     score, what the model said and whether it called the winner. Empty when
     nothing has settled (or the warehouse predates the tables it needs)."""
-    if not objects_exist(
-        "main.predictions", "main_marts.fct_team_game", "main_staging.stg_schedule"
-    ):
+    if not objects_exist("main_marts.mart_settled_predictions", "main_staging.stg_schedule"):
         return pd.DataFrame(columns=_RECENT_COLUMNS)
-    # The settled query goes in as a subquery, so the grid grades exactly
-    # the games the track record does.
+    # The mart's rows, so the list grades exactly the games the track
+    # record does, with the same coin-flip rule.
     df = q(
-        f"""
+        """
         select
             s.game_date,
             s.home_team_abbreviation as home,
@@ -189,7 +182,7 @@ def recent_settled_predictions(n: int = 20) -> pd.DataFrame:
             t.win_probability,
             t.predicted_margin,
             (t.win_probability >= ?) = t.home_won as correct
-        from ({SETTLED_PREDICTIONS_SQL}) t
+        from main_marts.mart_settled_predictions t
         join main_staging.stg_schedule s on s.game_id = t.game_id
         order by s.game_date desc, t.game_id
         limit ?

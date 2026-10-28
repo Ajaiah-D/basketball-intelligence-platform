@@ -186,12 +186,13 @@ its own `team_path` column, so pandas would have produced `team_path_x` and
 column is called `team_label` instead. A new column can collide with a
 name the old code adds itself.
 
-One contract step is still to do. `mart_settled_predictions` (the graded
-predictions, which `ml/evaluate.py` reads) is newer than the published
-warehouse, so `dashboard/lib/data/predictions.py` keeps its own copy of the
-same SQL, and `tests/test_settled_predictions.py` fails if the two differ.
-After the next refresh publishes the mart, the dashboard switches to
-reading it, and its copy of the SQL and that equality test are deleted.
+`mart_settled_predictions` (the graded predictions) is a worked example.
+It was newer than the published warehouse, so for one release the
+dashboard kept its own copy of the same SQL, with a test that failed if
+the two differed. Once a refresh had published the mart, the dashboard
+switched to reading it, and the copy and the test were deleted. Until a
+new mart is published, a page that reads it checks
+`data.core.objects_exist(...)` and shows a one-line notice.
 
 The reasoning is in
 [ADR 0008](docs/adr/0008-dbt-marts-as-the-single-source-of-truth.md).

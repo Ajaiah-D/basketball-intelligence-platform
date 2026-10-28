@@ -54,12 +54,11 @@ next publish. The column became `team_label`. So "additive" has to be
 checked against what the live code does with a table, not only against
 what it selects.
 
-One contract step is still open. `ml/evaluate.py` reads
-`mart_settled_predictions`, but the published warehouse predates it, so
-`dashboard/lib/data/predictions.py` keeps an identical copy of its SQL,
-which `tests/test_settled_predictions.py` holds equal to the model in text
-and in output. Once a refresh has published the mart, the dashboard reads
-it and the copy and that test are deleted.
+`mart_settled_predictions` went through all of it. `ml/evaluate.py` read
+the mart from the start, but the published warehouse predated it, so the
+dashboard kept an identical copy of its SQL, held equal to the model by a
+test. The 2026-10-23 refresh published the mart; the dashboard then
+switched to reading it, and the copy and that test were deleted.
 
 Considered and rejected: keeping the metrics in the dashboard, which leaves
 the pipeline, the models and the health check unable to share them and

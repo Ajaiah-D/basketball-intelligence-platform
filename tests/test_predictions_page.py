@@ -22,9 +22,11 @@ predictions.render()
 """
 
 
-def _build_warehouse(path, settled: bool = True) -> None:
+def _build_warehouse(path, add_mart, settled: bool = True) -> None:
     """Write a small warehouse: two upcoming games (one with a tip-off time,
-    one without) and, when `settled`, a graded game plus a no-contest."""
+    one without) and, when `settled`, a graded game plus a no-contest.
+    `add_mart` is conftest's add_settled_mart, or None for a warehouse
+    published before mart_settled_predictions existed."""
     con = duckdb.connect(str(path))
     con.execute("create schema main_staging")
     con.execute("create schema main_marts")
@@ -87,6 +89,8 @@ def _build_warehouse(path, settled: bool = True) -> None:
                 ('g_settled', 5.0, true, 110, 105),
                 ('g_no_contest', 0.0, false, 0, 0)
         """)
+    if add_mart is not None:
+        add_mart(con)
     con.close()
 
 
@@ -100,19 +104,19 @@ def no_predictions_db(tmp_path):
 
 
 @pytest.fixture
-def with_predictions_db(tmp_path):
+def with_predictions_db(tmp_path, add_settled_mart):
     """Upcoming games plus one settled prediction and one no-contest game."""
     path = tmp_path / "with_predictions.duckdb"
-    _build_warehouse(path, settled=True)
+    _build_warehouse(path, add_settled_mart, settled=True)
     with data_core.use_warehouse(path):
         yield path
 
 
 @pytest.fixture
-def upcoming_only_db(tmp_path):
+def upcoming_only_db(tmp_path, add_settled_mart):
     """Predictions exist for future games but nothing has settled yet."""
     path = tmp_path / "upcoming_only.duckdb"
-    _build_warehouse(path, settled=False)
+    _build_warehouse(path, add_settled_mart, settled=False)
     with data_core.use_warehouse(path):
         yield path
 
@@ -254,7 +258,7 @@ def test_upcoming_predictions_carries_tipoff(with_predictions_db):
     assert out["tipoff_utc"].isna().sum() == 1
 
 
-def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path):
+def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path, add_settled_mart):
     rng = np.random.default_rng(7)
     path = tmp_path / "sixty.duckdb"
     con = duckdb.connect(str(path))
@@ -286,6 +290,7 @@ def test_calibration_bins_math_on_sixty_synthetic_games(tmp_path):
             "insert into main_marts.fct_team_game values (?, ?, ?, 110, 100)",
             [f"g{i}", 10.0 if won else -10.0, won],
         )
+    add_settled_mart(con)
     con.close()
     with data_core.use_warehouse(path):
         out = stats.calibration_bins(predictions.settled_predictions())
@@ -320,10 +325,10 @@ def _add_settled_games(path, probs, home_won) -> None:
 
 
 @pytest.fixture
-def sixty_settled_db(tmp_path):
+def sixty_settled_db(tmp_path, add_settled_mart):
     """The standard warehouse plus 60 graded games: enough for calibration."""
     path = tmp_path / "sixty_settled.duckdb"
-    _build_warehouse(path, settled=True)
+    _build_warehouse(path, add_settled_mart, settled=True)
     rng = np.random.default_rng(3)
     probs = rng.uniform(0.05, 0.95, 60)
     _add_settled_games(path, probs, rng.uniform(size=60) < probs)
@@ -332,10 +337,10 @@ def sixty_settled_db(tmp_path):
 
 
 @pytest.fixture
-def coin_flip_db(tmp_path):
+def coin_flip_db(tmp_path, add_settled_mart):
     """One graded game the model called at exactly 50%, won by the home team."""
     path = tmp_path / "coin_flip.duckdb"
-    _build_warehouse(path, settled=False)
+    _build_warehouse(path, add_settled_mart, settled=False)
     _add_settled_games(path, [0.5], [True])
     with data_core.use_warehouse(path):
         yield path
