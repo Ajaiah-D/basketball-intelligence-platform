@@ -331,8 +331,12 @@ def warehouse_for_team_builder(warehouse_with_player_impact):
 # For data/schedule.py and the Schedule page. One synthetic season covers the
 # shapes: a tie for top scorer, a neutral-site game whose result is oriented
 # the other way, a cancelled 0-0 game, a re-predicted game, a preseason game.
+# A second, earlier season is scheduled too (one game), and the sidebar's list
+# adds a season the schedule doesn't hold, for the page's season rules.
 
 SCHEDULE_SEASON = "2030-31"
+SCHEDULE_PRIOR_SEASON = "2029-30"
+SCHEDULE_UNSCHEDULED_SEASON = "2028-29"
 
 _SCHEDULE_IDS = {"BOS": 1, "NYK": 2, "MIA": 3, "DAL": 4}
 
@@ -402,6 +406,20 @@ def _build_schedule_warehouse(path, with_predictions=True):
                 }
                 for gid, day, tip, home, away in _SCHEDULE_GAMES
             ]
+            + [
+                {
+                    "season": SCHEDULE_PRIOR_SEASON,
+                    "game_id": "0022900001",
+                    "game_date": pd.Timestamp("2029-10-23").date(),
+                    "tipoff_utc": pd.Timestamp("2029-10-23 23:00:00"),
+                    "home_team_id": _SCHEDULE_IDS["MIA"],
+                    "home_team_abbreviation": "MIA",
+                    "away_team_id": _SCHEDULE_IDS["DAL"],
+                    "away_team_abbreviation": "DAL",
+                    "game_status": 3,
+                    "is_regular_season": True,
+                }
+            ]
         ),
     )
     _schedule_table(
@@ -431,7 +449,15 @@ def _build_schedule_warehouse(path, with_predictions=True):
     _schedule_table(
         con,
         "main_staging.stg_team_game_logs",
-        pd.DataFrame({"season": [SCHEDULE_SEASON]}),
+        pd.DataFrame(
+            {
+                "season": [
+                    SCHEDULE_SEASON,
+                    SCHEDULE_PRIOR_SEASON,
+                    SCHEDULE_UNSCHEDULED_SEASON,
+                ]
+            }
+        ),
     )
     if with_predictions:
         preds = pd.DataFrame(

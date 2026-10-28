@@ -5,11 +5,10 @@ to the game on the Games page), or tip-off times with the model's pick.
 With a team chosen, the calendar shows its opponents and the page ends
 with its whole season and running record.
 
-The page's season box offers the seasons the schedule holds
-(data.schedule.schedule_seasons), which can include one the sidebar
-doesn't list yet: the sidebar's seasons come from played games, and a
-schedule is published weeks before opening night. The two boxes follow
-each other whenever both have the season.
+The season is the sidebar's. A schedule is published weeks before
+opening night and covers only a couple of seasons, so when the sidebar is
+on a season it doesn't hold, the page shows the season under way (or the
+next to start) and says so in one caption.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from core.fmt import matchup as opponent_label
 from dashboard.lib import glossary, matchup, nav, tables
 from dashboard.lib import theme as T
 from dashboard.lib.data import core as data_core
@@ -30,18 +30,17 @@ from dashboard.lib.data import seasons
 from dashboard.lib.state import GAMES_PICK_KEY, SEASON_KEY
 from dashboard.lib.tables import Col
 
-# Session-state keys. The season is stored apart from its box's own key, so
-# it outlives a visit to another page (Streamlit drops a widget's state when
-# a run doesn't draw it).
-SEASON_STORE_KEY = "sched_season"
-SEASON_BOX_KEY = "sched_season_box"
-SIDEBAR_SEEN_KEY = "sched_sidebar_seen"
+# Session-state keys. The team is stored apart from its box's own key, like
+# the month and the day, so it outlives a visit to another page (Streamlit
+# drops a widget's state when a run doesn't draw it).
 TEAM_KEY = "sched_team"
+TEAM_BOX_KEY = "sched_team_box"
 MONTH_KEY = "sched_month"  # the first of the month shown
 DAY_KEY = "sched_selected_day"
 
 ALL_TEAMS = "All teams"
 TBD = "TBD"  # a team not yet known
+PENDING = "Result pending"  # a game before today that has no result yet
 TODAY_MARK = "● "
 WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 _CALENDAR = calendar.Calendar(firstweekday=calendar.SUNDAY)
@@ -87,13 +86,24 @@ def default_month(first_day: date, last_day: date, on: date) -> date:
     return month_start(first_day)
 
 
-def default_day(month: date, on: date, game_days) -> date:
-    """`on` when it is in the month, else the month's first day with games,
-    else the 1st."""
+def default_day(month: date, on: date, game_days, team_days=()) -> date:
+    """`on` when it is in the month, else the month's first day with games
+    (the chosen team's, when it plays that month), else the 1st."""
     if month_start(on) == month:
         return on
-    in_month = sorted(d for d in game_days if month_start(d) == month)
-    return in_month[0] if in_month else month
+    for days in (team_days, game_days):
+        in_month = sorted(d for d in days if month_start(d) == month)
+        if in_month:
+            return in_month[0]
+    return month
+
+
+def seasons_sentence(options: list[str]) -> str:
+    """['2025-26', '2026-27'] -> '2025-26 and 2026-27' (oldest first)."""
+    ordered = sorted(options)
+    if len(ordered) < 2:
+        return "".join(ordered)
+    return f"{', '.join(ordered[:-1])} and {ordered[-1]}"
 
 
 def day_label(day: date, detail: str, is_today: bool) -> str:
@@ -107,6 +117,13 @@ def day_label(day: date, detail: str, is_today: bool) -> str:
 def plain_label(label: str) -> str:
     """day_label as it reads on a wide screen: '23 · 12 games'."""
     return label.replace(" *", " · ").replace("*", "")
+
+
+def tip_or_pending(tipoff_utc, game_day: date, now: date) -> str:
+    """The tip-off time of a game still to come; PENDING for one on an
+    earlier day that has no result (postponed, cancelled, or not yet
+    refreshed), which a time would wrongly show as upcoming."""
+    return PENDING if game_day < now else matchup.tipoff_label(tipoff_utc)
 
 
 def short_name(name: str) -> str:
@@ -148,32 +165,13 @@ def _span(spans: pd.DataFrame, season: str) -> tuple[date, date]:
 # --- State ----------------------------------------------------------------------
 
 
-def _resolve_season(spans: pd.DataFrame) -> str:
-    """The season to show: the page's own choice, unless the sidebar's
-    season moved (to one the schedule has) since the page last looked,
-    which it then follows. First visit: the season under way or next."""
-    options = spans["season"].tolist()
+def _season_to_show(spans: pd.DataFrame) -> str:
+    """The sidebar's season when the schedule holds it, else the season under
+    way or next to start."""
     sidebar = st.session_state.get(SEASON_KEY)
-    first_look = SIDEBAR_SEEN_KEY not in st.session_state
-    moved = not first_look and st.session_state[SIDEBAR_SEEN_KEY] != sidebar
-    st.session_state[SIDEBAR_SEEN_KEY] = sidebar
-    season = st.session_state.get(SEASON_STORE_KEY)
-    if moved and sidebar in options:
-        season = sidebar
-    if season not in options:
-        season = default_season(spans, today())
-    st.session_state[SEASON_STORE_KEY] = season
-    return str(season)
-
-
-def _season_changed() -> None:
-    """The page's box drives the sidebar's too, when the sidebar has the
-    season (it lists only seasons with games played)."""
-    season = st.session_state[SEASON_BOX_KEY]
-    st.session_state[SEASON_STORE_KEY] = season
-    if season in seasons.seasons():
-        st.session_state[SEASON_KEY] = season
-        st.session_state[SIDEBAR_SEEN_KEY] = season
+    if sidebar in spans["season"].tolist():
+        return str(sidebar)
+    return default_season(spans, today())
 
 
 def _set_month(month: date) -> None:
@@ -190,7 +188,6 @@ def _open_game(game_id: str, season: str) -> None:
     st.session_state[GAMES_PICK_KEY] = game_id
     if season in seasons.seasons():
         st.session_state[SEASON_KEY] = season
-        st.session_state[SIDEBAR_SEEN_KEY] = season
 
 
 # --- Sections -------------------------------------------------------------------
@@ -245,7 +242,7 @@ def _calendar(month: date, details: dict[date, str], selected: date, now: date) 
                 )
 
 
-def _day_view(games: pd.DataFrame, day: date, season: str) -> None:
+def _day_view(games: pd.DataFrame, day: date, season: str, now: date) -> None:
     st.markdown(f"#### {_day_heading(day)}")
     if games.empty:
         st.caption("No games.")
@@ -281,7 +278,7 @@ def _day_view(games: pd.DataFrame, day: date, season: str) -> None:
     if not upcoming.empty:
         rows = pd.DataFrame(
             {
-                "tip": [matchup.tipoff_label(t) for t in upcoming["tipoff_utc"]],
+                "tip": [tip_or_pending(t, day, now) for t in upcoming["tipoff_utc"]],
                 "game": [
                     matchup.favourite_matchup_html(a, h, p)
                     for a, h, p in zip(
@@ -306,7 +303,7 @@ def _day_view(games: pd.DataFrame, day: date, season: str) -> None:
         st.markdown(tables.html_table(rows, cols), unsafe_allow_html=True)
 
 
-def _team_season(season: str, team: str) -> None:
+def _team_season(season: str, team: str, now: date) -> None:
     games = sched.team_schedule(season, team)
     st.markdown(f"#### {html.escape(team)} schedule")
     if games.empty:
@@ -317,12 +314,14 @@ def _team_season(season: str, team: str) -> None:
         {
             "day": [_short_day(pd.Timestamp(d).date()) for d in games["game_date"]],
             "opp": [
-                f"{'vs' if home else '@'} {opp}"
+                opponent_label(not home, opp)
                 for home, opp in zip(games["is_home"], games["opponent"], strict=True)
             ],
             "result": [
-                res if f else matchup.tipoff_label(t)
-                for res, f, t in zip(games["result"], final, games["tipoff_utc"], strict=True)
+                res if f else tip_or_pending(t, pd.Timestamp(d).date(), now)
+                for res, f, t, d in zip(
+                    games["result"], final, games["tipoff_utc"], games["game_date"], strict=True
+                )
             ],
             "record": games["record"],
         }
@@ -354,7 +353,7 @@ def render() -> None:
         st.info("No schedule has been published yet.")
         return
 
-    season = _resolve_season(spans)
+    season = _season_to_show(spans)
     first_day, last_day = _span(spans, season)
     first, last = month_start(first_day), month_start(last_day)
     games = sched.schedule(season)
@@ -364,50 +363,58 @@ def render() -> None:
     now = today()
 
     st.markdown(f"## Schedule &nbsp;{T.chip(season)}", unsafe_allow_html=True)
-    season_col, team_col = st.columns(2)
-    st.session_state[SEASON_BOX_KEY] = season
-    season_col.selectbox(
-        "Season",
-        spans["season"].tolist(),
-        key=SEASON_BOX_KEY,
-        on_change=_season_changed,
-        label_visibility="collapsed",
-        help="The seasons the schedule holds",
-    )
-    team = team_col.selectbox("Team", teams, key=TEAM_KEY, label_visibility="collapsed")
+    sidebar = st.session_state.get(SEASON_KEY)
+    if sidebar and sidebar != season:
+        st.caption(
+            f"The schedule covers {seasons_sentence(spans['season'].tolist())}; showing {season}."
+        )
+
+    # The widget's own state is dropped on a run that doesn't draw it, so the
+    # team is kept in TEAM_KEY and put back before the box is drawn; while
+    # the page is up, the box is the truth.
+    remembered = st.session_state.get(TEAM_KEY)
+    st.session_state.setdefault(TEAM_BOX_KEY, remembered if remembered in teams else ALL_TEAMS)
+    # A team the season doesn't have (the sidebar moved to another season).
+    if st.session_state[TEAM_BOX_KEY] not in teams:
+        st.session_state[TEAM_BOX_KEY] = ALL_TEAMS
+    team = st.selectbox("Team", teams, key=TEAM_BOX_KEY, label_visibility="collapsed")
+    st.session_state[TEAM_KEY] = team
 
     month = st.session_state.get(MONTH_KEY)
     if not isinstance(month, date) or not first <= month <= last:
         month = default_month(first_day, last_day, now)
     st.session_state[MONTH_KEY] = month
 
+    mine = games if team == ALL_TEAMS else games[(games["home"] == team) | (games["away"] == team)]
     game_days = {pd.Timestamp(d).date() for d in games["game_date"]}
+    team_days = {pd.Timestamp(d).date() for d in mine["game_date"]}
     selected = st.session_state.get(DAY_KEY)
     if not isinstance(selected, date) or month_start(selected) != month:
-        selected = default_day(month, now, game_days)
+        selected = default_day(month, now, game_days, team_days)
     st.session_state[DAY_KEY] = selected
 
     if team == ALL_TEAMS:
         counts = sched.month_counts(season, month.year, month.month)
         details = {d: f"{n} game{'s' if n != 1 else ''}" for d, n in counts.items()}
     else:
-        mine = sched.team_schedule(season, team)
+        schedule_of_team = sched.team_schedule(season, team)
         details = {
-            pd.Timestamp(d).date(): f"{'vs' if home else '@'} {opp}"
+            pd.Timestamp(d).date(): opponent_label(not home, opp)
             for d, home, opp in zip(
-                mine["game_date"], mine["is_home"], mine["opponent"], strict=True
+                schedule_of_team["game_date"],
+                schedule_of_team["is_home"],
+                schedule_of_team["opponent"],
+                strict=True,
             )
         }
 
     _month_nav(month, first, last)
     _calendar(month, details, selected, now)
 
-    day_games = games[games["game_date"].dt.date == selected]
-    if team != ALL_TEAMS:
-        day_games = day_games[(day_games["home"] == team) | (day_games["away"] == team)]
+    day_games = mine[mine["game_date"].dt.date == selected]
     # The day's games and the team's season read as lists: kept to a
     # readable width rather than stretched across a wide screen.
     with st.container(key="sched_dayview"):
-        _day_view(day_games, selected, season)
+        _day_view(day_games, selected, season, now)
         if team != ALL_TEAMS:
-            _team_season(season, team)
+            _team_season(season, team, now)

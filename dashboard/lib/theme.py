@@ -297,10 +297,10 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
    key=k the class st-key-k). A day button's label is "23 *12 games*": the
    italic detail follows a middle dot here and drops to a small second line
    on a phone (below). */
-.bip-sched-month {{ text-align: center; font-weight: 800; font-size: 1.05rem; color: {INK}; }}
+.bip-sched-month {{ text-align: center; font-weight: 800; font-size: 1.05rem; color: {INK};
+                    min-width: 9.5rem; }}  /* the arrows stay put month to month */
 .bip-sched-wd {{ text-align: center; font-size: .68rem; text-transform: uppercase;
                  letter-spacing: .08em; color: {MUTED}; font-weight: 700; }}
-.bip-sched-month {{ min-width: 9.5rem; }}  /* the arrows stay put month to month */
 .st-key-sched_cal {{ gap: .35rem; }}
 .st-key-sched_cal [data-testid="stHorizontalBlock"] {{ gap: .35rem; }}
 /* Streamlit pulls a markdown block up by its paragraph margin, which here
