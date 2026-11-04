@@ -581,7 +581,13 @@ def test_advanced_columns_are_off_before_the_box_score_is_complete(con):
 def test_all_players_index_lists_retired_players(con):
     index = players.all_players_index()
     assert list(index.columns) == ["player_id", "player", "team", "latest_season"]
-    assert len(index) > 3000
+    # Every player the mart has, one row each. Counted from the mart rather
+    # than pinned to a number: CI's fixture warehouse holds a few seasons, the
+    # local one every season since 1979-80.
+    (players_in_mart,) = con.execute(
+        "select count(distinct player_id) from main_marts.mart_player_season"
+    ).fetchone()
+    assert len(index) == players_in_mart
     assert index["player_id"].is_unique
     # Newest seasons first.
     assert list(index["latest_season"]) == sorted(index["latest_season"], reverse=True)
