@@ -19,6 +19,7 @@ from core.fmt import matchup
 from dashboard.lib import glossary, tables, viz, viz_diagnosis
 from dashboard.lib.tables import Col
 from dashboard.lib.viz_diagnosis import GAME_STATS
+from dashboard.lib.widget_state import choice
 
 TREND_KEY = "players_trend_stat"
 # Tall enough for about ten games, short enough that a full season doesn't
@@ -144,14 +145,13 @@ def trend_picker(games: pd.DataFrame, container: DeltaGenerator | None = None) -
     its section title's row) or in place, and the stat it picked."""
     options = available_stats(games)
     # A pick carried over from a season that had this stat is no longer offered.
-    if st.session_state.get(TREND_KEY) not in options:
-        st.session_state[TREND_KEY] = options[0]
+    stat = choice(TREND_KEY, options)
     # required: clicking the chosen stat again keeps it rather than leaving
     # the chart with no stat.
-    stat = (container or st).segmented_control(
+    (container or st).segmented_control(
         "Stat", options, required=True, label_visibility="collapsed", key=TREND_KEY
     )
-    return stat or options[0]
+    return stat
 
 
 def render_trend(games: pd.DataFrame, figures: Mapping[str, float], stat: str) -> None:

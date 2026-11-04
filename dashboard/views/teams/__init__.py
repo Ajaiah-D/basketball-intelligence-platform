@@ -24,6 +24,7 @@ from dashboard.lib.data import seasons
 from dashboard.lib.data import teams as team_data
 from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.tabs import keyed_tabs
+from dashboard.lib.widget_state import hold_keys
 from dashboard.views.teams import breakdown, league, scatter
 from dashboard.views.teams.common import TEAM_PICK_KEY, TEAMS_TAB_KEY
 from dashboard.views.teams.standings import CONF_KEY, render_standings
@@ -31,8 +32,9 @@ from dashboard.views.teams.team import render_team
 
 TABS = ["Team", "Team stats", "Standings"]
 
-# The choices each tab keeps while another tab is open: the team, the Team
-# tab's area and scatter pickers, the column set and the conference.
+# The choices each tab keeps while another tab is open (lib.widget_state.
+# hold_keys): the team, the Team tab's area and scatter pickers, the column
+# set and the conference.
 KEPT_KEYS = [
     TEAM_PICK_KEY,
     breakdown.AREA_KEY,
@@ -43,21 +45,9 @@ KEPT_KEYS = [
 ]
 
 
-def _keep_choices() -> None:
-    """Hold on to KEPT_KEYS while their tab isn't drawn, as the Players
-    page's keep_filters does: a widget that isn't drawn loses its value on
-    the server at the end of the run and in the browser when it leaves the
-    page. Writing each value back to its key on every run fixes both, since
-    a value set through session state on the widget's own run is sent to
-    the browser with it."""
-    for key in KEPT_KEYS:
-        if key in st.session_state:
-            st.session_state[key] = st.session_state[key]
-
-
 def render() -> None:
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
-    _keep_choices()
+    hold_keys(KEPT_KEYS)
     st.markdown(f"## Teams &nbsp;{T.chip(season)}", unsafe_allow_html=True)
     standings = team_data.standings(season)
 

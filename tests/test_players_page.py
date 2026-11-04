@@ -461,29 +461,30 @@ def test_selecting_a_row_opens_that_player(monkeypatch):
     # Row clicks can't be made through AppTest; this is the dataframe's
     # on_select callback, fed the selection Streamlit would hand it.
     rows = pd.DataFrame({"player_id": [11, 22], "season": ["2024-25", "2019-20"], "career": False})
+    key = table.TABLE_KEY
     monkeypatch.setattr(
         st,
         "session_state",
-        {"players_table": {"selection": {"rows": [1]}}, table.TABLE_ROWS_KEY: rows},
+        {key: {"selection": {"rows": [1]}}, table.TABLE_ROWS_KEY: rows},
     )
     opened = []
     monkeypatch.setattr(table, "open_player", lambda *a, **k: opened.append((a, k)))
-    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    table._on_select(key)
     assert opened == [((22, "2019-20"), {"career": False})]
 
-    st.session_state["players_table"] = {"selection": {"rows": [0]}}
-    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    st.session_state[key] = {"selection": {"rows": [0]}}
+    table._on_select(key)
     assert opened[-1] == ((11, "2024-25"), {"career": False})
 
     # A click on a cell (anywhere in the row, not just its checkbox) opens
     # that row's player too.
-    st.session_state["players_table"] = {"selection": {"rows": [], "cells": [(1, "ppg")]}}
-    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    st.session_state[key] = {"selection": {"rows": [], "cells": [(1, "ppg")]}}
+    table._on_select(key)
     assert opened[-1] == ((22, "2019-20"), {"career": False})
 
     # A cleared selection (the row clicked again) opens nobody.
-    st.session_state["players_table"] = {"selection": {"rows": [], "cells": []}}
-    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    st.session_state[key] = {"selection": {"rows": [], "cells": []}}
+    table._on_select(key)
     assert len(opened) == 3
 
 

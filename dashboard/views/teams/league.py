@@ -22,6 +22,7 @@ from dashboard.lib import glossary
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced
 from dashboard.lib.tabs import open_tab
+from dashboard.lib.widget_state import choice, selected_position
 from dashboard.views.teams.common import ROW_HEIGHT, TEAM_PICK_KEY, TEAMS_TAB_KEY
 
 # Session-state keys.
@@ -93,17 +94,6 @@ RATE_TERMS = {
 NO_MART = "Ratings and the Four Factors are not in this copy of the warehouse yet."
 
 
-def _choice(key: str, options: list[str]) -> None:
-    """Start a keyed choice at its first option, and put it back there when
-    its value is not one of `options` (a column set this season can't show,
-    or the segmented control clicked off). Set before the widget is drawn,
-    as the Players table does, rather than passed as its default, which
-    Streamlit would warn about alongside the value the page keeps through
-    session state while another tab is open."""
-    if st.session_state.get(key) not in options:
-        st.session_state[key] = options[0]
-
-
 def _frame(season: str, standings: pd.DataFrame) -> pd.DataFrame:
     """The standings with the mart's columns joined on, highest net rating
     first. A season without ratings (or a warehouse without the mart) sorts
@@ -173,23 +163,22 @@ def table_key(columns: str) -> str:
 
 def _on_select(key: str) -> None:
     """The table's on_select (`key` is the table's): open the clicked row's
-    team on the Team tab, whether the click was on the row's checkbox (a
-    row selection) or on any of its cells (a cell selection, as (row,
-    column)). A click that clears the selection opens nothing. The rerun
-    after a callback draws the Team tab with the picker already on the
-    team."""
-    selection = st.session_state[key]["selection"]
-    picked = list(selection.get("rows", [])) or [cell[0] for cell in selection.get("cells", [])]
-    if not picked:
+    team on the Team tab (lib.widget_state.selected_position). A click that
+    clears the selection opens nothing. The rerun after a callback draws
+    the Team tab with the picker already on the team."""
+    position = selected_position(key)
+    if position is None:
         return
-    st.session_state[TEAM_PICK_KEY] = str(st.session_state[TABLE_ROWS_KEY].iloc[picked[0]])
+    st.session_state[TEAM_PICK_KEY] = str(st.session_state[TABLE_ROWS_KEY].iloc[position])
     open_tab(TEAMS_TAB_KEY, "Team")
 
 
 def _captions(view: pd.DataFrame, has_mart: bool) -> None:
     """How to use the table, and where the ratings come from: the NBA's own
     figures, estimates from the box score, or none that season."""
-    sources = view["ratings_source"].dropna() if "ratings_source" in view else pd.Series()
+    sources = (
+        view["ratings_source"].dropna() if "ratings_source" in view else pd.Series(dtype=object)
+    )
     line = "Click a row to open that team."
     if len(sources):
         line += f" Ratings are {sources.iloc[0]}."
@@ -204,16 +193,16 @@ def render_team_stats(season: str, standings: pd.DataFrame) -> None:
     view = _frame(season, standings)
     has_ratings = "net_rating" in view and bool(view["net_rating"].notna().any())
     sets = list(COLUMN_SETS) if has_ratings else ["Basic"]
-    _choice(COLUMNS_KEY, sets)
-    columns = (
-        st.segmented_control(
-            "Columns",
-            sets,
-            label_visibility="collapsed",
-            key=COLUMNS_KEY,
-            help="Which stats the table shows",
-        )
-        or "Basic"
+    columns = choice(COLUMNS_KEY, sets)
+    # required: a click on the chosen set keeps it, rather than clearing the
+    # control and sending it back to Basic.
+    st.segmented_control(
+        "Columns",
+        sets,
+        required=True,
+        label_visibility="collapsed",
+        key=COLUMNS_KEY,
+        help="Which stats the table shows",
     )
     table_cols = [c for c in COLUMN_SETS[columns] if c in view.columns]
 

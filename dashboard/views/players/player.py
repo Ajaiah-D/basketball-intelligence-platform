@@ -25,6 +25,7 @@ from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import COMPARE_METRICS, advanced_percentiles, minutes_floor
 from dashboard.lib.data import advanced, players
 from dashboard.lib.stats import ShootingRank, percentile_of, qualification_threshold
+from dashboard.lib.widget_state import choice
 from dashboard.views.players import game_log
 from dashboard.views.players.search import PLAYER_ID_KEY, PLAYER_SCOPE_KEY, PLAYER_SEASON_KEY
 
@@ -188,17 +189,13 @@ def _player_header(row, career: bool, season: str, row_season: str, head: DeltaG
 
 def _career_detail(row) -> None:
     picker = _title_row("Career trajectory")
-    if st.session_state.get(CAREER_TREND_KEY) not in TREND_STATS:
-        st.session_state[CAREER_TREND_KEY] = "PPG"
-    stat_label = (
-        picker.segmented_control(
-            "Stat",
-            list(TREND_STATS),
-            required=True,
-            label_visibility="collapsed",
-            key=CAREER_TREND_KEY,
-        )
-        or "PPG"
+    stat_label = choice(CAREER_TREND_KEY, list(TREND_STATS))
+    picker.segmented_control(
+        "Stat",
+        list(TREND_STATS),
+        required=True,
+        label_visibility="collapsed",
+        key=CAREER_TREND_KEY,
     )
     stat_col, weight_col, is_rate = TREND_STATS[stat_label]
     bk = players.player_season_breakdown(int(row.player_id))
@@ -388,7 +385,7 @@ def render_player(default_rows: pd.DataFrame | None, season: str) -> None:
 
     head, toggle = st.columns([4, 1], vertical_alignment="center")
     # Set before the toggle is drawn rather than passed as its default (see
-    # table._choice). A default player opens at his table's scope.
+    # lib.widget_state.choice). A default player opens at his table's scope.
     if picked.table_career is not None:
         st.session_state[PLAYER_SCOPE_KEY] = "Career" if picked.table_career else "Season"
     elif st.session_state.get(PLAYER_SCOPE_KEY) not in ("Season", "Career"):

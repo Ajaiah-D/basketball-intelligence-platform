@@ -34,6 +34,7 @@ from dashboard.lib.advanced_metrics import PLAYER_COLUMN_CONFIG
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import qualification_threshold
+from dashboard.lib.widget_state import choice, hold_keys, selected_position
 from dashboard.views.players.search import open_player
 
 # The column sets, by the frame's column names. Career scope adds Yrs and
@@ -111,20 +112,9 @@ _FILTER_KEYS = [SCOPE_KEY, TEAM_KEY, PLAYERS_MIN_GP_KEY, MIN_CAREER_GP_KEY, COLU
 def keep_filters(also: Sequence[str] = ()) -> None:
     """Keep the filters as they were while another tab is open, and the
     widgets keyed in `also` (the Player tab's scope toggle and stat pickers)
-    the same way. The page calls this on every run, before the active tab
-    draws.
-
-    Only the active tab is drawn, and a widget that isn't drawn is
-    forgotten twice over: Streamlit drops its value on the server at the
-    end of that run, and the browser drops it when the widget leaves the
-    page. Writing each value back to its key fixes the first; writing it
-    on the run the widget comes back too fixes the second, since only a
-    value set through session state on the widget's own run is sent to the
-    browser with it. None of these widgets is given a default (see
-    _choice), so the write doesn't draw Streamlit's warning about one."""
-    for key in [*_FILTER_KEYS, *also]:
-        if key in st.session_state:
-            st.session_state[key] = st.session_state[key]
+    the same way (lib.widget_state.hold_keys). The page calls this on every
+    run, before the active tab draws."""
+    hold_keys([*_FILTER_KEYS, *also])
 
 
 def reset_min_games(season: str) -> None:
@@ -156,16 +146,6 @@ def _sync_season() -> None:
     """The page's season box drives the sidebar's, which every season-scoped
     page reads."""
     st.session_state[SEASON_KEY] = st.session_state[PLAYERS_SEASON_KEY]
-
-
-def _choice(key: str, options: list[str]) -> None:
-    """Start a keyed choice at its first option, and put it back there when
-    its value is not one of `options` (a team that isn't in this season, a
-    column set this season can't show, or a segmented control clicked off).
-    Set before the widget is drawn, rather than passed as its default, which
-    Streamlit would warn about alongside a value set through session state."""
-    if st.session_state.get(key) not in options:
-        st.session_state[key] = options[0]
 
 
 class Filters(NamedTuple):
@@ -202,11 +182,12 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
     # The two segmented controls get the room their labels need; squeezed,
     # Streamlit cuts "Career" and "Advanced" off mid-word.
     f0, fs, f1, f2, fc, f3 = st.columns([3, 2, 2, 2, 5, 3], vertical_alignment="bottom")
-    _choice(SCOPE_KEY, ["Season", "Career"])
-    scope = f0.segmented_control(
-        "Scope", ["Season", "Career"], label_visibility="collapsed", key=SCOPE_KEY
+    # required: a click on the chosen option keeps it, rather than clearing
+    # the control and sending it back to its first option.
+    career = choice(SCOPE_KEY, ["Season", "Career"]) == "Career"
+    f0.segmented_control(
+        "Scope", ["Season", "Career"], required=True, label_visibility="collapsed", key=SCOPE_KEY
     )
-    career = scope == "Career"
 
     if career:
         fs.selectbox(
@@ -248,7 +229,7 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
         )
 
     teams = ["All teams", *sorted(stats["team"].unique())]
-    _choice(TEAM_KEY, teams)
+    choice(TEAM_KEY, teams)
     team = f1.selectbox(
         "Team",
         teams,
@@ -259,10 +240,11 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
 
     no_advanced = _advanced_unavailable(career, season)
     sets = [s for s in COLUMN_SETS if s != "Advanced" or not no_advanced]
-    _choice(COLUMNS_KEY, sets)
-    columns = fc.segmented_control(
+    columns = choice(COLUMNS_KEY, sets)
+    fc.segmented_control(
         "Columns",
         sets,
+        required=True,
         label_visibility="collapsed",
         key=COLUMNS_KEY,
         help="Which stats the table shows",
@@ -271,7 +253,7 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
     search = f3.text_input(
         "Search", placeholder="Filter the table...", label_visibility="collapsed", key=FILTER_KEY
     )
-    return Filters(career, stats, min_gp, team, search, columns or "Basic", no_advanced)
+    return Filters(career, stats, min_gp, team, search, columns, no_advanced)
 
 
 def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -380,16 +362,14 @@ def _advanced_config(view: pd.DataFrame) -> dict:
     }
 
 
-def _on_select(table_key: str, rows_key: str) -> None:
-    """The table's on_select: open the clicked row's player, whether the
-    click was on the row's checkbox (a row selection) or on any of its
-    cells (a cell selection, as (row, column)). A click that clears the
+def _on_select(key: str) -> None:
+    """The table's on_select (`key` is the table's): open the clicked row's
+    player (lib.widget_state.selected_position). A click that clears the
     selection opens nobody."""
-    selection = st.session_state[table_key]["selection"]
-    picked = list(selection.get("rows", [])) or [cell[0] for cell in selection.get("cells", [])]
-    if not picked:
+    position = selected_position(key)
+    if position is None:
         return
-    row = st.session_state[rows_key].iloc[picked[0]]
+    row = st.session_state[TABLE_ROWS_KEY].iloc[position]
     open_player(int(row["player_id"]), str(row["season"]), career=bool(row["career"]))
 
 
@@ -435,7 +415,7 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
         row_height=38,
         column_config=column_config,
         # st.dataframe takes no callback args, hence the partial.
-        on_select=partial(_on_select, TABLE_KEY, TABLE_ROWS_KEY),
+        on_select=partial(_on_select, TABLE_KEY),
         # Row selection alone only reacts to the checkbox at the left edge;
         # a click on a name selects that cell and nothing happens. Cell
         # selection too makes a click anywhere on the row open the player.

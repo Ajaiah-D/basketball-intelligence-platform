@@ -11,6 +11,7 @@ from dashboard.lib import team_metrics as tm
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced, finances, players
 from dashboard.lib.data import teams as team_data
+from dashboard.lib.widget_state import choice
 from dashboard.views.teams.breakdown import render_breakdown
 from dashboard.views.teams.common import ROW_HEIGHT, TEAM_PICK_KEY, section
 from dashboard.views.teams.profile import render_profile
@@ -160,11 +161,8 @@ def render_team(season: str, standings: pd.DataFrame) -> None:
     names = standings["team_name"].tolist()
     # Keyed, so a Team stats row can choose the team. A team kept from
     # another season that isn't in this one (an expansion team, a relocated
-    # franchise's new name) falls back to the first. Set before the picker
-    # rather than passed as its index, which Streamlit would warn about
-    # alongside a value set through session state.
-    if st.session_state.get(TEAM_PICK_KEY) not in names:
-        st.session_state[TEAM_PICK_KEY] = names[0]
+    # franchise's new name) falls back to the first.
+    choice(TEAM_PICK_KEY, names)
     pick: str | None = st.selectbox("Team", names, label_visibility="collapsed", key=TEAM_PICK_KEY)
     row = standings[standings.team_name == pick].iloc[0]
     games = team_data.team_game_log(int(row.team_id), season)
