@@ -360,8 +360,10 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
 
 /* ---- Players page search (views/players): the select that finds a player
    is the page's main control, so it is taller and its text larger than a
-   default select. Scoped to the keyed container (st-key-players_search). */
-.st-key-players_search [data-baseweb="select"] > div {{ min-height: 3rem; }}
+   default select. Scoped to the keyed container (st-key-players_search).
+   Streamlit draws the select as a react-aria combobox, whose box is the
+   role="group" element around the input. */
+.st-key-players_search [role="group"] {{ min-height: 3rem; }}
 .st-key-players_search, .st-key-players_search input {{ font-size: 1.05rem; }}
 
 /* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----

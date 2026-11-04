@@ -56,6 +56,8 @@ PCTILES = ", ".join(f"{c}_pctile" for c in PCT_COLUMNS)
 
 def _app() -> AppTest:
     at = AppTest.from_string(SCRIPT, default_timeout=60)
+    # The page draws only the active tab.
+    at.session_state["players_tab"] = "Compare"
     at.run()
     assert not at.exception, at.exception
     return at
@@ -78,7 +80,7 @@ def _radars(at: AppTest) -> list[dict]:
 
 
 def _bars(at: AppTest) -> dict:
-    # The Stats tab has bar charts too; this one's first row is points.
+    # The per-game line is the bar chart whose first row is points.
     (found,) = (c for c in _charts(at, "bar") if c["data"][0]["y"] == ["PTS"])
     return found
 

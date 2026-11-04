@@ -169,6 +169,30 @@ def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.
     )
 
 
+def all_players_index() -> pd.DataFrame:
+    """Every player in the warehouse, once, at his most recent season:
+    player_id, player, team (his last team that season) and latest_season.
+    Newest seasons first, then by name. The Players page's search lists
+    these, retired players included."""
+    return q(
+        """
+        with latest as (
+            select player_id, max(season) as season
+            from main_marts.mart_player_season
+            group by player_id
+        )
+        select
+            player_id,
+            player_name  as player,
+            team,
+            season       as latest_season
+        from main_marts.mart_player_season
+        join latest using (player_id, season)
+        order by latest_season desc, player, player_id
+        """
+    )
+
+
 def player_seasons_matching(name: str, limit: int = 50) -> pd.DataFrame:
     """Every season of each player whose name contains `name` (matched as
     player_latest_seasons does), newest first and then by points per game:

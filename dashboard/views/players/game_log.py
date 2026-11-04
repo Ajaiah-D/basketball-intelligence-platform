@@ -1,4 +1,4 @@
-"""The season detail's game log and game-by-game trend (Players > Stats).
+"""The season detail's game log and game-by-game trend (Players > Player).
 
 Both read data.players.player_games and set each game against his own
 season figure from mart_player_season (the detail's row): the table shades

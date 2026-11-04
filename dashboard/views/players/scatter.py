@@ -4,7 +4,7 @@ players shown and the only reference; nothing is called good or bad.
 
 The tab has its own season box. It starts at the sidebar's season and
 follows the sidebar when that changes, but it never writes back, so looking
-at another year here leaves the Stats tab where it was.
+at another year here leaves the All players tab where it was.
 """
 
 from typing import NamedTuple
@@ -106,7 +106,7 @@ def _pick_season() -> str:
     another here."""
     every = seasons.seasons()
     sidebar = st.session_state.get(shared_state.SEASON_KEY) or every[0]
-    # A new sidebar season (the Stats tab's box counts) takes this one with it.
+    # A new sidebar season (the All players tab's box counts) takes this one with it.
     if st.session_state.get(_SIDEBAR_SEEN_KEY) != sidebar:
         st.session_state[_SIDEBAR_SEEN_KEY] = sidebar
         st.session_state[SEASON_KEY] = sidebar

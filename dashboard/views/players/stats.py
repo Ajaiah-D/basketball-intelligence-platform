@@ -1,49 +1,23 @@
-"""The Players page's stats: a searchable table + per-player detail view.
+"""The Players page's Player tab: one player in depth, at one season or
+across his career.
 
-Scope toggle: one season, or Career (every ingested season pooled - the
-percentages are recomputed from summed makes/attempts, not averaged).
-Every percentage is shown next to its attempt volume so low-volume
-outliers (a center shooting 100% on three 3PA) are visible at a glance.
-
-Search in Season scope looks in the selected season first; a player who
-didn't play that season is still found, at his most recent season, marked
-by a Season column (data.players.player_latest_seasons).
+The player is the one the search, a click on an All players row or another
+page chose (search.PLAYER_ID_KEY / PLAYER_SEASON_KEY); when nobody has been
+chosen yet, the top row of the All players table, then the sidebar season's
+top scorer.
 """
-
-from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from core.text import fold
 from dashboard.lib import glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
-from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import percentile_of, qualification_threshold
 from dashboard.views.players import game_log
-
-TABLE_COLS = [
-    "player",
-    "team_label",
-    "gp",
-    "mpg",
-    "ppg",
-    "rpg",
-    "apg",
-    "spg",
-    "bpg",
-    "fg_pct",
-    "fga_pg",
-    "tpg",
-    "tpa_pg",
-    "fg3_pct",
-    "ft_pct",
-    "fta_pg",
-    "ts_pct",
-    "plus_minus",
-]
+from dashboard.views.players.search import PLAYER_ID_KEY, PLAYER_SCOPE_KEY, PLAYER_SEASON_KEY
 
 # label -> (column, running-average weight, is it a rate). Counting stats
 # weight by games and draw as bars; TS% weights by the shot volume behind it
@@ -82,270 +56,13 @@ def shooting_percentiles(season: str, row) -> list[tuple[str, float, float]]:
     return out
 
 
-# Session-state keys. The season box mirrors the sidebar's (SEASON_KEY).
-PLAYERS_SEASON_KEY = "players_season"
-PLAYERS_SEASON_ALL_KEY = "players_season_all"
-PLAYERS_DETAIL_KEY = "players_pick"
-PLAYERS_MIN_GP_KEY = "players_min_gp"
-# The season the min-games slider was last reset for.
-_MIN_GP_FOR_KEY = "players_min_gp_season"
-
-
-def _reset_min_games(season: str) -> None:
-    """Set the min-games slider to the season's qualification rule (25 games,
-    fewer early in a live season) whenever the season changes, and leave the
-    reader's own value after that. A fixed 25 empties the table for the
-    first weeks of a season."""
-    # Streamlit drops a widget's state on a run where it isn't rendered
-    # (Career scope, another tab or page); the slider would come back at 1,
-    # so a lost value resets too.
-    if (
-        st.session_state.get(_MIN_GP_FOR_KEY) != season
-        or PLAYERS_MIN_GP_KEY not in st.session_state
-    ):
-        st.session_state[_MIN_GP_FOR_KEY] = season
-        st.session_state[PLAYERS_MIN_GP_KEY] = qualification_threshold(
-            players.player_season_stats(season)
-        )
-
-
-def _apply_preset(season: str) -> None:
-    """Open the player another page asked for (state.PLAYERS_PICK_KEY, set
-    with the season by Teams' "Open on Players"). It is read once: the
-    player becomes the detail picker's choice, and the min-games slider
-    drops to his games when he has fewer than it asks for (a team's
-    rotation starts at 10 games), so he is in the table and the picker and
-    stays there as the page reruns. A name nobody has this season is
-    ignored. Runs after _reset_min_games, so a new season's reset doesn't
-    undo the lowered slider."""
-    preset = st.session_state.pop(PLAYERS_PICK_KEY, None)
-    if not preset:
-        return
-    stats = players.player_season_stats(season)
-    match = stats[stats["player"] == preset]
-    if match.empty:
-        return
-    st.session_state[PLAYERS_DETAIL_KEY] = preset
-    games = int(match["gp"].min())
-    if games < st.session_state[PLAYERS_MIN_GP_KEY]:
-        st.session_state[PLAYERS_MIN_GP_KEY] = games
-
-
-def _sync_season() -> None:
-    """The page's season box drives the sidebar's, which every season-scoped
-    page reads."""
-    st.session_state[SEASON_KEY] = st.session_state[PLAYERS_SEASON_KEY]
-
-
-class Filters(NamedTuple):
-    """What the filter bar chose, with the stats it chose from."""
-
-    career: bool
-    stats: pd.DataFrame
-    min_gp: int
-    team: str
-    search: str
-
-
-def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
-    """Title (into `head`, the page's container above the tabs, once the
-    scope toggle is known), scope toggle, season / team / min-games /
-    search controls."""
-    f0, fs, f1, f2, f3 = st.columns([2, 2, 2, 2, 3])
-    scope = (
-        f0.segmented_control(
-            "Scope", ["Season", "Career"], default="Season", label_visibility="collapsed"
-        )
-        or "Season"
-    )
-    career = scope == "Career"
-
-    if career:
-        fs.selectbox(
-            "Season",
-            ["All seasons"],
-            disabled=True,
-            label_visibility="collapsed",
-            key=PLAYERS_SEASON_ALL_KEY,
-        )
-    else:
-        # Follow the sidebar, so the two boxes always show the same season.
-        st.session_state[PLAYERS_SEASON_KEY] = season
-        fs.selectbox(
-            "Season",
-            seasons.seasons(),
-            key=PLAYERS_SEASON_KEY,
-            label_visibility="collapsed",
-            on_change=_sync_season,
-            help="Same as the sidebar's season picker",
-        )
-
-    if career:
-        stats = players.player_career_stats()
-        stats["team_label"] = stats["team"]
-        stats["span"] = stats["first_season"].where(
-            stats["seasons"] == 1, stats["first_season"] + " to " + stats["last_season"]
-        )
-        min_gp = f2.slider("Min career games", 1, 1500, 200)
-    else:
-        stats = players.player_season_stats(season)
-        # Keyed, so _reset_min_games and a preset player (_apply_preset) can
-        # set it; set before the slider rather than passed as its value,
-        # which Streamlit would warn about alongside a value set through
-        # session state.
-        min_gp = f2.slider("Min games", 1, 82, key=PLAYERS_MIN_GP_KEY)
-
-    with head:
-        st.markdown(
-            f"## Players &nbsp;"
-            f"{T.chip('All seasons &middot; career totals' if career else season)}",
-            unsafe_allow_html=True,
-        )
-
-    teams = ["All teams", *sorted(stats["team"].unique())]
-    team = f1.selectbox(
-        "Team",
-        teams,
-        label_visibility="collapsed",
-        help="Career scope: a player's most recent team",
-    )
-    search = f3.text_input("Search", placeholder="Search players...", label_visibility="collapsed")
-    return Filters(career, stats, min_gp, team, search)
-
-
-def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(rows to list, searched players who didn't play this season). The
-    second frame is already appended to the first."""
-    view = f.stats[f.stats.gp >= f.min_gp]
-    if f.team != "All teams":
-        # A traded player is listed under every team he played for.
-        view = view[view.team_label.str.contains(f.team, regex=False)]
-    if f.search:
-        view = view[view.player.map(fold).str.contains(fold(f.search).strip(), regex=False)]
-    view = view.sort_values("ppg", ascending=False)
-
-    # Season scope: a searched player who didn't play this season shows at
-    # his most recent season instead, after this season's matches.
-    others = pd.DataFrame()
-    if f.search.strip() and not f.career:
-        others = players.player_latest_seasons(f.search, f.min_gp)
-        others = others[~others.player_id.isin(view.player_id)]
-        if f.team != "All teams":
-            others = others[others.team_label.str.contains(f.team, regex=False)]
-        others = others.sort_values("ppg", ascending=False)
-    if not f.career:
-        view = view.assign(season=season, pick=view.player)
-    if len(others):
-        others = others.assign(pick=others.player + " (" + others.season + ")")
-        view = pd.concat([view, others], ignore_index=True)
-    return view, others
-
-
-def _column_config(ppg_max: float) -> dict:
-    return {
-        "player": st.column_config.TextColumn("Player", width="medium"),
-        "team_label": st.column_config.TextColumn(
-            "Team",
-            width="small",
-            help="Two teams (CHI → BOS) means traded mid-season; the line covers both",
-        ),
-        "seasons": st.column_config.NumberColumn("Yrs"),
-        "season": st.column_config.TextColumn(
-            "Season",
-            width="small",
-            help="Players who didn't play the selected season show their most recent one",
-        ),
-        "span": st.column_config.TextColumn("Span", width="medium"),
-        "gp": st.column_config.NumberColumn(**glossary.described("GP")),
-        "mpg": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
-        "ppg": st.column_config.ProgressColumn(
-            "PTS", format="%.1f", min_value=0, max_value=ppg_max, color=T.ACCENT, width="medium"
-        ),
-        "rpg": st.column_config.NumberColumn("REB", format="%.1f"),
-        "apg": st.column_config.NumberColumn("AST", format="%.1f"),
-        "spg": st.column_config.NumberColumn("STL", format="%.1f"),
-        "bpg": st.column_config.NumberColumn("BLK", format="%.1f"),
-        "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
-        "fga_pg": st.column_config.NumberColumn(**glossary.described("FGA"), format="%.1f"),
-        "tpg": st.column_config.NumberColumn(**glossary.described("3PM"), format="%.1f"),
-        "tpa_pg": st.column_config.NumberColumn(**glossary.described("3PA"), format="%.1f"),
-        "fg3_pct": st.column_config.NumberColumn(**glossary.described("3P%"), format="%.1f"),
-        "ft_pct": st.column_config.NumberColumn(**glossary.described("FT%"), format="%.1f"),
-        "fta_pg": st.column_config.NumberColumn(**glossary.described("FTA"), format="%.1f"),
-        "ts_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
-        "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
-    }
-
-
-def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: str) -> None:
-    table_cols = TABLE_COLS.copy()
-    if f.career:
-        table_cols[2:2] = ["seasons", "span"]
-    elif len(others):
-        table_cols[1:1] = ["season"]
-
-    # Scale the PTS bar to the best scorer actually in view, so the column
-    # still reads as a comparison after a search or a min-games filter
-    # narrows the table. Guarded because an empty search result has no max.
-    ppg_max = float(view["ppg"].max()) if len(view) and view["ppg"].notna().any() else 1.0
-
-    st.dataframe(
-        view[table_cols],
-        hide_index=True,
-        height=430,
-        row_height=38,
-        column_config=_column_config(ppg_max),
-    )
-    if f.career:
-        st.caption(
-            "Career view pools every ingested season (1979-80 onward) - "
-            "the sidebar season selector does not apply here. Percentages "
-            "are computed from career totals, shown next to attempt volume."
-        )
-        return
-    if len(others):
-        n = len(others)
-        st.caption(
-            f'{n} player{"s" if n > 1 else ""} matching "{f.search.strip()}" '
-            f"didn't play {season}: shown at their most recent season "
-            f"(the Season column), after {season}'s players."
-        )
-    st.caption(
-        "Click a column header to sort. Per-game averages; percentages are "
-        "season totals, shown next to their attempt volume (FGA / 3PA / FTA)."
-    )
-
-
-def _pick_player(view: pd.DataFrame, f: Filters, season: str):
-    """The Player detail selector; the picked row, or None."""
-    st.markdown("#### Player detail")
-    if f.career:
-        options = (view if len(view) else f.stats).sort_values("ppg", ascending=False)
-        options = options.assign(pick=options.player)
-    else:
-        options = (
-            view
-            if len(view)
-            else (
-                f.stats.assign(season=season, pick=f.stats.player).sort_values(
-                    "ppg", ascending=False
-                )
-            )
-        )
-    pick: str | None = st.selectbox(
-        "Player", options["pick"], label_visibility="collapsed", key=PLAYERS_DETAIL_KEY
-    )
-    if not pick:
-        return None
-    return options[options["pick"] == pick].iloc[0]
-
-
 def _fmt(v, suffix=""):
     return f"{v:.1f}{suffix}" if v == v else "-"
 
 
-def _player_header(row, career: bool, season: str, row_season: str) -> None:
-    """Avatar, name and team chip, the six KPI tiles and the small-sample note."""
+def _player_header(row, career: bool, season: str, row_season: str, head: DeltaGenerator) -> None:
+    """Avatar, name and team chip (into `head`, beside the Season / Career
+    toggle), the six KPI tiles and the small-sample note."""
     tc = T.team_color(row.team)
     chip_text = (
         f"{row.team} &middot; {row.seasons} seasons &middot; {row.gp} GP"
@@ -353,7 +70,7 @@ def _player_header(row, career: bool, season: str, row_season: str) -> None:
         else f"{row.team_label} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG"
         + (f" &middot; {row_season}" if row_season != season else "")
     )
-    st.markdown(
+    head.markdown(
         f'<div style="display:flex;align-items:center;gap:14px;margin:.4rem 0 .8rem 0">'
         f"{media.avatar_html(int(row.player_id), row.player, size=84, ring=tc)}"
         f'<div><span style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em">'
@@ -474,24 +191,78 @@ def _season_detail(row, row_season: str) -> None:
         game_log.render_game_log(games, figures)
 
 
-def render_stats(head: DeltaGenerator) -> None:
-    """The Stats tab. `head` is the container the page title goes in."""
+def _picked(default_rows: pd.DataFrame | None, season: str) -> tuple[int, str] | None:
+    """(player_id, season) to show: the chosen player, else the top row of
+    the All players table when it lists the sidebar season (or careers),
+    else the season's top scorer among players over the games floor."""
+    player_id = st.session_state.get(PLAYER_ID_KEY)
+    if player_id is not None:
+        return int(player_id), st.session_state.get(PLAYER_SEASON_KEY) or season
+    if default_rows is not None and len(default_rows):
+        top = default_rows.iloc[0]
+        if "season" not in default_rows:  # Career scope
+            return int(top["player_id"]), str(top["last_season"])
+        # A table drawn before the sidebar season changed is stale.
+        if top["season"] == season:
+            return int(top["player_id"]), season
+    stats = players.player_season_stats(season)
+    if stats.empty:
+        return None
+    pool = stats[stats["gp"] >= qualification_threshold(stats)]
+    top = (pool if len(pool) else stats).sort_values("ppg", ascending=False).iloc[0]
+    return int(top["player_id"]), season
+
+
+def _career_row(player_id: int) -> pd.Series | None:
+    career = players.player_career_stats()
+    match = career[career["player_id"] == player_id]
+    if match.empty:
+        return None
+    row = match.iloc[0].copy()
+    row["team_label"] = row["team"]
+    row["span"] = (
+        row["first_season"]
+        if row["seasons"] == 1
+        else f"{row['first_season']} to {row['last_season']}"
+    )
+    return row
+
+
+def render_player(default_rows: pd.DataFrame | None) -> None:
+    """The Player tab. `default_rows` is the All players table as last drawn
+    (or None), whose top row is shown when nobody has been chosen."""
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
-    _reset_min_games(season)
-    _apply_preset(season)
-
-    f = _filter_bar(season, head)
-    view, others = _filter_rows(f, season)
-    _stats_table(view, others, f, season)
-
-    row = _pick_player(view, f, season)
-    if row is None:
+    picked = _picked(default_rows, season)
+    if picked is None:
+        st.info(f"No player stats for {season} yet.")
         return
-    # The season this row is from: the selected one, or a searched player's
-    # most recent one.
-    row_season = season if f.career else row.season
-    _player_header(row, f.career, season, row_season)
-    if f.career:
+    player_id, row_season = picked
+
+    head, toggle = st.columns([5, 1], vertical_alignment="center")
+    # Set before the toggle is drawn rather than passed as its default (see
+    # table._choice). A click on the selected option clears it; that falls
+    # back to Season.
+    if st.session_state.get(PLAYER_SCOPE_KEY) not in ("Season", "Career"):
+        st.session_state[PLAYER_SCOPE_KEY] = "Season"
+    career = (
+        toggle.segmented_control(
+            "Scope", ["Season", "Career"], label_visibility="collapsed", key=PLAYER_SCOPE_KEY
+        )
+        == "Career"
+    )
+
+    if career:
+        row = _career_row(player_id)
+    else:
+        stats = players.player_season_stats(row_season)
+        match = stats[stats["player_id"] == player_id]
+        row = match.iloc[0] if len(match) else None
+    if row is None:
+        st.info(f"No {'career' if career else row_season} line for this player.")
+        return
+
+    _player_header(row, career, season, row_season, head)
+    if career:
         _career_detail(row)
     else:
         _season_detail(row, row_season)

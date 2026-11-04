@@ -1,6 +1,6 @@
-"""The Players page (dashboard/views/players/), rendered with AppTest: its
-season box, search, preset player, tabs and the season detail's game log
-and trend.
+"""The Players page (dashboard/views/players/), rendered with AppTest: the
+player search above the tabs, the All players tab's season box, filters and
+column sets, the preset player, and the Player tab's game log and trend.
 
 The page's own season box mirrors the sidebar's season picker (key "season"), which every
 season-scoped page reads: changing either one changes both. Runs against
@@ -11,14 +11,17 @@ import json
 import shutil
 
 import duckdb
+import pandas as pd
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from core import paths
+from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import core as data_core
-from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY
 from dashboard.lib.stats import qualification_threshold
+from dashboard.views.players import table
 from dashboard.views.players.game_log import TREND_KEY
 
 # The sidebar box from dashboard/app.py, then the page.
@@ -46,6 +49,19 @@ def _app() -> AppTest:
     return at
 
 
+def _open_tab(at: AppTest, label: str) -> AppTest:
+    """Switch tabs the way the page itself does (lib.tabs.open_tab)."""
+    at.session_state["players_tab__next"] = label
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_tab"] == label
+    return at
+
+
+def _texts(at: AppTest) -> str:
+    return " ".join(m.value for m in at.markdown)
+
+
 def test_the_page_season_box_changes_the_shared_season(con):
     newest, older = _two_seasons()
     at = _app()
@@ -67,7 +83,7 @@ def test_the_sidebar_season_moves_the_page_box(con):
 
 def test_career_scope_shows_all_seasons_and_no_season_choice(con):
     at = _app()
-    at.button_group[0].set_value("Career").run()
+    at.button_group(key="players_scope").set_value("Career").run()
     assert not at.exception, at.exception
     box = at.selectbox(key="players_season_all")
     assert box.disabled and box.value == "All seasons"
@@ -108,10 +124,35 @@ def test_the_slider_comes_back_at_the_rule_after_career_scope(con):
     newest = seasons.seasons()[0]
     expected = qualification_threshold(players.player_season_stats(newest))
     at = _app()
-    at.button_group[0].set_value("Career").run()
-    at.button_group[0].set_value("Season").run()
+    at.button_group(key="players_scope").set_value("Career").run()
+    at.button_group(key="players_scope").set_value("Season").run()
     assert not at.exception, at.exception
     assert at.slider(key="players_min_gp").value == expected
+
+
+def test_the_table_filters_survive_a_visit_to_another_tab(con):
+    # Only the active tab renders, so the filters are not drawn while the
+    # Player tab is open; coming back finds them as they were.
+    at = _app()
+    team = at.selectbox(key="players_team").options[1]
+    at.selectbox(key="players_team").select(team).run()
+    min_gp = at.slider(key="players_min_gp").value + 1  # not the default
+    at.slider(key="players_min_gp").set_value(min_gp).run()
+    at.button_group(key="players_columns").set_value("Shooting").run()
+    at.text_input(key="players_filter").input("a").run()
+    _open_tab(at, "Player")
+    _open_tab(at, "All players")
+    widgets = [
+        at.selectbox(key="players_team"),
+        at.slider(key="players_min_gp"),
+        at.button_group(key="players_columns"),
+        at.button_group(key="players_scope"),
+        at.text_input(key="players_filter"),
+    ]
+    assert [w.value for w in widgets] == [team, min_gp, "Shooting", "Season", "a"]
+    # The browser forgot them when they were taken off the page, so the
+    # values must be sent with the widgets, not just kept on the server.
+    assert all(w.proto.set_value for w in widgets)
 
 
 # --- Search finds players outside the selected season -------------------------
@@ -156,18 +197,23 @@ def test_search_finds_a_retired_player_at_his_latest_season(con):
         (newest,),
     )
     at = _app()
-    at.text_input[0].input(name).run()
+    at.text_input(key="players_filter").input(name).run()
     assert not at.exception, at.exception
-    table = at.dataframe[0].value
-    assert "season" in table.columns
-    hit = table[table["player"] == name]
+    shown = at.dataframe[0].value
+    assert "season" in shown.columns
+    hit = shown[shown["player"] == name]
     assert list(hit["season"]) == [last]
     assert "didn't play" in " ".join(c.value for c in at.caption)
 
-    # The detail section follows that season.
-    at.selectbox(key="players_pick").select(f"{name} ({last})").run()
-    assert not at.exception, at.exception
-    assert last in " ".join(m.value for m in at.markdown)
+    # A click on his row opens him at that season: the rows the click is
+    # read against carry it.
+    rows = at.session_state[table.TABLE_ROWS_KEY]
+    picked = rows.iloc[list(shown["player"]).index(name)]
+    assert picked["season"] == last
+    at.session_state["players_player_id"] = int(picked["player_id"])
+    at.session_state["players_player_season"] = picked["season"]
+    _open_tab(at, "Player")
+    assert name in _texts(at) and last in _texts(at)
 
 
 def _established_season(con) -> str:
@@ -187,7 +233,7 @@ def test_search_keeps_the_selected_season_for_players_in_it(con):
     at = _app()
     at.selectbox(key="players_season").select(season).run()
     assert not at.exception, at.exception
-    at.text_input[0].input(name).run()
+    at.text_input(key="players_filter").input(name).run()
     assert not at.exception, at.exception
     table = at.dataframe[0].value
     assert list(table["player"]) == [name]
@@ -227,21 +273,36 @@ def _short_season_player(con) -> tuple[str, str, int]:
     return row[0], row[1], int(row[2])
 
 
-def test_a_preset_player_opens_even_under_the_games_floor(con):
+def _player_id(con, season: str, name: str) -> int:
+    row = con.execute(
+        "select player_id from main_marts.mart_player_season where season = ? and player_name = ?",
+        [season, name],
+    ).fetchone()
+    assert row, f"{name} not in {season}"
+    return int(row[0])
+
+
+def test_a_preset_player_opens_the_player_tab_even_under_the_games_floor(con):
     season, name, games = _short_season_player(con)
     at = AppTest.from_string(SCRIPT, default_timeout=60)
     at.session_state["season"] = season
     at.session_state[PLAYERS_PICK_KEY] = name
     at.run()
     assert not at.exception, at.exception
-    assert at.selectbox(key="players_pick").value == name
-    assert at.slider(key="players_min_gp").value == games
+    assert at.session_state["players_tab"] == "Player"
+    assert at.session_state["players_player_id"] == _player_id(con, season, name)
+    assert at.session_state["players_player_season"] == season
     # Read once: the page doesn't keep reopening him.
     assert PLAYERS_PICK_KEY not in at.session_state
-    assert name in " ".join(m.value for m in at.markdown)
-    # Another rerun (any widget) keeps him, since the slider stays lowered.
+    assert name in _texts(at)
+    # Another rerun (any widget) keeps him.
     at.run()
-    assert at.selectbox(key="players_pick").value == name
+    assert name in _texts(at)
+    # The min-games slider dropped to his games, so back on All players he
+    # is in the table.
+    _open_tab(at, "All players")
+    assert at.slider(key="players_min_gp").value == games
+    assert name in set(at.dataframe[0].value["player"])
 
 
 def test_a_preset_nobody_has_is_ignored(con):
@@ -249,6 +310,7 @@ def test_a_preset_nobody_has_is_ignored(con):
     at.session_state[PLAYERS_PICK_KEY] = "Nobody At All"
     at.run()
     assert not at.exception, at.exception
+    assert at.session_state["players_tab"] == "All players"
     # The slider stays at the newest season's default.
     newest = seasons.seasons()[0]
     expected = qualification_threshold(players.player_season_stats(newest))
@@ -300,11 +362,219 @@ def _busiest_player(con, season: str) -> tuple[str, int]:
     return row[0], int(row[1])
 
 
-def test_the_page_has_stats_scatter_and_compare_tabs(con):
+def test_the_page_has_four_tabs(con):
     at = _app()
-    assert [t.label for t in at.tabs] == ["Stats", "Scatter", "Compare"]
-    # The Compare tab to come says what it will hold, in one line.
-    assert len(at.tabs[2].caption) == 1
+    assert [t.label for t in at.tabs] == ["All players", "Player", "Compare", "Scatter"]
+    assert at.session_state["players_tab"] == "All players"
+
+
+def _current_player(con) -> tuple[int, str]:
+    """(id, name) of the newest season's top scorer with a name nobody else has."""
+    newest = seasons.seasons()[0]
+    row = con.execute(
+        """
+        select player_id, player_name from main_marts.mart_player_season
+        where season = ? and player_name in (
+            select player_name from main_marts.mart_player_season
+            group by player_name having count(distinct player_id) = 1
+        )
+        order by points_per_game desc nulls last, player_id
+        limit 1
+        """,
+        [newest],
+    ).fetchone()
+    assert row, f"nobody in {newest}"
+    return int(row[0]), row[1]
+
+
+def test_the_search_opens_the_player_tab(con):
+    player_id, name = _current_player(con)
+    at = _app()
+    search = at.selectbox(key="players_search")
+    assert search.value is None
+    search.select(player_id).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_tab"] == "Player"
+    assert at.session_state["players_player_id"] == player_id
+    assert at.session_state["players_player_season"] == seasons.seasons()[0]
+    assert name in _texts(at)
+    # It empties itself, so picking the same player again later still works.
+    assert at.selectbox(key="players_search").value is None
+
+
+def test_the_search_opens_a_retired_player_at_his_latest_season(con):
+    newest, _ = _two_seasons()
+    name, last = _unique_name(
+        con,
+        "player_id not in (select player_id from main_marts.mart_player_season where season = ?)",
+        (newest,),
+    )
+    player_id = _player_id(con, last, name)
+    at = _app()
+    at.selectbox(key="players_search").select(player_id).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_player_season"] == last
+    assert name in _texts(at) and last in _texts(at)
+
+
+def _index_row(player_id: int) -> pd.Series:
+    index = players.all_players_index()
+    return index[index["player_id"] == player_id].iloc[0]
+
+
+def test_the_search_labels_name_team_and_latest_season(con):
+    row = con.execute(
+        """
+        select player_id, player_name from main_marts.mart_player_season
+        where player_name = strip_accents(player_name)
+        order by season desc, points_per_game desc nulls last limit 1
+        """
+    ).fetchone()
+    player_id, name = int(row[0]), row[1]
+    hit = _index_row(player_id)
+    at = _app()
+    options = at.selectbox(key="players_search").options
+    assert f"{name} · {hit['team']} · {hit['latest_season']}" in options
+
+
+def test_an_accented_name_is_labelled_with_its_plain_spelling_too(con):
+    # The select filters on the label as typed, accents and all; the plain
+    # spelling beside the name is what lets "jokic" find "Jokić".
+    row = con.execute(
+        """
+        select player_id, player_name from main_marts.mart_player_season
+        where player_name <> strip_accents(player_name)
+        order by season desc, points_per_game desc nulls last limit 1
+        """
+    ).fetchone()
+    if row is None:
+        pytest.skip("no accented names in this warehouse")
+    player_id, name = int(row[0]), row[1]
+    hit = _index_row(player_id)
+    plain = con.execute("select strip_accents(?)", [name]).fetchone()[0]
+    at = _app()
+    options = at.selectbox(key="players_search").options
+    assert f"{name} ({plain}) · {hit['team']} · {hit['latest_season']}" in options
+
+
+def test_selecting_a_row_opens_that_player(monkeypatch):
+    # Row clicks can't be made through AppTest; this is the dataframe's
+    # on_select callback, fed the selection Streamlit would hand it.
+    rows = pd.DataFrame({"player_id": [11, 22], "season": ["2024-25", "2019-20"], "career": False})
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {"players_table": {"selection": {"rows": [1]}}, table.TABLE_ROWS_KEY: rows},
+    )
+    opened = []
+    monkeypatch.setattr(table, "open_player", lambda *a, **k: opened.append((a, k)))
+    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    assert opened == [((22, "2019-20"), {"career": False})]
+
+    st.session_state["players_table"] = {"selection": {"rows": [0]}}
+    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    assert opened[-1] == ((11, "2024-25"), {"career": False})
+
+    # A click on a cell (anywhere in the row, not just its checkbox) opens
+    # that row's player too.
+    st.session_state["players_table"] = {"selection": {"rows": [], "cells": [(1, "ppg")]}}
+    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    assert opened[-1] == ((22, "2019-20"), {"career": False})
+
+    # A cleared selection (the row clicked again) opens nobody.
+    st.session_state["players_table"] = {"selection": {"rows": [], "cells": []}}
+    table._on_select("players_table", table.TABLE_ROWS_KEY)
+    assert len(opened) == 3
+
+
+def test_the_player_tab_opens_on_the_tables_top_row_when_nobody_is_picked(con):
+    at = _app()
+    top = at.dataframe[0].value.iloc[0]["player"]
+    _open_tab(at, "Player")
+    assert top in _texts(at)
+
+
+# --- The All players tab's column sets --------------------------------------------
+
+
+def test_the_basic_set_is_the_default(con):
+    at = _app()
+    assert at.button_group(key="players_columns").value == "Basic"
+    cols = list(at.dataframe[0].value.columns)
+    assert cols[:3] == ["player", "team_label", "gp"]
+    assert {"ppg", "rpg", "apg", "spg", "bpg", "plus_minus"} <= set(cols)
+    assert "fg_pct" not in cols
+
+
+def test_the_shooting_set(con):
+    at = _app()
+    at.button_group(key="players_columns").set_value("Shooting").run()
+    assert not at.exception, at.exception
+    cols = set(at.dataframe[0].value.columns)
+    assert {"fg_pct", "fga_pg", "tpg", "tpa_pg", "fg3_pct", "ft_pct", "fta_pg", "ts_pct"} <= cols
+    assert "rpg" not in cols
+
+
+def test_the_advanced_columns_come_from_the_mart(con):
+    at = _app()
+    assert "Advanced" in at.button_group(key="players_columns").options
+    at.button_group(key="players_columns").set_value("Advanced").run()
+    assert not at.exception, at.exception
+    shown = at.dataframe[0].value
+    assert {"usage_pct", "game_score", "effective_fg_pct", "turnover_pct"} <= set(shown.columns)
+    # Joined on the player, so the values are his own season's.
+    newest = seasons.seasons()[0]
+    mart = con.execute(
+        "select player_name, usage_pct from main_marts.mart_player_season "
+        "where season = ? and usage_pct is not null order by minutes desc limit 1",
+        [newest],
+    ).fetchone()
+    hit = shown[shown["player"] == mart[0]]
+    assert len(hit) == 1 and hit["usage_pct"].iloc[0] == pytest.approx(mart[1])
+
+
+def test_advanced_columns_are_off_in_career_scope(con):
+    at = _app()
+    at.button_group(key="players_columns").set_value("Advanced").run()
+    at.button_group(key="players_scope").set_value("Career").run()
+    assert not at.exception, at.exception
+    assert "Advanced" not in at.button_group(key="players_columns").options
+    cols = set(at.dataframe[0].value.columns)
+    assert "usage_pct" not in cols and {"ppg", "rpg", "apg"} <= cols
+    assert "Advanced stats" in " ".join(c.value for c in at.caption)
+
+
+def test_advanced_columns_are_off_before_the_box_score_is_complete(con):
+    old = seasons.seasons()[-1]
+    at = AppTest.from_string(SCRIPT, default_timeout=60)
+    at.session_state["season"] = old
+    at.run()
+    assert not at.exception, at.exception
+    if old in advanced.advanced_seasons():
+        pytest.skip("the warehouse's oldest season has advanced stats")
+    assert "Advanced" not in at.button_group(key="players_columns").options
+
+
+def test_all_players_index_lists_retired_players(con):
+    index = players.all_players_index()
+    assert list(index.columns) == ["player_id", "player", "team", "latest_season"]
+    assert len(index) > 3000
+    assert index["player_id"].is_unique
+    # Newest seasons first.
+    assert list(index["latest_season"]) == sorted(index["latest_season"], reverse=True)
+    name, _ = _unique_name(
+        con,
+        "player_id not in (select player_id from main_marts.mart_player_season "
+        "where season >= '2000-01')",
+    )
+    latest = players.player_latest_seasons(name)
+    assert len(latest) == 1
+    row = index[index["player_id"] == latest["player_id"].iloc[0]].iloc[0]
+    assert row["latest_season"] == latest["season"].iloc[0]
+    assert row["player"] == name
+
+
+# --- The Player tab's game log and trend ---------------------------------------------
 
 
 def test_the_game_log_lists_every_game(con):
@@ -317,7 +587,7 @@ def test_the_game_log_lists_every_game(con):
 @pytest.mark.full_warehouse
 def test_luka_doncics_2025_26_game_log(con):
     at = _preset_app("2025-26", "Luka Dončić")
-    assert at.selectbox(key="players_pick").value == "Luka Dončić"
+    assert at.session_state["players_player_id"] == _player_id(con, "2025-26", "Luka Dončić")
     assert _game_log_rows(at) == 64
 
 
@@ -335,7 +605,7 @@ def test_the_trend_picker_switches_the_chart(con):
 def test_a_preset_player_gets_his_own_game_log(con):
     season, name, games = _short_season_player(con)
     at = _preset_app(season, name)
-    assert at.selectbox(key="players_pick").value == name
+    assert at.session_state["players_player_id"] == _player_id(con, season, name)
     assert _game_log_rows(at) == games
 
 
