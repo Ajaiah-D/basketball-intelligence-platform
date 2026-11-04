@@ -1,6 +1,8 @@
 """dashboard/lib/nav.py: the page registry app.py fills and views switch
 through."""
 
+from pathlib import Path
+
 import pytest
 import streamlit as st
 
@@ -20,3 +22,13 @@ def test_an_unregistered_name_is_a_clear_error(monkeypatch):
     monkeypatch.setattr(nav, "_PAGES", {})
     with pytest.raises(KeyError, match=r"app\.py registers them"):
         nav.go("players")
+
+
+def test_the_advanced_page_is_no_longer_registered():
+    """Advanced stats live on Players and Teams now; /advanced falls through
+    to Streamlit's page-not-found handling."""
+    root = Path(__file__).resolve().parent.parent / "dashboard"
+    app = (root / "app.py").read_text(encoding="utf-8")
+    assert '"advanced"' not in app
+    assert "advanced.render" not in app
+    assert not (root / "views" / "advanced.py").exists()

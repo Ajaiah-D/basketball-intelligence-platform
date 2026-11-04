@@ -4,9 +4,9 @@
 
 A local-first NBA data platform: ingest NBA stats and team salaries, warehouse
 them in DuckDB, model them with dbt, and serve a public dashboard covering
-players, teams, games, the schedule, advanced stats, team finances and game
-predictions across 47 seasons of NBA history. Natural-language Q&A is not built yet; see
-Status / roadmap below.
+players and teams (with advanced stats on both), games, the schedule, team
+finances and game predictions across 47 seasons of NBA history. Natural-language
+Q&A is not built yet; see Status / roadmap below.
 
 ## Screenshots
 
@@ -24,10 +24,6 @@ stats, then a breakdown of its players in each area
 **Games** - results browser; game detail with a score-margin flow chart and
 shot chart
 ![Games](site_pictures/games.png)
-
-**Advanced** - rate metrics with hover explanations, efficiency leaderboards
-and a per-player percentile profile
-![Advanced](site_pictures/advanced.png)
 
 **Finances** - every team's payroll against the cap, tax and apron lines,
 with a plain-English summary and the team's biggest contracts

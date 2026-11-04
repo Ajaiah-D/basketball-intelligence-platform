@@ -7,6 +7,7 @@ import streamlit as st
 
 from dashboard.lib import glossary, media
 from dashboard.lib import theme as T
+from dashboard.lib.advanced_metrics import minutes_floor
 from dashboard.lib.cards import game_card
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import games as game_data
@@ -148,7 +149,7 @@ def _efficiency_leaders(season: str, qualified: pd.DataFrame) -> None:
     adv = advanced.player_advanced(season) if advanced.marts_available() else pd.DataFrame()
     if adv.empty:
         return
-    floor = min(500, max(50, int(adv["minutes"].max() * 0.3)))
+    floor = minutes_floor(adv)
     eff = adv[adv.minutes >= floor]
     if len(eff) < 5:
         return
@@ -183,7 +184,7 @@ def _efficiency_leaders(season: str, qualified: pd.DataFrame) -> None:
     st.caption(
         f"True shooting, usage and game score: minimum {floor} minutes. "
         f"AST/TO: players averaging {AST_TO_MIN_APG:.0f}+ assists. "
-        "Full detail on the Advanced page."
+        "Advanced stats for any player are on the Players page."
     )
 
 

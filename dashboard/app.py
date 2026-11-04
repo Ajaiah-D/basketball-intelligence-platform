@@ -102,7 +102,6 @@ if not data_core.warehouse_exists():
     st.stop()
 
 from dashboard.views import (
-    advanced,
     arcade,
     dev_lab,
     finances,
@@ -127,9 +126,6 @@ explore = {
     ),
     "schedule": st.Page(
         schedule.render, title="Schedule", icon=":material/calendar_month:", url_path="schedule"
-    ),
-    "advanced": st.Page(
-        advanced.render, title="Advanced", icon=":material/insights:", url_path="advanced"
     ),
     "arcade": st.Page(
         arcade.render, title="Arcade", icon=":material/stadia_controller:", url_path="arcade"
