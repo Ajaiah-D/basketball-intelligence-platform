@@ -498,59 +498,6 @@ def percentile_bars(
     )
 
 
-def compare_dumbbell(
-    metrics: list[str], a_vals: list[float], b_vals: list[float], a_name: str, b_name: str
-) -> go.Figure:
-    """Two players across the same metrics, as percentiles so one axis works
-    for all of them. The connecting line makes the gap the thing you read
-    first, which a pair of bars does not."""
-    if not metrics:
-        return _empty("No shared metrics to compare")
-    fig = go.Figure()
-    for m, a, b in zip(metrics, a_vals, b_vals, strict=True):
-        fig.add_scatter(
-            x=[a, b],
-            y=[m, m],
-            mode="lines",
-            line={"color": T.BASELINE, "width": 2},
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    for vals, name, color in ((a_vals, a_name, T.SERIES[0]), (b_vals, b_name, T.SERIES[1])):
-        fig.add_scatter(
-            x=vals,
-            y=metrics,
-            mode="markers",
-            name=name,
-            marker={"color": color, "size": 12, "line": {"color": T.SURFACE, "width": 2}},
-            hovertemplate="%{y}: %{x:.0f}th percentile<extra>" + name + "</extra>",
-        )
-    # Median marker uses the baseline colour so it separates from the
-    # ordinary gridlines at 25 and 75.
-    fig.add_vline(x=50, line_color=T.BASELINE, line_width=1)
-    fig.update_layout(
-        **_layout(
-            height=max(240, 46 * len(metrics)),
-            xaxis={
-                "range": [0, 100],
-                "gridcolor": T.GRID,
-                "tickfont": {"color": T.MUTED},
-                "fixedrange": True,
-                "tickvals": [0, 25, 50, 75, 100],
-                "title": {"text": "Percentile among qualified players", "font": {"color": T.MUTED}},
-                "automargin": True,
-            },
-            yaxis={
-                "tickfont": {"color": T.INK_2},
-                "fixedrange": True,
-                "autorange": "reversed",
-                "automargin": True,
-            },
-        )
-    )
-    return fig
-
-
 # Background shading for team_finances_trend: which cap bracket a season
 # falls in reads from color instead of cross-referencing the table's boolean
 # columns. Bottom-to-top order - each fills up to the one before it via

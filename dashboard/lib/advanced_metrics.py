@@ -13,102 +13,44 @@ measured against players over `minutes_floor`, not the whole league.
 import pandas as pd
 import streamlit as st
 
-from core.constants import ADVANCED_STATS_FIRST_SEASON
 from dashboard.lib import glossary
 from dashboard.lib.stats import percentile_of
 
-# Percentile comparison uses metrics that exist for every complete season,
-# so the head-to-head still works for pre-1997 players.
+# The metrics the Player tab's Advanced section ranks as percentiles. Each
+# exists for every season with complete box scores, so a pre-1997 player
+# (before the NBA's official figures) still gets a full profile.
 COMPARE_METRICS = ["TS%", "USG%", "AST%", "REB%", "STL%", "BLK%", "Game score"]
 
-# Label -> (column, higher_is_better, help text). The metric list lives in
-# one place instead of being restated per widget.
-ADVANCED_METRICS: dict[str, tuple[str, bool, str]] = {
-    "TS%": (
-        "true_shooting_pct",
-        True,
-        "True shooting: points per shooting possession, counting 3s and free throws",
-    ),
-    "eFG%": (
-        "effective_fg_pct",
-        True,
-        "Effective FG%: field goal percentage with 3-pointers weighted 1.5x",
-    ),
-    "USG%": (
-        "usage_pct",
-        True,
-        "Usage: share of team possessions a player ends while on the floor",
-    ),
-    "AST%": (
-        "assist_pct",
-        True,
-        "Assist rate: share of teammate field goals a player assisted while on the floor",
-    ),
-    "REB%": (
-        "rebound_pct",
-        True,
-        "Rebound rate: share of available rebounds a player grabbed while on the floor",
-    ),
-    "TOV%": (
-        "turnover_pct",
-        False,
-        "Turnover rate: turnovers per 100 individual plays (lower is better)",
-    ),
-    "STL%": ("steal_pct", True, "Steals per opponent possession while on the floor"),
-    "BLK%": ("block_pct", True, "Share of opponent 2-point attempts blocked"),
-    "PTS/36": ("points_per_36", True, "Points per 36 minutes, pace of a starter's night"),
-    "PTS/100": ("points_per_100", True, "Points per 100 team possessions on the floor"),
-    "Game score": (
-        "game_score",
-        True,
-        "Hollinger game score: one-number box score summary, ~10 is average",
-    ),
-    "Net rating": (
-        "net_rating",
-        True,
-        "Team point differential per 100 possessions with the player on the floor "
-        f"(official NBA figure, {ADVANCED_STATS_FIRST_SEASON} on)",
-    ),
-    "PIE": (
-        "player_impact_estimate",
-        True,
-        "Player impact estimate: share of the game's total production "
-        f"(official NBA figure, {ADVANCED_STATS_FIRST_SEASON} on)",
-    ),
+# Label -> (mart_player_season column, higher_is_better) for each
+# COMPARE_METRICS label.
+ADVANCED_METRICS: dict[str, tuple[str, bool]] = {
+    "TS%": ("true_shooting_pct", True),
+    "USG%": ("usage_pct", True),
+    "AST%": ("assist_pct", True),
+    "REB%": ("rebound_pct", True),
+    "STL%": ("steal_pct", True),
+    "BLK%": ("block_pct", True),
+    "Game score": ("game_score", True),
 }
 
-# Column formatting for a table of mart_player_season rows, keyed by the
-# mart's column names.
+# Column formatting for the All players table's Advanced set, keyed by the
+# mart_player_season columns it takes (MART_COLS in views/players/table.py).
+# Game score is not here: the table draws it as a bar scaled to the rows in
+# view. Every rate metric is jargon to a casual fan: marked with an icon and
+# explained on header hover (dashboard/lib/glossary.py).
 PLAYER_COLUMN_CONFIG = {
-    "player_name": st.column_config.TextColumn("Player", width="medium"),
-    "team_label": st.column_config.TextColumn(
-        "Team",
-        width="small",
-        help="Two teams (CHI → BOS) means traded mid-season; the line covers both",
-    ),
-    "games_played": st.column_config.NumberColumn(**glossary.described("GP")),
-    "minutes_per_game": st.column_config.NumberColumn(**glossary.described("MIN"), format="%.1f"),
-    "points_per_game": st.column_config.NumberColumn("PTS", format="%.1f"),
-    # Every rate metric is jargon to a casual fan: marked with an icon and
-    # explained on header hover (dashboard/lib/glossary.py).
-    **{
-        col: st.column_config.NumberColumn(**glossary.marked(label), format="%.1f")
-        for col, label in [
-            ("true_shooting_pct", "TS%"),
-            ("effective_fg_pct", "eFG%"),
-            ("usage_pct", "USG%"),
-            ("assist_pct", "AST%"),
-            ("rebound_pct", "REB%"),
-            ("game_score", "GmSc"),
-            ("turnover_pct", "TOV%"),
-            ("steal_pct", "STL%"),
-            ("block_pct", "BLK%"),
-            ("points_per_36", "P/36"),
-            ("points_per_100", "P/100"),
-            ("net_rating", "NET"),
-            ("player_impact_estimate", "PIE"),
-        ]
-    },
+    col: st.column_config.NumberColumn(**glossary.marked(label), format="%.1f")
+    for col, label in [
+        ("effective_fg_pct", "eFG%"),
+        ("usage_pct", "USG%"),
+        ("assist_pct", "AST%"),
+        ("rebound_pct", "REB%"),
+        ("turnover_pct", "TOV%"),
+        ("steal_pct", "STL%"),
+        ("block_pct", "BLK%"),
+        ("net_rating", "NET"),
+        ("player_impact_estimate", "PIE"),
+    ]
 }
 
 
@@ -128,7 +70,7 @@ def advanced_percentiles(row: pd.Series, pool: pd.DataFrame) -> list[tuple[str, 
     the player has no value for, or one the pool cannot rank, is skipped."""
     out: list[tuple[str, float, float]] = []
     for label in COMPARE_METRICS:
-        col, higher_better, _ = ADVANCED_METRICS[label]
+        col, higher_better = ADVANCED_METRICS[label]
         value = row.get(col)
         if value is None or value != value:
             continue

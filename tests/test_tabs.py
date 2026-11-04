@@ -37,6 +37,9 @@ def test_a_key_set_before_the_tabs_render_selects_that_tab():
     at.session_state["t"] = "B"
     at.run()
     assert not at.exception
+    # Writing the key before the tabs draw, with a default passed too,
+    # draws no warning about a value set through session state.
+    assert not at.warning
     assert "active=B" in _texts(at)
     assert "body=B" in _texts(at)
 
@@ -54,6 +57,7 @@ def test_open_tab_from_a_button_callback_opens_that_tab():
     assert "active=A" in _texts(at)
     at.button("go_c").click().run()
     assert not at.exception
+    assert not at.warning
     assert "active=C" in _texts(at)
     assert "body=C" in _texts(at)
 

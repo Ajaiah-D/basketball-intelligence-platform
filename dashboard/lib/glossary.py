@@ -116,8 +116,6 @@ TERMS = {
     "True shooting": _TS,
     "Usage": _USG,
     "Game score": _GMSC,
-    "Rebound rate": _REB,
-    "Impact (PIE)": _PIE,
     "AST/TO": (
         "Assist-to-turnover ratio: assists per turnover. Players averaging 5+ "
         "assists usually sit around 2.5."

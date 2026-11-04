@@ -123,9 +123,10 @@ def reset_min_games(season: str) -> None:
     fewer early in a live season) whenever the season changes, and leave the
     reader's own value after that. A fixed 25 empties the table for the
     first weeks of a season."""
-    # Streamlit drops a widget's state on a run where it isn't rendered
-    # (Career scope, or another page); the slider would come back at 1, so a
-    # lost value resets too.
+    # On this page keep_filters (lib.widget_state.hold_keys) holds the
+    # slider's value through the other tabs and Career scope. Another page
+    # doesn't run it, so Streamlit drops the value there and the slider would
+    # come back at 1: a lost value resets to the rule, as a new season does.
     if (
         st.session_state.get(_MIN_GP_FOR_KEY) != season
         or PLAYERS_MIN_GP_KEY not in st.session_state
@@ -351,7 +352,7 @@ def _advanced_config(view: pd.DataFrame) -> dict:
     gs_max = float(scores.max()) if len(scores) else 1.0
     if gs_max <= gs_min:
         gs_max = gs_min + 1.0
-    return {col: cfg for col, cfg in PLAYER_COLUMN_CONFIG.items() if col in MART_COLS} | {
+    return PLAYER_COLUMN_CONFIG | {
         "game_score": st.column_config.ProgressColumn(
             **glossary.marked("GmSc"),
             format="%.1f",

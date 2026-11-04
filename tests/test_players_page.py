@@ -126,7 +126,7 @@ def test_a_full_season_defaults_to_25_games_and_a_new_season_resets_it(con):
 
 
 def test_the_slider_comes_back_at_the_rule_after_career_scope(con):
-    # Career scope drops the keyed slider's state; back in Season scope it
+    # The slider isn't drawn in Career scope; back in Season scope it
     # returns at the season's rule, not at 1.
     newest = seasons.seasons()[0]
     expected = qualification_threshold(players.player_season_stats(newest))
@@ -867,3 +867,66 @@ def test_a_default_player_still_follows_the_sidebar_after_the_scope_toggle(con):
     assert at.session_state["players_player_id"] == player_id
     assert at.session_state["players_player_season"] == older
     assert _game_log_rows(at) == games
+
+
+# --- The All players table: the Advanced set and a Career-scope click -------------------
+
+OFFICIAL = ["net_rating", "player_impact_estimate"]
+
+
+def _advanced_columns(season: str) -> set[str]:
+    at = AppTest.from_string(SCRIPT, default_timeout=60)
+    at.session_state["season"] = season
+    at.run()
+    at.button_group(key="players_columns").set_value("Advanced").run()
+    assert not at.exception, at.exception
+    return set(at.dataframe[0].value.columns)
+
+
+@pytest.mark.full_warehouse
+def test_net_and_pie_show_only_for_a_season_with_official_figures(con):
+    assert set(OFFICIAL) <= _advanced_columns("2025-26")
+    before = _advanced_columns("1990-91")
+    assert "usage_pct" in before  # the box-score metrics are still there
+    assert not set(OFFICIAL) & before
+
+
+def test_the_game_score_bar_starts_at_zero_or_the_lowest_score_in_view():
+    def floor(scores: list[float]) -> float:
+        config = table._advanced_config(pd.DataFrame({"game_score": scores}))
+        return config["game_score"]["type_config"]["min_value"]
+
+    assert floor([3.0, 8.5, 14.0]) == 0.0
+    assert floor([-2.5, 4.0, 11.0]) == -2.5
+
+
+def test_a_career_row_click_opens_the_player_tab_on_his_career(con, monkeypatch):
+    at = _app()
+    at.button_group(key="players_scope").set_value("Career").run()
+    assert not at.exception, at.exception
+    rows = at.session_state[table.TABLE_ROWS_KEY]
+    assert rows["career"].all()
+    name = at.dataframe[0].value.iloc[1]["player"]
+    # The table's on_select with the real open_player, fed a click on the
+    # second row, then the rerun Streamlit makes with the state it left.
+    key = _table_key("Basic")
+    state = {
+        key: {"selection": {"rows": [1]}},
+        table.TABLE_ROWS_KEY: rows,
+        "season": at.session_state["season"],
+    }
+    monkeypatch.setattr(st, "session_state", state)
+    table._on_select(key)
+    monkeypatch.undo()
+    assert state["players_player_id"] == int(rows["player_id"].iloc[1])
+    assert state["players_player_scope"] == "Career"
+    assert state["players_tab__next"] == "Player"
+    for k in ("players_player_id", "players_player_season", "players_player_picked_at"):
+        at.session_state[k] = state[k]
+    at.session_state["players_player_scope"] = state["players_player_scope"]
+    at.session_state["players_tab__next"] = state["players_tab__next"]
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_tab"] == "Player"
+    assert at.button_group(key="players_player_scope").value == "Career"
+    assert name in _texts(at) and "#### Career trajectory" in _texts(at)

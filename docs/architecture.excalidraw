@@ -404,7 +404,7 @@
       "verticalAlign": "middle",
       "baseline": 38,
       "containerId": null,
-      "originalText": "dashboard/views/ (10 pages)\nOverview, Players, Teams, Games,\nSchedule, Advanced, Predictions,\nFinances, Dev Lab, Arcade",
+      "originalText": "dashboard/views/ (9 pages)\nOverview, Players, Teams, Games,\nSchedule, Predictions,\nFinances, Dev Lab, Arcade",
       "lineHeight": 1.25
     },
     {

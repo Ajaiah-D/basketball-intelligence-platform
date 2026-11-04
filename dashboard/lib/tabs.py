@@ -42,6 +42,12 @@ def keyed_tabs(labels: list[str], key: str) -> tuple[str, dict[str, DeltaGenerat
     if current is not None and current not in labels:
         del st.session_state[key]
         current = None
+    # The default mirrors the stored label rather than staying labels[0].
+    # Streamlit hashes `default` into the tabs' widget id, so each new
+    # selection gives the tabs a new id and the browser draws them afresh on
+    # the stored tab. In Streamlit 1.66 a fixed default also follows a tab
+    # queued by open_tab; the mirror makes the redraw explicit instead of
+    # relying on the browser updating tabs it has already drawn.
     default = current if current is not None else labels[0]
 
     containers = st.tabs(labels, key=key, on_change="rerun", default=default)

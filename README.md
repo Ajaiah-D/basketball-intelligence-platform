@@ -190,12 +190,14 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Players**: a search box for any player (retired ones included) above four
   tabs. *All players* is the filterable league table for a season or the whole
   career, with Basic, Shooting and Advanced column sets (rate stats such as
-  true shooting, usage and game score, with a minutes floor); a click on a row
-  opens that player. Official NBA figures are used where the league publishes
-  them (1996-97 on) and box-score derivations fill in earlier seasons. *Player* has one section per question: game by game (a
-  trend for any stat, 5-game rolling average), shooting against the league,
-  advanced stats as percentiles, and a game log tinted green or red against his
-  own season average. *Compare* sets two player-seasons from any era side by
+  true shooting, usage and game score; like the other sets, the table lists
+  players over its min-games slider); a click on a row opens that player.
+  Official NBA figures are used where the league publishes them (1996-97 on)
+  and box-score derivations fill in earlier seasons. *Player* has one section
+  per question: game by game (a trend for any stat, 5-game rolling average),
+  shooting against the league, advanced stats as percentiles among players
+  over a minutes floor, and a game log tinted green or red against his own
+  season average. *Compare* sets two player-seasons from any era side by
   side: a percentile radar, with each player ranked against his own season's
   qualified players, plus per-game bars. *Scatter* plots any two player stats
   for a season, with a minimum-games and team filter
@@ -371,10 +373,10 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (10 models), intermediate (1) and marts (15), plus salary
-      cap history and team code seeds; 132 dbt tests and 930 pytest cases.
+      cap history and team code seeds; 132 dbt tests and 1,002 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
-      era the tests check; the 9 tests that need all seasons are marked
+      era the tests check; the 17 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors; shown on Players (All players > Advanced, and the Player tab)
