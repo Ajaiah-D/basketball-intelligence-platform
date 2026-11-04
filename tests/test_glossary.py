@@ -12,6 +12,12 @@ def test_every_term_has_a_real_explanation():
 def test_marked_and_described_column_kwargs():
     assert glossary.marked("TS%") == {"label": "TS% ⓘ", "help": glossary.TERMS["TS%"]}
     assert glossary.described("FGA") == {"label": "FGA", "help": glossary.TERMS["FGA"]}
+    # A short label with another entry's text (the team meaning of AST%).
+    assert glossary.marked("AST%", "Assist rate") == {
+        "label": "AST% ⓘ",
+        "help": glossary.TERMS["Assist rate"],
+    }
+    assert glossary.described("Win%", "PCT") == {"label": "Win%", "help": glossary.TERMS["PCT"]}
 
 
 def test_tip_escapes_its_text_and_is_reachable_without_a_mouse():

@@ -294,11 +294,15 @@ TERMS = {
 }
 
 
-def marked(label: str) -> dict:
-    """Column-config kwargs for a jargon column: 'TS% ⓘ' plus hover text."""
-    return {"label": f"{label} {MARK}", "help": TERMS[label]}
+def marked(label: str, term: str | None = None) -> dict:
+    """Column-config kwargs for a jargon column: 'TS% ⓘ' plus hover text.
+    `term` picks another entry's text when the label's own entry means
+    something else there (a team's "AST%" is the team "Assist rate", not
+    the player one)."""
+    return {"label": f"{label} {MARK}", "help": TERMS[term or label]}
 
 
-def described(label: str) -> dict:
-    """Column-config kwargs for a familiar abbreviation: hover text, no mark."""
-    return {"label": label, "help": TERMS[label]}
+def described(label: str, term: str | None = None) -> dict:
+    """Column-config kwargs for a familiar abbreviation: hover text, no mark.
+    `term` as for marked."""
+    return {"label": label, "help": TERMS[term or label]}

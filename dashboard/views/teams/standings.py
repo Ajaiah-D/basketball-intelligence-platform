@@ -8,6 +8,8 @@ import streamlit as st
 from dashboard.lib import glossary
 from dashboard.lib import theme as T
 
+CONF_KEY = "standings_conf"
+
 
 def form_dots(form: str) -> str:
     return "".join(
@@ -44,14 +46,14 @@ def standings_table(df: pd.DataFrame) -> str:
 
 def render_standings(standings: pd.DataFrame) -> None:
     """The tab: a conference switch over the season's standings."""
+    options = ["Eastern", "Western", "League"]
+    # Set before the control rather than passed as its default: the page
+    # keeps the choice through session state while another tab is open, and
+    # Streamlit warns when a widget has both.
+    if st.session_state.get(CONF_KEY) not in options:
+        st.session_state[CONF_KEY] = options[0]
     conf = (
-        st.segmented_control(
-            "Conference",
-            ["Eastern", "Western", "League"],
-            default="Eastern",
-            label_visibility="collapsed",
-            key="standings_conf",
-        )
+        st.segmented_control("Conference", options, label_visibility="collapsed", key=CONF_KEY)
         or "Eastern"
     )
     shown = {

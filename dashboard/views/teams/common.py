@@ -1,13 +1,20 @@
-"""What the Team tab's sections share: one heading style and the grid row
-height. Its own module so team.py and profile.py can both import it
-without importing each other."""
+"""What the Teams page's modules share: the tab and team-picker keys, one
+heading style and the grid row height. Its own module so team.py,
+profile.py and league.py can import it without importing each other or the
+page."""
 
 import streamlit as st
 
 from dashboard.lib import theme as T
 
-# Every table on the Team tab is the same grid component, at the same row
-# height as the Players and Advanced grids.
+# The page's tabs (lib.tabs.keyed_tabs) and the Team tab's team picker. Both
+# are keyed so a click on a Team stats row can open that team on the Team
+# tab.
+TEAMS_TAB_KEY = "teams_tab"
+TEAM_PICK_KEY = "teams_team"
+
+# Every table on the Teams page is the same grid component, at the same row
+# height as the Players grid.
 ROW_HEIGHT = 38
 
 

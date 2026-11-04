@@ -1,4 +1,5 @@
-"""The Teams page's Team tab (dashboard/views/teams/), rendered with AppTest.
+"""The Teams page (dashboard/views/teams/), rendered with AppTest: its three
+tabs, the Team tab and the Team stats tab.
 
 Runs against the real warehouse via the `con` fixture, like
 test_players_page.py, and against a copy of it without the diagnosis marts
@@ -9,17 +10,20 @@ import json
 import shutil
 
 import duckdb
+import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from core import paths
 from dashboard.lib import diagnosis, nav
+from dashboard.lib.data import advanced, seasons
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import diagnosis as diagnosis_data
-from dashboard.lib.data import seasons
+from dashboard.lib.data import teams as team_data
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
-from dashboard.views.teams import breakdown, scatter
+from dashboard.views.teams import breakdown, league, scatter
+from dashboard.views.teams.common import TEAM_PICK_KEY, TEAMS_TAB_KEY
 
 SCRIPT = """
 from dashboard.views import teams
@@ -352,3 +356,206 @@ def test_without_the_marts_the_scatter_falls_back_to_the_ratings(warehouse_witho
     assert len(at.info) == 1  # the profile's notice, not another
     fig = _scatter_figure(at)
     assert fig["layout"]["yaxis"]["autorange"] == "reversed"
+
+
+# --- The tabs and the Team stats tab ----------------------------------------------
+
+# The sidebar box from dashboard/app.py, then the page, as test_players_page.py.
+PAGE_SCRIPT = """
+import streamlit as st
+from dashboard.lib.data import seasons
+from dashboard.views import teams
+with st.sidebar:
+    st.selectbox("Season", seasons.seasons(), key="season")
+teams.render()
+"""
+
+# The Standings tab's caption: only there when that tab is drawn.
+STANDINGS_NOTE = "Form shows the last five games, most recent on the right."
+
+FOUR_FACTORS = [
+    "effective_fg_pct",
+    "turnover_pct",
+    "offensive_rebound_pct",
+    "free_throw_rate",
+    "opp_effective_fg_pct",
+    "opp_turnover_pct",
+    "defensive_rebound_pct",
+    "opp_free_throw_rate",
+]
+
+
+def _page(season: str, **state) -> AppTest:
+    at = AppTest.from_string(PAGE_SCRIPT, default_timeout=60)
+    at.session_state["season"] = season
+    for key, value in state.items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _open(at: AppTest, label: str) -> AppTest:
+    """Switch tabs the way the page itself does (lib.tabs.open_tab)."""
+    at.session_state[f"{TEAMS_TAB_KEY}__next"] = label
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state[TEAMS_TAB_KEY] == label
+    return at
+
+
+def _columns(at: AppTest, label: str) -> AppTest:
+    at.button_group(key=league.COLUMNS_KEY).set_value(label).run()
+    assert not at.exception, at.exception
+    return at
+
+
+# The Team stats table has one key per column set (league.table_key).
+TABLE_KEYS = {league.table_key(s) for s in league.COLUMN_SETS}
+
+
+def _table(at: AppTest):
+    """The Team stats table, keyed for the column set on show."""
+    assert at.dataframe(key=league.table_key(at.button_group(key=league.COLUMNS_KEY).value))
+    (table,) = [d for d in at.dataframe if d.key in TABLE_KEYS]
+    return table
+
+
+def test_each_column_set_has_its_own_table_key():
+    assert league.table_key("Four Factors") == "teams_table_four_factors"
+    assert len(TABLE_KEYS) == len(league.COLUMN_SETS)
+
+
+def test_the_page_has_three_tabs_and_opens_on_team(con):
+    at = _page(MODERN)
+    assert [t.label for t in at.tabs] == ["Team", "Team stats", "Standings"]
+    assert at.session_state[TEAMS_TAB_KEY] == "Team"
+    # Only the active tab is drawn: no Team stats table, no standings.
+    assert not [d for d in at.dataframe if d.key in TABLE_KEYS]
+    assert STANDINGS_NOTE not in _captions(at)
+
+
+def test_team_stats_lists_every_team_by_net_rating(con):
+    at = _page(MODERN, **{TEAMS_TAB_KEY: "Team stats"})
+    shown = _table(at).value
+    standings = team_data.standings(MODERN)
+    assert len(shown) == len(standings)
+    assert set(shown["team_name"]) == set(standings["team_name"])
+    assert at.button_group(key=league.COLUMNS_KEY).value == "Basic"
+    assert list(shown.columns) == ["team_name", "w", "l", "win_pct", "ppg", "opp_ppg", "net"]
+    order = list(shown["team_name"])
+
+    at = _columns(at, "Advanced")
+    shown = _table(at).value
+    assert list(shown["team_name"]) == order
+    assert shown["net_rating"].is_monotonic_decreasing
+    assert "Click a row to open that team." in _captions(at)
+    assert "Ratings are NBA official." in _captions(at)
+
+
+def test_the_four_factors_column_set(con):
+    at = _columns(_page(MODERN, **{TEAMS_TAB_KEY: "Team stats"}), "Four Factors")
+    shown = _table(at).value
+    assert list(shown.columns) == ["team_name", *FOUR_FACTORS]
+    assert shown[FOUR_FACTORS].notna().all().all()
+
+
+def test_a_season_without_ratings_offers_only_basic(con):
+    at = _page(EARLY, **{TEAMS_TAB_KEY: "Team stats"})
+    assert at.button_group(key=league.COLUMNS_KEY).options == ["Basic"]
+    shown = _table(at).value
+    assert len(shown) == len(team_data.standings(EARLY))
+    # Sorted by point margin when there is no net rating to sort by.
+    assert shown["net"].is_monotonic_decreasing
+    assert "Ratings are not available before 1985-86." in _captions(at)
+
+
+def test_without_the_team_mart_team_stats_shows_basic_with_a_note(con, monkeypatch):
+    monkeypatch.setattr(advanced, "marts_available", lambda: False)
+    at = _page(MODERN, **{TEAMS_TAB_KEY: "Team stats"})
+    assert at.button_group(key=league.COLUMNS_KEY).options == ["Basic"]
+    assert len(_table(at).value) == len(team_data.standings(MODERN))
+    assert "not in this copy of the warehouse yet" in _captions(at)
+
+
+def test_selecting_a_row_opens_that_team(monkeypatch):
+    # Row clicks can't be made through AppTest; this is the dataframe's
+    # on_select callback, fed the selection Streamlit would hand it.
+    rows = pd.Series(["Boston Celtics", "Utah Jazz"])
+    key = league.table_key("Advanced")
+    state = {key: {"selection": {"rows": [1]}}, league.TABLE_ROWS_KEY: rows}
+    monkeypatch.setattr(st, "session_state", state)
+    league._on_select(key)
+    assert state[TEAM_PICK_KEY] == "Utah Jazz"
+    assert state[f"{TEAMS_TAB_KEY}__next"] == "Team"
+
+    # A click on a cell (anywhere in the row, not just its checkbox) opens
+    # that row's team too.
+    state[key] = {"selection": {"rows": [], "cells": [(0, "w")]}}
+    league._on_select(key)
+    assert state[TEAM_PICK_KEY] == "Boston Celtics"
+
+    # A cleared selection (the row clicked again) opens nobody.
+    del state[f"{TEAMS_TAB_KEY}__next"]
+    state[key] = {"selection": {"rows": [], "cells": []}}
+    league._on_select(key)
+    assert f"{TEAMS_TAB_KEY}__next" not in state
+
+
+def test_the_rows_a_click_is_read_against_match_the_table(con):
+    at = _page(MODERN, **{TEAMS_TAB_KEY: "Team stats"})
+    shown = _table(at).value
+    assert list(at.session_state[league.TABLE_ROWS_KEY]) == list(shown["team_name"])
+
+
+def test_the_team_tab_opens_on_the_team_a_row_click_chose(con):
+    team = _team_names(con, MODERN)[1]
+    at = _page(MODERN, **{TEAMS_TAB_KEY: "Team stats"})
+    # What _on_select leaves behind, then the rerun Streamlit makes.
+    at.session_state[TEAM_PICK_KEY] = team
+    at = _open(at, "Team")
+    assert at.selectbox(key=TEAM_PICK_KEY).value == team
+    assert team in _text(at)
+
+
+def test_the_team_picker_honours_a_team_set_beforehand(con):
+    team = _team_names(con, MODERN)[1]
+    at = _page(MODERN, **{TEAM_PICK_KEY: team})
+    assert at.selectbox(key=TEAM_PICK_KEY).value == team
+    assert team in _text(at)
+
+
+def test_choices_survive_a_visit_to_another_tab(con):
+    team = _team_names(con, MODERN)[1]
+    at = _page(MODERN)
+    at.selectbox(key=TEAM_PICK_KEY).select(team).run()
+    _columns(_open(at, "Team stats"), "Four Factors")
+    _open(at, "Standings")
+    _open(at, "Team")
+    assert at.selectbox(key=TEAM_PICK_KEY).value == team
+    # The browser forgot the picker when it left the page, so its value must
+    # be sent with it, not just kept on the server.
+    assert at.selectbox(key=TEAM_PICK_KEY).proto.set_value
+    _open(at, "Team stats")
+    assert at.button_group(key=league.COLUMNS_KEY).value == "Four Factors"
+
+
+def test_a_team_missing_from_the_season_falls_back_to_the_first(con):
+    # A team picked in one season that did not exist in another (an
+    # expansion team, a relocated franchise's new name).
+    modern = set(team_data.standings(MODERN)["team_name"])
+    early = team_data.standings(EARLY)
+    team = sorted(modern - set(early["team_name"]))[0]
+    at = _page(MODERN, **{TEAM_PICK_KEY: team})
+    at.selectbox(key="season").select(EARLY).run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key=TEAM_PICK_KEY).value == early["team_name"].iloc[0]
+
+
+def test_the_standings_tab_shows_the_table(con):
+    at = _open(_page(MODERN), "Standings")
+    assert STANDINGS_NOTE in _captions(at)
+    standings = team_data.standings(MODERN)
+    assert standings[standings.conf == "East"]["team_name"].iloc[0] in _text(at)
+    assert all(s.key != TEAM_PICK_KEY for s in at.selectbox)
+    assert not [d for d in at.dataframe if d.key in TABLE_KEYS]
