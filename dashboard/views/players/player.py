@@ -36,6 +36,12 @@ CAREER_TREND_KEY = "players_career_stat"
 # back on Career with the same stat picked.
 KEPT_KEYS = [PLAYER_SCOPE_KEY, game_log.TREND_KEY, CAREER_TREND_KEY]
 
+# The comparison metrics the Advanced section ranks. TS% is left out: the
+# Shooting section above already ranks it, among players over a shot-volume
+# floor rather than the minutes floor, and two percentiles for one stat
+# would read as a contradiction.
+ADVANCED_SECTION_METRICS = [m for m in COMPARE_METRICS if m != "TS%"]
+
 # label -> (column, running-average weight, is it a rate). Counting stats
 # weight by games and draw as bars; TS% weights by the shot volume behind it
 # and draws as dots, since a percentage does not belong on a zero baseline.
@@ -264,8 +270,8 @@ def _shooting(row, row_season: str) -> None:
 
 
 def _advanced(row, row_season: str) -> None:
-    """The advanced profile (the comparison metrics as percentiles), against
-    players over the season's minutes floor."""
+    """The advanced profile (ADVANCED_SECTION_METRICS as percentiles),
+    against players over the season's minutes floor."""
     if not advanced.marts_available():
         st.caption("No advanced stats in this copy of the warehouse yet.")
         return
@@ -288,14 +294,14 @@ def _advanced(row, row_season: str) -> None:
     pool = season_pool[season_pool["minutes"] >= floor]
     st.plotly_chart(
         viz.percentile_bars(
-            advanced_percentiles(me, pool),
+            [r for r in advanced_percentiles(me, pool) if r[0] in ADVANCED_SECTION_METRICS],
             axis_title=f"Percentile among players with {floor}+ minutes",
         ),
         config=viz.PLOTLY_CONFIG,
         width="stretch",
     )
     # Only a ranked metric where lower is better needs saying so.
-    lower = " Lower is better for TOV%." if "TOV%" in COMPARE_METRICS else ""
+    lower = " Lower is better for TOV%." if "TOV%" in ADVANCED_SECTION_METRICS else ""
     st.caption(
         f"Percentile among players with {floor}+ minutes this season; the number "
         f"is the raw value.{lower}"

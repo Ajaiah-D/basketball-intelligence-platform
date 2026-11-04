@@ -17,11 +17,12 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from core import paths
+from dashboard.lib.advanced_metrics import COMPARE_METRICS
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import core as data_core
 from dashboard.lib.state import PLAYERS_PICK_KEY
 from dashboard.lib.stats import qualification_threshold
-from dashboard.views.players import table
+from dashboard.views.players import player, table
 from dashboard.views.players.game_log import TREND_KEY
 
 # The sidebar box from dashboard/app.py, then the page.
@@ -686,6 +687,22 @@ def test_the_advanced_section_ranks_him_among_players_over_the_minutes_floor(con
     assert "Percentile among players with" in captions
     assert "TOV%" not in captions  # not one of the ranked metrics
     assert any("minutes" in t for t in _axis_titles(at))
+
+
+def test_the_advanced_section_leaves_true_shooting_to_the_shooting_section(con):
+    # TS% is ranked once, in Shooting: the Advanced section ranks against a
+    # different pool, and a second percentile for it would disagree.
+    assert set(COMPARE_METRICS) - set(player.ADVANCED_SECTION_METRICS) == {"TS%"}
+    name, _ = _busiest_player(con, "2024-25")
+    at = _preset_app("2024-25", name)
+    (chart,) = [
+        c.proto.spec
+        for c in at.get("plotly_chart")
+        if "minutes"
+        in json.loads(c.proto.spec)["layout"].get("xaxis", {}).get("title", {}).get("text", "")
+    ]
+    assert "USG%" in chart
+    assert "TS%" not in chart
 
 
 def test_advanced_section_hides_without_the_mart(con, monkeypatch):
