@@ -18,6 +18,7 @@ marked by a Season column (data.players.player_latest_seasons).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 from typing import NamedTuple
 
@@ -107,9 +108,11 @@ TABLE_ROWS_KEY = "players_table_rows"
 _FILTER_KEYS = [SCOPE_KEY, TEAM_KEY, PLAYERS_MIN_GP_KEY, MIN_CAREER_GP_KEY, COLUMNS_KEY, FILTER_KEY]
 
 
-def keep_filters() -> None:
-    """Keep the filters as they were while another tab is open. The page
-    calls this on every run, before the active tab draws.
+def keep_filters(also: Sequence[str] = ()) -> None:
+    """Keep the filters as they were while another tab is open, and the
+    widgets keyed in `also` (the Player tab's scope toggle and stat pickers)
+    the same way. The page calls this on every run, before the active tab
+    draws.
 
     Only the active tab is drawn, and a widget that isn't drawn is
     forgotten twice over: Streamlit drops its value on the server at the
@@ -119,7 +122,7 @@ def keep_filters() -> None:
     value set through session state on the widget's own run is sent to the
     browser with it. None of these widgets is given a default (see
     _choice), so the write doesn't draw Streamlit's warning about one."""
-    for key in _FILTER_KEYS:
+    for key in [*_FILTER_KEYS, *also]:
         if key in st.session_state:
             st.session_state[key] = st.session_state[key]
 
@@ -226,11 +229,7 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
         )
 
     if career:
-        stats = players.player_career_stats()
-        stats["team_label"] = stats["team"]
-        stats["span"] = stats["first_season"].where(
-            stats["seasons"] == 1, stats["first_season"] + " to " + stats["last_season"]
-        )
+        stats = players.with_career_labels(players.player_career_stats())
         st.session_state.setdefault(MIN_CAREER_GP_KEY, 200)
         min_gp = f2.slider("Min career games", 1, 1500, key=MIN_CAREER_GP_KEY)
     else:

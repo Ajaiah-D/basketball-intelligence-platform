@@ -3,8 +3,8 @@ player in depth, a head-to-head compare and a scatter of the league.
 
   search.py    the player search, and open_player (how anything opens the Player tab)
   table.py     the All players tab: the filterable table; a row click opens that player
-  stats.py     the Player tab: the player detail
-  game_log.py  the season detail's game log and game-by-game trend
+  player.py    the Player tab: one player, a titled section per question
+  game_log.py  the Player tab's game log and game-by-game trend
   compare.py   the Compare tab
   scatter.py   the Scatter tab
 
@@ -19,7 +19,7 @@ from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
 from dashboard.lib.tabs import keyed_tabs
-from dashboard.views.players import stats, table
+from dashboard.views.players import player, table
 from dashboard.views.players.compare import render_compare
 from dashboard.views.players.scatter import render_scatter
 from dashboard.views.players.search import PLAYERS_TAB_KEY, open_player, render_search
@@ -52,7 +52,7 @@ def _apply_preset(season: str) -> None:
 
 def render() -> None:
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
-    table.keep_filters()
+    table.keep_filters(player.KEPT_KEYS)
     table.reset_min_games(season)
     _apply_preset(season)
 
@@ -68,7 +68,7 @@ def render() -> None:
         if active == "All players":
             st.session_state[_DEFAULT_ROWS_KEY] = table.render_table(head)
         elif active == "Player":
-            stats.render_player(st.session_state.get(_DEFAULT_ROWS_KEY))
+            player.render_player(st.session_state.get(_DEFAULT_ROWS_KEY), season)
         elif active == "Compare":
             render_compare()
         else:

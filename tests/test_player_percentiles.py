@@ -3,7 +3,8 @@ Python rule), and the percentile rules the scatter and compare views rely on.
 
 The dbt test assert_player_percentiles checks direction and range for every
 season; these pin the same rules to named facts and recompute a percentile
-independently in pandas.
+independently in pandas. The Player tab's shooting ranks, and the chart that
+labels them, are at the end.
 """
 
 import re
@@ -12,7 +13,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from dashboard.lib.stats import qualification_threshold
+from dashboard.lib import viz
+from dashboard.lib.data import players as player_data
+from dashboard.lib.stats import ShootingRank, qualification_threshold
+from dashboard.views.players import player
 
 SEASON = "2024-25"
 DBT_TESTS = Path(__file__).resolve().parents[1] / "dbt" / "basketball_intelligence" / "tests"
@@ -91,3 +95,101 @@ def test_early_seasons_have_no_percentile_for_missing_stats(con, season):
     assert len(players) > 0
     assert players["usage_pct"].isna().all()
     assert players["usage_pct_pctile"].isna().all()
+
+
+# --- The Player tab's shooting ranks -------------------------------------------------
+
+
+@pytest.mark.full_warehouse
+def test_shooting_ranks_carry_attempts_and_the_league_average(con):
+    season = "2025-26"
+    stats = player_data.player_season_stats(season)
+    row = stats[stats["player"] == "Luka Dončić"].iloc[0]
+    league = player_data.league_shooting_averages(season)
+    ranks = {r.label: r for r in player.shooting_percentiles(season, row)}
+    assert list(ranks) == ["FG%", "3P%", "FT%", "TS%"]
+    assert all(isinstance(r, ShootingRank) for r in ranks.values())
+    fg = ranks["FG%"]
+    assert fg.value == pytest.approx(row["fg_pct"])
+    assert fg.attempts_pg == pytest.approx(row["fga_pg"])
+    assert fg.league == pytest.approx(league["fg_pct"])
+    assert ranks["3P%"].attempts_pg == pytest.approx(row["tpa_pg"])
+    assert ranks["3P%"].league == pytest.approx(league["fg3_pct"])
+    assert ranks["FT%"].attempts_pg == pytest.approx(row["fta_pg"])
+    # True shooting counts field goals and free throws together, and the
+    # league table has no figure for it: neither part is invented.
+    assert ranks["TS%"].attempts_pg is None and ranks["TS%"].league is None
+    assert 0 <= fg.percentile <= 100
+
+
+def test_shooting_ranks_skip_a_stat_under_its_attempts_floor():
+    # 99 free throws is one short of the 100 the FT% rank asks for.
+    row = pd.Series(
+        {
+            "fg_pct": 50.0,
+            "fga_total": 400,
+            "fga_pg": 10.0,
+            "fg3_pct": 35.0,
+            "tpa_total": 150,
+            "tpa_pg": 3.0,
+            "ft_pct": 80.0,
+            "fta_total": 99,
+            "fta_pg": 2.0,
+            "ts_pct": 58.0,
+        }
+    )
+    ranks = player.rank_shooting(row, _shooting_pool(), _league())
+    assert [r.label for r in ranks] == ["FG%", "3P%", "TS%"]
+
+
+def _shooting_pool() -> pd.DataFrame:
+    """Three players a full season in (70 games)."""
+    return pd.DataFrame(
+        {
+            "gp": [70, 70, 70],
+            "fg_pct": [40.0, 45.0, 55.0],
+            "fga_total": [500, 500, 500],
+            "fg3_pct": [30.0, 36.0, 40.0],
+            "tpa_total": [200, 200, 200],
+            "ft_pct": [70.0, 75.0, 90.0],
+            "fta_total": [200, 200, 200],
+            "ts_pct": [52.0, 56.0, 62.0],
+        }
+    )
+
+
+def _league() -> pd.Series:
+    return pd.Series({"fg_pct": 47.0, "fg3_pct": 36.0, "ft_pct": 78.0})
+
+
+def test_the_attempts_floors_scale_down_early_in_a_season():
+    # Ten games in, the games floor is 6 of a full season's 25 (stats.
+    # qualification_threshold): the attempts floors ask the same share.
+    early = _shooting_pool().assign(gp=10)
+    assert player.shooting_floors(early) == {"FG%": 72, "3P%": 24, "FT%": 24, "TS%": 72}
+    full = {"FG%": 300, "3P%": 100, "FT%": 100, "TS%": 300}
+    assert player.shooting_floors(_shooting_pool()) == full
+    row = pd.Series({"fg_pct": 50.0, "fga_total": 80, "fga_pg": 8.0, "ts_pct": 58.0})
+    assert [r.label for r in player.rank_shooting(row, early, _league())] == ["FG%", "TS%"]
+    assert player.rank_shooting(row, _shooting_pool(), _league()) == []
+
+
+def test_a_league_without_figures_drops_that_part_of_the_label():
+    # A season the league table lacks comes back all NaN.
+    row = pd.Series(
+        {"fg_pct": 50.0, "fga_total": 400, "fga_pg": 10.0, "ts_pct": 58.0, "tpa_total": 0}
+    )
+    league = pd.Series({"fg_pct": float("nan"), "fg3_pct": float("nan"), "ft_pct": float("nan")})
+    ranks = player.rank_shooting(row, _shooting_pool(), league)
+    assert ranks[0].league is None
+
+
+def test_shooting_percentiles_chart_labels():
+    fig = viz.shooting_percentiles_chart(
+        [
+            ShootingRank("FG%", 61.2, 47.6, 22.8, 47.0),
+            ShootingRank("TS%", 80.4, 61.3, None, None),
+        ]
+    )
+    labelled = [list(t.text) for t in fig.data if t.text is not None]
+    assert labelled == [["47.6 on 22.8/g · league 47.0 · 61st", "61.3 · 80th"]]

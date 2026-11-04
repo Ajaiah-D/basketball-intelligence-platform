@@ -10,8 +10,11 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+from core.fmt import ordinal
+
 from . import payroll
 from . import theme as T
+from .stats import ShootingRank
 
 PLOTLY_CONFIG = {"displayModeBar": False}
 
@@ -125,20 +128,21 @@ def career_trend(
         xshift=26,
         font={"color": T.ACCENT, "size": 12},
     )
-    layout = {
-        "hovermode": "x unified",
-        "bargap": 0.45,
-        # season labels like "1984-85" parse as dates unless forced categorical
-        "xaxis": {
-            "type": "category",
-            "gridcolor": T.GRID,
-            "linecolor": T.BASELINE,
-            "tickfont": {"color": T.MUTED},
-            "fixedrange": True,
-            "automargin": True,
-            "tickangle": -45 if len(df) > 14 else 0,
-        },
+    # season labels like "1984-85" parse as dates unless forced categorical
+    xaxis: dict = {
+        "type": "category",
+        "gridcolor": T.GRID,
+        "linecolor": T.BASELINE,
+        "tickfont": {"color": T.MUTED},
+        "fixedrange": True,
+        "automargin": True,
     }
+    # A long career always turns its labels. A shorter one leaves the angle
+    # unset, which plotly takes as "turn them only if they would collide":
+    # nine seasons do on a phone but not on a laptop.
+    if len(df) > 14:
+        xaxis["tickangle"] = -45
+    layout = {"hovermode": "x unified", "bargap": 0.45, "xaxis": xaxis}
     if as_rate:
         lo = min(df[stat].min(), df["cum"].min())
         hi = max(df[stat].max(), df["cum"].max())
@@ -155,65 +159,119 @@ def career_trend(
     return fig
 
 
-def shooting_profile(player_row: pd.Series, league: pd.Series, player_name: str) -> go.Figure:
-    """Player shooting percentages vs league average - emphasis form.
-    Player labels carry attempt volume so a hot % on tiny volume is
-    visibly flagged rather than looking elite."""
-    cats = ["FG%", "3P%", "FT%"]
-    pvals = [player_row["fg_pct"], player_row["fg3_pct"], player_row["ft_pct"]]
-    attempts = [player_row.get("fga_pg"), player_row.get("tpa_pg"), player_row.get("fta_pg")]
-    lvals = [league["fg_pct"], league["fg3_pct"], league["ft_pct"]]
+def _percentile_meters(
+    names: list[str], pcts: list[float], texts: list[str], hovers: list[str], axis_title: str
+) -> go.Figure:
+    """One row per stat: the stat's name and `texts` label written above a
+    bar on a 0-100 track, with a mark at the 50th percentile.
 
-    def label(v, att):
-        if pd.isna(v):
-            return "-"
-        return f"{v:.1f} on {att:.1f}/g" if pd.notna(att) else f"{v:.1f}"
-
+    The label sits above the bar, not past its end: a label like "47.6 on
+    22.8/g · league 47.0 · 61st" past a 90th-percentile bar needs more room
+    than a phone-width chart has, and plotly would cut it off. Above the bar
+    it always has the chart's full width. The rows are plotted at numeric y
+    positions (0 at the top) so the labels and marks can be placed in the
+    same units as the bars."""
+    rows = list(range(len(names)))
+    bar = 0.32  # bar thickness, in rows
     fig = go.Figure()
+    # The track shows where 100 is, so a short bar reads as short.
     fig.add_bar(
-        y=cats,
-        x=lvals,
+        y=rows,
+        x=[100] * len(rows),
         orientation="h",
-        name="League",
-        marker={"color": T.BASELINE},
-        text=[f"{v:.0f}" if pd.notna(v) else "-" for v in lvals],
-        textposition="outside",
-        textfont={"color": T.MUTED},
-        hovertemplate="League %{y}: %{x:.1f}<extra></extra>",
+        width=bar,
+        marker={"color": T.GRID, "cornerradius": 3},
+        hoverinfo="skip",
+        showlegend=False,
     )
     fig.add_bar(
-        y=cats,
-        x=pvals,
+        y=rows,
+        x=pcts,
         orientation="h",
-        name=player_name,
-        marker={"color": T.ACCENT},
-        text=[label(v, a) for v, a in zip(pvals, attempts, strict=True)],
-        textposition="outside",
-        textfont={"color": T.INK},
-        customdata=attempts,
-        hovertemplate="%{y}: %{x:.1f} on %{customdata:.1f} attempts/game<extra></extra>",
+        width=bar,
+        marker={"color": T.ACCENT, "cornerradius": 3},
+        # Carried on the bar for the hover; drawn by the annotations below.
+        text=texts,
+        textposition="none",
+        hovertext=hovers,
+        hovertemplate="%{hovertext}<extra></extra>",
+        showlegend=False,
     )
-    # Outside labels need room past the longest bar or they get clipped: a
-    # 90% free throw shooter would otherwise have its label run off a 0-100
-    # axis. Headroom scales with the values actually plotted.
-    top = max([v for v in pvals + lvals if pd.notna(v)], default=100)
+    for y, name, text in zip(rows, names, texts, strict=True):
+        fig.add_annotation(
+            x=0,
+            y=y - bar / 2,
+            xanchor="left",
+            yanchor="bottom",
+            yshift=3,
+            showarrow=False,
+            text=f'<b><span style="color:{T.INK}">{name}</span></b>&nbsp;&nbsp;{text}',
+            font={"color": T.INK_2, "size": 13},
+        )
+        fig.add_shape(
+            type="line",
+            x0=50,
+            x1=50,
+            y0=y - bar * 0.8,
+            y1=y + bar * 0.8,
+            line={"color": T.MUTED, "width": 2},
+        )
     fig.update_layout(
         **_layout(
-            barmode="group",
-            bargap=0.35,
-            height=260,
+            barmode="overlay",
+            height=56 * len(rows) + 70,
+            margin={"l": 8, "r": 8, "t": 8, "b": 8},
             xaxis={
-                "range": [0, top * 1.55],
-                "gridcolor": T.GRID,
-                "tickfont": {"color": T.MUTED},
+                # A hair past 100, or plotly drops the 100 tick at the edge.
+                "range": [0, 101],
+                "showgrid": False,
+                "zeroline": False,
                 "tickvals": [0, 25, 50, 75, 100],
+                "tickfont": {"color": T.MUTED, "size": 12},
+                "title": {"text": axis_title, "font": {"color": T.MUTED, "size": 12}},
                 "fixedrange": True,
                 "automargin": True,
             },
-            yaxis={"tickfont": {"color": T.INK_2}, "fixedrange": True, "automargin": True},
+            yaxis={
+                # Reversed, so the first row is on top; the extra room above
+                # it is for its label.
+                "range": [len(rows) - 0.5, -0.95],
+                "visible": False,
+                "fixedrange": True,
+            },
         )
     )
     return fig
+
+
+def shooting_percentiles_chart(rows: list[ShootingRank]) -> go.Figure:
+    """Where a player's shooting ranks among qualified shooters, one row per
+    percentage. Each label carries what the percentile alone leaves out: the
+    percentage itself, the attempts behind it (a hot % on tiny volume shows
+    as such) and the league's figure."""
+    if not rows:
+        return _empty("Too few attempts to rank against qualified shooters")
+
+    def label(r: ShootingRank) -> str:
+        value = f"{r.value:.1f}"
+        if r.attempts_pg is not None:
+            value += f" on {r.attempts_pg:.1f}/g"
+        parts = [value]
+        if r.league is not None:
+            parts.append(f"league {r.league:.1f}")
+        parts.append(ordinal(round(r.percentile)))
+        return " · ".join(parts)
+
+    return _percentile_meters(
+        [r.label for r in rows],
+        [r.percentile for r in rows],
+        [label(r) for r in rows],
+        [
+            f"{r.label}: {r.value:.1f}, better than {r.percentile:.0f}% of qualified shooters"
+            for r in rows
+        ],
+        "Percentile among qualified shooters",
+    )
 
 
 def team_margins(games: pd.DataFrame) -> go.Figure:
@@ -421,54 +479,23 @@ def shot_chart(pbp: pd.DataFrame, home: str, away: str) -> go.Figure:
     return fig
 
 
-def percentile_bars(rows: list[tuple[str, float, float]]) -> go.Figure:
+def percentile_bars(
+    rows: list[tuple[str, float, float]], axis_title: str = "Percentile among qualified players"
+) -> go.Figure:
     """Where a player ranks among qualified peers, one row per metric.
     Each bar is a percentile (0-100), so metrics on different scales share
     one axis honestly. The raw value rides along as the label, because a
-    percentile alone hides whether 90th means 38% or 44%."""
+    percentile alone hides whether 90th means 38% or 44%. `axis_title` says
+    who "qualified" is."""
     if not rows:
         return _empty("Not enough qualified players to rank against")
-    labels = [r[0] for r in rows]
-    pcts = [r[1] for r in rows]
-    raws = [r[2] for r in rows]
-
-    fig = go.Figure()
-    fig.add_bar(
-        y=labels,
-        x=pcts,
-        orientation="h",
-        marker={"color": T.ACCENT, "cornerradius": 4},
-        text=[f"{v:.1f}  ({p:.0f}th)" for v, p in zip(raws, pcts, strict=True)],
-        textposition="outside",
-        textfont={"color": T.INK_2, "size": 11},
-        hovertemplate="%{y}: %{customdata:.1f}, better than %{x:.0f}% of qualified players<extra></extra>",
-        customdata=raws,
-        showlegend=False,
+    return _percentile_meters(
+        [r[0] for r in rows],
+        [r[1] for r in rows],
+        [f"{v:.1f} · {ordinal(round(p))}" for _, p, v in rows],
+        [f"{m}: {v:.1f}, better than {p:.0f}% of qualified players" for m, p, v in rows],
+        axis_title,
     )
-    fig.add_vline(x=50, line_color=T.BASELINE, line_width=1)
-    fig.update_layout(
-        **_layout(
-            height=max(200, 42 * len(rows)),
-            bargap=0.35,
-            # Headroom past 100 so the outside labels are never clipped
-            xaxis={
-                "range": [0, 148],
-                "gridcolor": T.GRID,
-                "tickfont": {"color": T.MUTED},
-                "fixedrange": True,
-                "tickvals": [0, 25, 50, 75, 100],
-                "title": {"text": "Percentile among qualified players", "font": {"color": T.MUTED}},
-                "automargin": True,
-            },
-            yaxis={
-                "tickfont": {"color": T.INK_2},
-                "fixedrange": True,
-                "autorange": "reversed",
-                "automargin": True,
-            },
-        )
-    )
-    return fig
 
 
 def compare_dumbbell(

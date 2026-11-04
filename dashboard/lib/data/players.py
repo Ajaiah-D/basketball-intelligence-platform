@@ -260,6 +260,20 @@ def player_career_stats(min_games: int = 1) -> pd.DataFrame:
     )
 
 
+def with_career_labels(career: pd.DataFrame) -> pd.DataFrame:
+    """`career` (player_career_stats rows) with the two labels the career
+    views show: team_label, which the season frames have and a career line
+    fills with his most recent team, and span, "2003-04 to 2022-23" or the
+    one season he played. Kept out of player_career_stats itself, whose
+    columns are the mart's."""
+    return career.assign(
+        team_label=career["team"],
+        span=career["first_season"].where(
+            career["seasons"] == 1, career["first_season"] + " to " + career["last_season"]
+        ),
+    )
+
+
 def player_season_breakdown(player_id: int) -> pd.DataFrame:
     """Per-season averages for one player, oldest first - drives the career
     trajectory chart.

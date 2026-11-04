@@ -13,6 +13,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from core.fmt import matchup
 from dashboard.lib import glossary, tables, viz, viz_diagnosis
@@ -122,7 +123,7 @@ def game_log_html(games: pd.DataFrame, figures: Mapping[str, float]) -> str:
 
 
 def render_game_log(games: pd.DataFrame, figures: Mapping[str, float]) -> None:
-    st.markdown("**Game log**")
+    """The table and its caption; the section title is the caller's."""
     st.markdown(game_log_html(games, figures), unsafe_allow_html=True)
     st.caption(
         "Green or red: above or below his own season average by more than about "
@@ -138,21 +139,26 @@ def available_stats(games: pd.DataFrame) -> list[str]:
     return offered or list(GAME_STATS)
 
 
-def render_trend(games: pd.DataFrame, figures: Mapping[str, float]) -> None:
-    """The stat picker and the chart of that stat game by game."""
+def trend_picker(games: pd.DataFrame, container: DeltaGenerator | None = None) -> str:
+    """The trend's stat picker, drawn in `container` (the caller puts it on
+    its section title's row) or in place, and the stat it picked."""
     options = available_stats(games)
     # A pick carried over from a season that had this stat is no longer offered.
     if st.session_state.get(TREND_KEY) not in options:
         st.session_state[TREND_KEY] = options[0]
-    stat = st.selectbox(
-        "Stat",
-        options,
-        key=TREND_KEY,
-        help=glossary.TERMS[
-            GAME_TERMS.get(st.session_state[TREND_KEY], st.session_state[TREND_KEY])
-        ],
-        width=200,
+    # required: clicking the chosen stat again keeps it rather than leaving
+    # the chart with no stat.
+    stat = (container or st).segmented_control(
+        "Stat", options, required=True, label_visibility="collapsed", key=TREND_KEY
     )
+    return stat or options[0]
+
+
+def render_trend(games: pd.DataFrame, figures: Mapping[str, float], stat: str) -> None:
+    """The chart of `stat` (trend_picker's pick) game by game. The chart's
+    title names the stat in full, and the game log's headers below carry
+    each stat's glossary entry, so the picker itself holds just the short
+    names."""
     st.plotly_chart(
         viz_diagnosis.stat_trend(games, stat, figures[stat]),
         config=viz.PLOTLY_CONFIG,

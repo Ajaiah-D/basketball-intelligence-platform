@@ -595,10 +595,10 @@ def test_the_trend_picker_switches_the_chart(con):
     name, _ = _busiest_player(con, "2024-25")
     at = _preset_app("2024-25", name)
     assert "Points" in _trend_title(at)
-    at.selectbox(key=TREND_KEY).select("AST").run()
+    at.button_group(key=TREND_KEY).set_value("AST").run()
     assert not at.exception, at.exception
     assert "Assists" in _trend_title(at)
-    at.selectbox(key=TREND_KEY).select("TS%").run()
+    at.button_group(key=TREND_KEY).set_value("TS%").run()
     assert "True shooting" in _trend_title(at)
 
 
@@ -632,5 +632,118 @@ def test_without_the_game_mart_the_detail_shows_one_notice(warehouse_without_gam
     assert len(at.info) == 1
     assert "next data refresh" in at.info[0].value
     assert not [m for m in at.markdown if "bip-scroll" in m.value]
-    # The rest of the detail still draws: the shooting chart beside it.
-    assert "Shooting vs league" in " ".join(m.value for m in at.markdown)
+    # The rest of the detail still draws: the shooting section below it.
+    assert "#### Shooting" in _texts(at)
+    assert "#### Game log" not in _texts(at)
+
+
+# --- The Player tab's sections -------------------------------------------------------
+
+
+def _player_app(con) -> AppTest:
+    """The Player tab on the newest season's top scorer, opened by the search."""
+    player_id, _name = _current_player(con)
+    at = _app()
+    at.selectbox(key="players_search").select(player_id).run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _axis_titles(at: AppTest) -> list[str]:
+    return [
+        json.loads(c.proto.spec)["layout"].get("xaxis", {}).get("title", {}).get("text", "")
+        for c in at.get("plotly_chart")
+    ]
+
+
+def test_the_player_tab_has_its_sections(con):
+    text = _texts(_player_app(con))
+    titles = ["#### Game by game", "#### Shooting", "#### Advanced", "#### Game log"]
+    assert all(t in text for t in titles), [t for t in titles if t not in text]
+    assert [text.index(t) for t in titles] == sorted(text.index(t) for t in titles)
+
+
+def test_the_advanced_section_ranks_him_among_players_over_the_minutes_floor(con):
+    name, _ = _busiest_player(con, "2024-25")
+    at = _preset_app("2024-25", name)
+    captions = " ".join(c.value for c in at.caption)
+    assert "Percentile among players with" in captions
+    assert "TOV%" not in captions  # not one of the ranked metrics
+    assert any("minutes" in t for t in _axis_titles(at))
+
+
+def test_advanced_section_hides_without_the_mart(con, monkeypatch):
+    monkeypatch.setattr(advanced, "marts_available", lambda: False)
+    name, _ = _busiest_player(con, "2024-25")
+    at = _preset_app("2024-25", name)
+    assert "#### Advanced" in _texts(at)
+    assert "No advanced stats" in " ".join(c.value for c in at.caption)
+    assert not any("minutes" in t for t in _axis_titles(at))
+
+
+def test_a_player_under_the_minutes_floor_is_not_ranked(con):
+    row = con.execute(
+        """
+        select player_name from main_marts.mart_player_season
+        where season = '2024-25' and minutes between 1 and 40
+          and player_name in (
+              select player_name from main_marts.mart_player_season
+              where season = '2024-25' group by player_name having count(*) = 1
+          )
+        order by player_name limit 1
+        """
+    ).fetchone()
+    if row is None:
+        pytest.skip("nobody under 40 minutes in 2024-25")
+    at = _preset_app("2024-25", row[0])
+    assert "too few to rank" in " ".join(c.value for c in at.caption)
+    assert not any("minutes" in t for t in _axis_titles(at))
+
+
+def test_the_player_scope_survives_a_visit_to_another_tab(con):
+    at = _player_app(con)
+    at.button_group(key="players_player_scope").set_value("Career").run()
+    assert not at.exception, at.exception
+    _open_tab(at, "Compare")
+    _open_tab(at, "Player")
+    toggle = at.button_group(key="players_player_scope")
+    assert toggle.value == "Career"
+    assert toggle.proto.set_value  # sent to the browser, not just kept on the server
+    assert "#### Career trajectory" in _texts(at)
+
+
+def test_the_default_player_follows_a_career_table(con):
+    at = _app()
+    at.button_group(key="players_scope").set_value("Career").run()
+    top = at.dataframe[0].value.iloc[0]["player"]
+    _open_tab(at, "Player")
+    assert at.button_group(key="players_player_scope").value == "Career"
+    assert top in _texts(at) and "#### Career trajectory" in _texts(at)
+    # Turning the toggle keeps him, now as a chosen player, at that scope.
+    at.button_group(key="players_player_scope").set_value("Season").run()
+    assert not at.exception, at.exception
+    assert at.button_group(key="players_player_scope").value == "Season"
+    assert top in _texts(at) and "#### Game by game" in _texts(at)
+    assert at.session_state["players_player_id"] is not None
+    # Back on a Season table, nothing about the chosen player changes.
+    _open_tab(at, "All players")
+    at.button_group(key="players_scope").set_value("Season").run()
+    _open_tab(at, "Player")
+    assert at.button_group(key="players_player_scope").value == "Season"
+    assert top in _texts(at)
+
+
+def test_the_default_player_follows_a_season_table(con):
+    at = _app()
+    _open_tab(at, "Player")
+    assert at.button_group(key="players_player_scope").value == "Season"
+
+
+def test_the_career_trajectory_picker_switches_the_chart(con):
+    at = _player_app(con)
+    at.button_group(key="players_player_scope").set_value("Career").run()
+    picker = at.button_group(key="players_career_stat")
+    assert picker.value == "PPG"
+    picker.set_value("TS%").run()
+    assert not at.exception, at.exception
+    assert "True shooting" in " ".join(c.value for c in at.caption)

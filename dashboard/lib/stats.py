@@ -4,8 +4,24 @@ Pure pandas/numpy, no warehouse access."""
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
+
+
+class ShootingRank(NamedTuple):
+    """One shooting percentage ranked among qualified shooters: the Player
+    tab works these out and lib.viz draws them, so the shape lives here,
+    where both may import it. `attempts_pg` and `league` are None when there
+    is no such figure (true shooting has no single attempt count, and the
+    league table has no true shooting figure)."""
+
+    label: str
+    percentile: float
+    value: float
+    attempts_pg: float | None
+    league: float | None
 
 
 def qualification_threshold(stats: pd.DataFrame, full_season: int = 25) -> int:

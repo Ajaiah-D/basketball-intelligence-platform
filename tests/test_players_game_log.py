@@ -161,15 +161,16 @@ def test_an_old_season_has_no_plus_minus_in_the_picker_or_the_log():
             "TS%": 52.0,
             "+/-": float("nan"),
         }
-        game_log.render_trend(games, figures)
         # A pick left over from a season that had +/-.
+        stat = game_log.trend_picker(games)
+        game_log.render_trend(games, figures, stat)
         game_log.render_game_log(games, figures)
 
     at = AppTest.from_function(page, default_timeout=30)
     at.session_state[game_log.TREND_KEY] = "+/-"
     at.run()
     assert not at.exception, at.exception
-    picker = at.selectbox(key=game_log.TREND_KEY)
+    picker = at.button_group(key=game_log.TREND_KEY)
     assert "+/-" not in picker.options
     assert picker.value == "PTS"
     log = next(m.value for m in at.markdown if "bip-scroll" in m.value)
