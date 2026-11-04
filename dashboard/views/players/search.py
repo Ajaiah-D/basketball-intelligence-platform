@@ -16,12 +16,16 @@ from __future__ import annotations
 import streamlit as st
 
 from core.text import fold
-from dashboard.lib.data import players
+from dashboard.lib.data import players, seasons
+from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.tabs import open_tab
 
 PLAYERS_TAB_KEY = "players_tab"
 PLAYER_ID_KEY = "players_player_id"
 PLAYER_SEASON_KEY = "players_player_season"
+# The sidebar season when he was chosen. The Player tab compares it with the
+# sidebar's on each run, and moves him to a newly picked season he played.
+PLAYER_PICKED_AT_KEY = "players_player_picked_at"
 # The Player tab's own Season / Career toggle.
 PLAYER_SCOPE_KEY = "players_player_scope"
 SEARCH_KEY = "players_search"
@@ -29,11 +33,15 @@ SEARCH_KEY = "players_search"
 
 def open_player(player_id: int, season: str, career: bool = False) -> None:
     """Show `player_id` at `season` on the Player tab (his career when
-    `career`) and switch to that tab. Call it from a widget callback, or
-    from the page body before the tabs are drawn; anywhere else needs a
-    st.rerun() after it (lib.tabs.open_tab)."""
+    `career`) and switch to that tab. From then on he follows the sidebar
+    season to any season he played (player._picked). Call it from a widget
+    callback, or from the page body before the tabs are drawn; anywhere else
+    needs a st.rerun() after it (lib.tabs.open_tab)."""
     st.session_state[PLAYER_ID_KEY] = int(player_id)
     st.session_state[PLAYER_SEASON_KEY] = season
+    st.session_state[PLAYER_PICKED_AT_KEY] = (
+        st.session_state.get(SEASON_KEY) or seasons.latest_season()
+    )
     st.session_state[PLAYER_SCOPE_KEY] = "Career" if career else "Season"
     open_tab(PLAYERS_TAB_KEY, "Player")
 

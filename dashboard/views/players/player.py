@@ -8,7 +8,9 @@ The player is the one the search, a click on an All players row or another
 page chose (search.PLAYER_ID_KEY / PLAYER_SEASON_KEY). When nobody has been
 chosen yet it is the top row of the All players table, at the table's scope
 (a career table opens his career, as a click on that row would), then the
-sidebar season's top scorer.
+sidebar season's top scorer. A chosen player follows the sidebar season to
+any season he played; for one he didn't, he stays at his own season, and a
+line under his name says so.
 """
 
 from __future__ import annotations
@@ -27,7 +29,12 @@ from dashboard.lib.data import advanced, players
 from dashboard.lib.stats import ShootingRank, percentile_of, qualification_threshold
 from dashboard.lib.widget_state import choice
 from dashboard.views.players import game_log
-from dashboard.views.players.search import PLAYER_ID_KEY, PLAYER_SCOPE_KEY, PLAYER_SEASON_KEY
+from dashboard.views.players.search import (
+    PLAYER_ID_KEY,
+    PLAYER_PICKED_AT_KEY,
+    PLAYER_SCOPE_KEY,
+    PLAYER_SEASON_KEY,
+)
 
 # The career trajectory's stat picker.
 CAREER_TREND_KEY = "players_career_stat"
@@ -342,13 +349,27 @@ class _Pick(NamedTuple):
     table_career: bool | None
 
 
+def _played(player_id: int, season: str) -> bool:
+    """Whether `player_id` has a line in `season`."""
+    return player_id in set(players.player_season_stats(season)["player_id"])
+
+
 def _picked(default_rows: pd.DataFrame | None, season: str) -> _Pick | None:
     """The player to show: the chosen one, else the top row of the All
     players table when it lists the sidebar season (or careers), else the
-    season's top scorer among players over the games floor."""
+    season's top scorer among players over the games floor.
+
+    A chosen player follows the sidebar: once it shows another season than
+    the one he was chosen at, he moves to it if he played it, and otherwise
+    stays at his own season (render_player says so under his name)."""
     player_id = st.session_state.get(PLAYER_ID_KEY)
     if player_id is not None:
-        return _Pick(int(player_id), st.session_state.get(PLAYER_SEASON_KEY) or season, None)
+        player_id = int(player_id)
+        if st.session_state.get(PLAYER_PICKED_AT_KEY) != season:
+            st.session_state[PLAYER_PICKED_AT_KEY] = season
+            if _played(player_id, season):
+                st.session_state[PLAYER_SEASON_KEY] = season
+        return _Pick(player_id, st.session_state.get(PLAYER_SEASON_KEY) or season, None)
     if default_rows is not None and len(default_rows):
         top = default_rows.iloc[0]
         if "season" not in default_rows:  # Career scope
@@ -364,12 +385,14 @@ def _picked(default_rows: pd.DataFrame | None, season: str) -> _Pick | None:
     return _Pick(int(top["player_id"]), season, False)
 
 
-def _choose(player_id: int, season: str) -> None:
+def _choose(player_id: int, season: str, sidebar: str) -> None:
     """The scope toggle's on_change: whoever is on screen becomes the chosen
     player, so a default player keeps the scope the reader just picked
-    instead of following the table's again on the next run."""
+    instead of following the table's again on the next run. He is chosen
+    at the `sidebar` season, so he still follows it from there (_picked)."""
     st.session_state[PLAYER_ID_KEY] = player_id
     st.session_state[PLAYER_SEASON_KEY] = season
+    st.session_state[PLAYER_PICKED_AT_KEY] = sidebar
 
 
 def _career_row(player_id: int) -> pd.Series | None:
@@ -404,7 +427,7 @@ def render_player(default_rows: pd.DataFrame | None, season: str) -> None:
             label_visibility="collapsed",
             key=PLAYER_SCOPE_KEY,
             on_change=_choose,
-            args=(picked.player_id, picked.season),
+            args=(picked.player_id, picked.season, season),
         )
         == "Career"
     )
@@ -420,6 +443,8 @@ def render_player(default_rows: pd.DataFrame | None, season: str) -> None:
         return
 
     _player_header(row, career, season, picked.season, head)
+    if not career and picked.season != season and not _played(picked.player_id, season):
+        head.caption(f"{row.player} didn't play {season}; showing {picked.season}.")
     if career:
         _career_detail(row)
     else:

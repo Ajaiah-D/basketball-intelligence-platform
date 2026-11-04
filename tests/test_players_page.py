@@ -780,3 +780,84 @@ def test_the_career_trajectory_picker_switches_the_chart(con):
     picker.set_value("TS%").run()
     assert not at.exception, at.exception
     assert "True shooting" in " ".join(c.value for c in at.caption)
+
+
+# --- A chosen player follows the sidebar season ---------------------------------------
+
+
+def _captions(at: AppTest) -> str:
+    return " ".join(c.value for c in at.caption)
+
+
+def _earlier_season(con, player_id: int, newest: str) -> tuple[str, int]:
+    """(season, games) of his most recent season before `newest`."""
+    row = con.execute(
+        """
+        select season, games_played from main_marts.mart_player_season
+        where player_id = ? and season < ?
+        order by season desc limit 1
+        """,
+        [player_id, newest],
+    ).fetchone()
+    assert row, f"player {player_id} has no season before {newest}"
+    return str(row[0]), int(row[1])
+
+
+@pytest.mark.full_warehouse
+def test_a_picked_player_follows_the_sidebar_to_a_season_he_played(con):
+    newest = seasons.seasons()[0]
+    player_id, name = _current_player(con)
+    older, games = _earlier_season(con, player_id, newest)
+    at = _player_app(con)
+    assert at.session_state["players_player_season"] == newest
+    at.selectbox(key="season").select(older).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_tab"] == "Player"
+    assert at.session_state["players_player_season"] == older
+    # His tiles, charts and game log are that season's.
+    assert name in _texts(at)
+    assert _game_log_rows(at) == games
+    assert "didn't play" not in _captions(at)
+
+
+def test_a_picked_player_stays_at_his_season_when_he_did_not_play_the_new_one(con):
+    every = seasons.seasons()
+    newest, oldest = every[0], every[-1]
+    player_id, name = _current_player(con)
+    assert player_id not in set(players.player_season_stats(oldest)["player_id"])
+    at = _player_app(con)
+    at.selectbox(key="season").select(oldest).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_player_season"] == newest
+    assert name in _texts(at)
+    assert f"{name} didn't play {oldest}; showing {newest}." in _captions(at)
+    # Career scope has no season to explain.
+    at.button_group(key="players_player_scope").set_value("Career").run()
+    assert not at.exception, at.exception
+    assert "didn't play" not in _captions(at)
+    # Back in Season scope and on a season he played, the line goes.
+    at.button_group(key="players_player_scope").set_value("Season").run()
+    at.selectbox(key="season").select(newest).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_player_season"] == newest
+    assert "didn't play" not in _captions(at)
+
+
+@pytest.mark.full_warehouse
+def test_a_default_player_still_follows_the_sidebar_after_the_scope_toggle(con):
+    # The toggle makes the default player a chosen one (player._choose);
+    # he must still move with the sidebar like any chosen player.
+    newest = seasons.seasons()[0]
+    at = _open_tab(_app(), "Player")
+    assert "players_player_id" not in at.session_state
+    at.button_group(key="players_player_scope").set_value("Career").run()
+    at.button_group(key="players_player_scope").set_value("Season").run()
+    assert not at.exception, at.exception
+    player_id = at.session_state["players_player_id"]
+    assert at.session_state["players_player_season"] == newest
+    older, games = _earlier_season(con, player_id, newest)
+    at.selectbox(key="season").select(older).run()
+    assert not at.exception, at.exception
+    assert at.session_state["players_player_id"] == player_id
+    assert at.session_state["players_player_season"] == older
+    assert _game_log_rows(at) == games
