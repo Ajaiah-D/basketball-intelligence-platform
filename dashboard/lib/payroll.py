@@ -19,7 +19,7 @@ from . import theme as T
 # Over the cap is normal, so it gets a quiet gray: in a season where all 30
 # teams are over it, a bright neutral would outweigh the handful of
 # taxpayers the snapshot exists to point out.
-OVER_CAP_GRAY = "#5f5e59"
+OVER_CAP_GRAY = T.NEUTRAL
 
 # (mart column, label, color), lowest line first. The same color means the
 # same line everywhere: both charts, the status card and the bar colors.

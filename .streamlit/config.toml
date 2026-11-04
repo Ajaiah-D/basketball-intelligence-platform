@@ -1,9 +1,12 @@
+# Mirrors the tokens in dashboard/lib/theme.py that Streamlit's own widgets
+# use (page, surface, ink, brand): change a colour there and here together.
+# tests/test_theme.py checks the two agree.
 [theme]
 base = "dark"
-primaryColor = "#3987e5"
-backgroundColor = "#0d0d0d"
-secondaryBackgroundColor = "#1a1a19"
-textColor = "#ffffff"
+primaryColor = "#f08a3c"
+backgroundColor = "#1d232c"
+secondaryBackgroundColor = "#262d38"
+textColor = "#f1f4f8"
 font = "sans serif"
 # Sharp corners on native widgets (buttons, inputs, tabs, expanders) to match
 # dashboard/lib/theme.py's RADIUS token used on custom cards/chips - without
@@ -13,8 +16,8 @@ baseRadius = "2px"
 buttonRadius = "2px"
 # Table chrome. The grid draws its cells into a <canvas>, so these are the
 # only hooks that reach it - CSS in theme.py cannot style dataframe cells.
-dataframeHeaderBackgroundColor = "#232322"
-dataframeBorderColor = "#2c2c2a"
+dataframeHeaderBackgroundColor = "#2f3744"
+dataframeBorderColor = "#353e4b"
 
 [browser]
 gatherUsageStats = false

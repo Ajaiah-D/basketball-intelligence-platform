@@ -1,7 +1,11 @@
-"""Design tokens and global CSS. Dark-first theme; chart palette values are
-the validated dark-mode steps from the dataviz reference palette. Team
-colors are brand-adjacent hues tuned for legibility on the dark surface
-(identity accents on UI chrome, not chart series colors)."""
+"""Design tokens and global CSS. A dark theme on a mid-tone slate, not black:
+the page, cards and tables sit a few steps apart so the eye can tell them
+apart without a bright border. Two accents with separate jobs: BRAND (orange)
+is for UI chrome (section bars, chips, hover and focus), ACCENT (SERIES[0],
+blue) is for data. Chart palette values are the validated dark-mode steps
+from the dataviz reference palette. Team colors are brand-adjacent hues tuned
+for legibility on the dark surface (identity accents on UI chrome, not chart
+series colors)."""
 
 import html
 
@@ -14,7 +18,15 @@ from core import teams
 # close to tell apart (the red/magenta pair measured a perceptual distance
 # of 7.8 against a floor of 15, so even full-colour vision struggled). The
 # order is what makes adjacent slots legible, so keep it.
-SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
+#
+# Validated against SURFACE (#262d38) with the dataviz validator, dark mode.
+# Before (the old near-black surface, #1a1a19): every check passed. On the
+# lighter slate only the contrast check moved: the green in slot 6 measured
+# 2.8:1 against the 3:1 floor, so it went from #008300 to #008900 (3.0:1).
+# Nothing else changed; the lightness band, chroma floor, adjacent CVD
+# separation (worst 8.4, above the 8 target)
+# and the normal-vision floor (worst 19.3) are the same as before.
+SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008900", "#9085e9", "#e66767"]
 
 ACCENT = SERIES[0]  # blue - primary/emphasis hue
 DIVERGE_POS = "#3987e5"  # diverging pair: blue <-> red
@@ -22,15 +34,20 @@ DIVERGE_NEG = "#e66767"
 GOOD = "#0ca30c"  # status - reserved, never a series color
 CRITICAL = "#d03b3b"
 
-SURFACE = "#1a1a19"  # card / chart surface
-PAGE = "#0d0d0d"  # page plane
-INK = "#ffffff"  # primary text
-INK_2 = "#c3c2b7"  # secondary text
-MUTED = "#898781"  # axis / labels
-GRID = "#2c2c2a"  # hairline gridlines
-BASELINE = "#383835"  # axis baseline / de-emphasis marks
-BORDER = "rgba(255,255,255,0.10)"
-AVATAR_BG = "#242423"  # behind a headshot, where the photo's transparent edges show
+PAGE = "#1d232c"  # page plane (slate, blue-tinted)
+SIDEBAR = "#181d25"  # sidebar, one step darker than the page so it stays distinct
+SURFACE = "#262d38"  # card / chart surface, popovers
+SURFACE_2 = "#2f3744"  # table headers, sticky columns, hover
+INK = "#f1f4f8"  # primary text
+INK_2 = "#c5cdd8"  # secondary text
+MUTED = "#95a1b1"  # axis / labels
+GRID = "#353e4b"  # hairline gridlines
+BASELINE = "#4b5664"  # axis baseline / de-emphasis marks
+NEUTRAL = "#6b7787"  # quiet mid gray for marks that must recede but still show: between
+# MUTED and BASELINE, 3:1 against SURFACE (the over-the-cap line, a median bar)
+BORDER = "rgba(255,255,255,0.09)"
+BRAND = "#f08a3c"  # UI accent: section bars, selected tab, chips, slider, focus
+AVATAR_BG = SURFACE_2  # behind a headshot, where the photo's transparent edges show
 
 # Two-digit hex alpha suffixes for a "#rrggbb" token (f"{color}{TINT_ALPHA}"):
 # the tinted fill of a chip or an initials disc (0x26, about 15%) and a
@@ -80,9 +97,8 @@ CSS = f"""
 [data-testid="stHeader"] {{ background: transparent; }}
 .stApp {{
   background:
-    radial-gradient(1100px 520px at 15% -12%, rgba(57,135,229,.22), transparent 60%),
-    radial-gradient(900px 440px at 95% -8%, rgba(229,96,32,.13), transparent 55%),
-    radial-gradient(1000px 500px at 50% 115%, rgba(144,133,233,.07), transparent 60%),
+    radial-gradient(1100px 520px at 15% -12%, {rgba(ACCENT, 0.10)}, transparent 60%),
+    radial-gradient(900px 440px at 95% -8%, {rgba(BRAND, 0.08)}, transparent 55%),
     {PAGE};
 }}
 /* Scales with the viewport instead of a fixed cap: a flat 1180px used under
@@ -97,21 +113,19 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 /* accent bar before section headers (the h4 "#### ..." markdown blocks) */
 [data-testid="stMarkdownContainer"] h4::before {{
   content: ""; display: inline-block; width: 4px; height: .95em;
-  background: linear-gradient(180deg, {ACCENT}, #7db4f0);
+  background: {BRAND};
   border-radius: 2px; margin-right: .55rem; vertical-align: -0.12em;
 }}
-[data-testid="stSidebar"] {{ background: #101010; border-right: 1px solid {BORDER}; }}
+[data-testid="stSidebar"] {{ background: {SIDEBAR}; border-right: 1px solid {BORDER}; }}
 [data-testid="stSidebarNav"] a span {{ font-weight: 600; }}
 
 /* ---- hero banner ---- */
 .bip-hero {{
   position: relative; overflow: hidden;
   background:
-    radial-gradient(600px 260px at 88% 20%, rgba(229,96,32,.16), transparent 60%),
-    linear-gradient(120deg, rgba(57,135,229,.22) 0%, rgba(57,135,229,.06) 45%,
-                    rgba(23,23,22,.9) 100%),
-    linear-gradient(180deg, #1e1e1d 0%, #161615 100%);
-  border: 1px solid rgba(57,135,229,.28);
+    radial-gradient(600px 260px at 88% 20%, {rgba(BRAND, 0.14)}, transparent 60%),
+    {SURFACE};
+  border: 1px solid {rgba(BRAND, 0.30)};
   border-radius: {RADIUS};
   padding: 1.4rem 1.6rem;
   margin-bottom: 1rem;
@@ -129,7 +143,7 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 
 /* ---- cards ---- */
 .bip-card {{
-  background: linear-gradient(180deg, #1e1e1d 0%, #171716 100%);
+  background: {SURFACE};
   border: 1px solid {BORDER};
   border-radius: {RADIUS};
   padding: 1rem 1.25rem;
@@ -138,7 +152,7 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 }}
 .bip-card:hover {{
   transform: translateY(-2px);
-  border-color: rgba(57,135,229,.35);
+  border-color: {BRAND};
   box-shadow: 0 6px 24px rgba(0,0,0,.35);
 }}
 .bip-card h4 {{
@@ -209,13 +223,13 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 
 /* ---- leader rows ---- */
 .bip-row {{ display: flex; align-items: baseline; gap: .55rem; padding: .42rem 0;
-            border-bottom: 1px solid rgba(255,255,255,.06); }}
+            border-bottom: 1px solid {rgba(INK, 0.06)}; }}
 .bip-row:last-child {{ border-bottom: none; }}
 .bip-rank {{ width: 1.35rem; height: 1.35rem; border-radius: 50%; flex: none;
              display: inline-flex; align-items: center; justify-content: center;
              color: {MUTED}; font-size: .72rem; font-weight: 700;
              font-variant-numeric: tabular-nums; align-self: center;
-             background: rgba(255,255,255,.05); }}
+             background: {rgba(INK, 0.06)}; }}
 .bip-name {{ flex: 1; min-width: 0; font-weight: 600; font-size: .88rem; color: {INK};
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 .bip-team {{ flex: none; color: {MUTED}; font-size: .72rem; font-weight: 700; }}
@@ -223,19 +237,19 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 
 /* ---- chips / dots ---- */
 .bip-chip {{ display: inline-block; padding: 3px 12px; border-radius: {RADIUS};
-             background: rgba(57,135,229,.16); color: #7db4f0;
+             background: {rgba(BRAND, 0.16)}; color: {BRAND};
              font-size: .75rem; font-weight: 700; letter-spacing: .02em;
-             border: 1px solid rgba(57,135,229,.25); }}
+             border: 1px solid {rgba(BRAND, 0.25)}; }}
 .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; }}
-.dot-w {{ background: {GOOD}; box-shadow: 0 0 6px rgba(12,163,12,.5); }}
+.dot-w {{ background: {GOOD}; box-shadow: 0 0 6px {rgba(GOOD, 0.5)}; }}
 .dot-l {{ background: {CRITICAL}; }}
 
 /* ---- score cards ---- */
-.bip-game {{ background: linear-gradient(180deg, #1e1e1d 0%, #171716 100%);
+.bip-game {{ background: {SURFACE};
              border: 1px solid {BORDER}; border-radius: {RADIUS};
              padding: .7rem .9rem; margin-bottom: .6rem;
              transition: transform .15s ease, border-color .15s ease; }}
-.bip-game:hover {{ transform: translateY(-2px); border-color: rgba(57,135,229,.35); }}
+.bip-game:hover {{ transform: translateY(-2px); border-color: {BRAND}; }}
 .bip-game-date {{ font-size: .68rem; color: {MUTED}; text-transform: uppercase;
                   letter-spacing: .06em; margin-bottom: .35rem; font-weight: 700; }}
 .bip-game-line {{ display: flex; justify-content: space-between; align-items: center;
@@ -253,10 +267,10 @@ table.bip-table th {{ text-align: right; color: {MUTED}; font-size: .68rem;
                       font-weight: 700; }}
 table.bip-table th.lft, table.bip-table td.lft {{ text-align: left; }}
 table.bip-table td {{ text-align: right; padding: .42rem .45rem; color: {INK_2};
-                      border-bottom: 1px solid rgba(255,255,255,.05);
+                      border-bottom: 1px solid {rgba(INK, 0.06)};
                       font-variant-numeric: tabular-nums; }}
 table.bip-table tr:last-child td {{ border-bottom: none; }}
-table.bip-table tr:hover td {{ background: rgba(255,255,255,.025); }}
+table.bip-table tr:hover td {{ background: {rgba(INK, 0.035)}; }}
 table.bip-table td.tm {{ font-weight: 700; color: {INK}; }}
 table.bip-table td.pos {{ color: {GOOD}; font-weight: 700; }}
 table.bip-table td.neg {{ color: {CRITICAL}; font-weight: 700; }}
@@ -269,11 +283,11 @@ table.bip-table, table.bip-table tr {{ border: none; }}
 table.bip-table td.name {{ color: {INK}; font-weight: 600; white-space: nowrap; }}
 /* the name column stays put while a phone scrolls the stats sideways */
 .bip-table-wrap table.bip-table tr > :first-child {{ position: sticky; left: 0;
-                                                    background: #1b1b1a; }}
+                                                    background: {SURFACE_2}; }}
 table.bip-table td.hi {{ color: {INK}; font-weight: 800; }}
 /* lib/tables.py max_height: a long table scrolls in its box, header pinned */
 .bip-scroll {{ overflow-y: auto; margin-bottom: .4rem; }}
-.bip-scroll table.bip-table th {{ position: sticky; top: 0; z-index: 1; background: #1b1b1a; }}
+.bip-scroll table.bip-table th {{ position: sticky; top: 0; z-index: 1; background: {SURFACE_2}; }}
 .bip-scroll table.bip-table tr > th:first-child {{ z-index: 2; }}
 /* the game log: a game above or below his own season average. "tr td" so
    the row hover, which is as specific and comes first, doesn't wash it out */
@@ -339,9 +353,15 @@ table.bip-table tr.bip-foot .pct {{ font-size: .68rem; color: {MUTED}; font-weig
 .bip-chance {{ display: inline-flex; align-items: center; gap: .55rem; }}
 .bip-chance-pct {{ min-width: 2.4rem; text-align: right; color: {INK}; }}
 .bip-chance-bar {{ display: inline-block; width: 4.5rem; height: 4px;
-                   background: rgba(255,255,255,.08); }}
+                   background: {rgba(INK, 0.10)}; }}
 .bip-chance-bar > span {{ display: block; height: 100%; }}
 .bip-chance-toss {{ width: 4.5rem; color: {MUTED}; font-size: .75rem; }}
+
+/* ---- Players page search (views/players): the select that finds a player
+   is the page's main control, so it is taller and its text larger than a
+   default select. Scoped to the keyed container (st-key-players_search). */
+.st-key-players_search [data-baseweb="select"] > div {{ min-height: 3rem; }}
+.st-key-players_search, .st-key-players_search input {{ font-size: 1.05rem; }}
 
 /* ---- mobile (<= 640px, Streamlit's own column-stacking breakpoint) ----
    Desktop is untouched: these rules only exist on phone-width viewports.
@@ -443,7 +463,7 @@ def rank_badge(i: int) -> str:
     return f'<span class="bip-rank">{i}</span>'
 
 
-def chip(text: str, color: str = ACCENT) -> str:
+def chip(text: str, color: str = BRAND) -> str:
     return (
         f'<span class="bip-chip" style="background:{color}{TINT_ALPHA};'
         f'border-color:{color}{TINT_BORDER_ALPHA};color:{color}">{text}</span>'

@@ -25,7 +25,7 @@ from .viz import _empty, _layout
 # label calls a stat good or bad. The neutral sits between MUTED and
 # BASELINE, darker than MUTED, so a median bar recedes and stays apart from
 # the unjudged style rows, which are MUTED.
-PROFILE_NEUTRAL = "#605f5b"
+PROFILE_NEUTRAL = T.NEUTRAL
 PROFILE_STYLE = T.MUTED
 
 # Each profile stat's printed value. The marts keep rates on a 0-100 scale;

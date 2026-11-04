@@ -20,7 +20,7 @@ def _layout(**overrides) -> dict:
     base = {
         "paper_bgcolor": "rgba(0,0,0,0)",
         "plot_bgcolor": "rgba(0,0,0,0)",
-        "font": {"family": T.FONT, "color": T.INK_2, "size": 12},
+        "font": {"family": T.FONT, "color": T.INK_2, "size": 13},
         "margin": {"l": 8, "r": 8, "t": 28, "b": 8},
         # the modebar is hidden, so a drag/pinch zoom would be unrecoverable -
         # every chart is a fixed view (overriding axes must keep fixedrange)
@@ -33,7 +33,7 @@ def _layout(**overrides) -> dict:
             "gridcolor": T.GRID,
             "zerolinecolor": T.BASELINE,
             "linecolor": T.BASELINE,
-            "tickfont": {"color": T.MUTED},
+            "tickfont": {"color": T.MUTED, "size": 12},
             "fixedrange": True,
             "automargin": True,
         },
@@ -41,7 +41,7 @@ def _layout(**overrides) -> dict:
             "gridcolor": T.GRID,
             "zerolinecolor": T.BASELINE,
             "linecolor": T.BASELINE,
-            "tickfont": {"color": T.MUTED},
+            "tickfont": {"color": T.MUTED, "size": 12},
             "fixedrange": True,
             "automargin": True,
         },
