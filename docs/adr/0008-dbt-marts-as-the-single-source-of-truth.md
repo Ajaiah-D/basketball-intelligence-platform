@@ -2,6 +2,9 @@
 
 **Status:** Accepted
 
+*Update 2026-11-03: the Advanced page named below was folded into Players
+and Teams. The record is unchanged.*
+
 ## Context
 
 Several numbers on the site were computed twice: once in a dbt mart and

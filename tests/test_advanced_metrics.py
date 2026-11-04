@@ -1,5 +1,5 @@
-"""dashboard/lib/advanced_metrics.py: the metric tables the Advanced page
-used to own, plus the minutes floor and percentile profile built on them."""
+"""dashboard/lib/advanced_metrics.py: the metric tables the old Advanced
+page owned (now Players and Teams), plus the minutes floor and percentile profile built on them."""
 
 import pandas as pd
 

@@ -936,10 +936,10 @@ def test_true_shooting_is_gated_on_its_own_inputs(player_snapshot):
     assert gained is not None and gained[0] > 0
 
 
-def test_the_advanced_page_reads_team_label_from_the_mart(player_snapshot):
-    """The Advanced page shows mart_player_season's own team_label (it used
-    to merge one on). Every row needs one, and it must be the label the
-    Players page shows."""
+def test_player_advanced_rows_carry_the_marts_own_team_label(player_snapshot):
+    """The Players page shows mart_player_season's own team_label in its
+    Advanced columns (the old Advanced page merged one on). Every row needs
+    one, and it must be the label the Players table shows."""
     season = _seasons(player_snapshot)[-1]
     stats = advanced.player_advanced(season)
     assert len(stats) and stats["team_label"].notna().all()

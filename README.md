@@ -13,13 +13,20 @@ Q&A is not built yet; see Status / roadmap below.
 **Overview** - best record, league and efficiency leaders, conference standings
 ![Overview](site_pictures/overview.png)
 
-**Players** - a player's detail on the Stats tab: scoring trend with a stat
-picker, shooting-vs-league percentiles and a colour-coded game log
+**Players** - the All players tab: a filterable league table with Basic,
+Shooting and Advanced column sets; a click on a row opens that player
 ![Players](site_pictures/players.png)
 
-**Teams** - one team in depth: where it ranks in the league on 15
-stats, then a breakdown of its players in each area
+**Player** - one player's season in a section per question: game by game,
+shooting and advanced stats against the league, and a colour-coded game log
+![Player](site_pictures/player.png)
+
+**Teams** - the Team tab: one team's ratings and record splits, where it
+ranks in the league on 15 stats, then a breakdown of its players in each area
 ![Teams](site_pictures/teams.png)
+
+**Team stats** - every team's ratings and Four Factors in one table
+![Team stats](site_pictures/team-stats.png)
 
 **Games** - results browser; game detail with a score-margin flow chart and
 shot chart
@@ -180,28 +187,33 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Overview**: the team with the best record, league leaders, efficiency
   leaders (true shooting, usage, game score, assist-to-turnover), conference
   standings, latest games
-- **Players**: three tabs. *Stats* has the filterable season stats table, a
-  career view pooling every season, and a player detail with a trend for any
-  stat (5-game rolling average), shooting-vs-league percentiles and a
-  game log tinted green or red against his own season average. *Scatter*
-  plots any two player stats for a season, with a minimum-games and team
-  filter. *Compare* sets two player-seasons from any era side by side: a
-  percentile radar, with each player ranked against his own season's
-  qualified players, plus per-game bars
-- **Teams**: a Team tab with record and seed, net/offensive/defensive rating
-  and pace with league ranks, the team's payroll, home/away, last-10, streak,
-  close-game and vs-winning-team records and a per-game margin chart. Three
-  views for investigating a team: *How they rank in the league* (percentile
-  bars for 15 stats, with the value and rank printed on each),
+- **Players**: a search box for any player (retired ones included) above four
+  tabs. *All players* is the filterable league table for a season or the whole
+  career, with Basic, Shooting and Advanced column sets (rate stats such as
+  true shooting, usage and game score, with a minutes floor); a click on a row
+  opens that player. Official NBA figures are used where the league publishes
+  them (1996-97 on) and box-score derivations fill in earlier seasons. *Player* has one section per question: game by game (a
+  trend for any stat, 5-game rolling average), shooting against the league,
+  advanced stats as percentiles, and a game log tinted green or red against his
+  own season average. *Compare* sets two player-seasons from any era side by
+  side: a percentile radar, with each player ranked against his own season's
+  qualified players, plus per-game bars. *Scatter* plots any two player stats
+  for a season, with a minimum-games and team filter
+- **Teams**: three tabs. *Team* has record and seed, net/offensive/defensive
+  rating and pace with league ranks, the team's payroll, home/away, last-10,
+  streak, close-game and vs-winning-team records and a per-game margin chart.
+  Three views for investigating a team: *How they rank in the league*
+  (percentile bars for 15 stats, with the value and rank printed on each),
   *Player breakdown* (pick an area, such as scoring efficiency, ball
   security, rebounding or fouling, and see the rotation's numbers against
   the league median; "defense on/off" is an estimate, see
   [ADR 0006](docs/adr/0006-known-limitations.md)) and *Compare two stats*
-  (any two team stats across all 30 teams). The roster follows, and a
-  Standings tab has last-5 form for either conference or the whole league. A
-  player traded mid-season counts on each roster only for the games he
-  played there, and the Players and Advanced tables label him with both
-  teams (CHI → BOS)
+  (any two team stats across all 30 teams). The roster follows. *Team stats*
+  is every team's table with Basic, Advanced (ratings, pace) and Four Factors
+  column sets; a click on a row opens that team. *Standings* has last-5 form
+  for either conference or the whole league. A player traded mid-season counts
+  on each roster only for the games he played there, and the Players tables
+  label him with both teams (CHI → BOS)
 - **Games**: results browser; game detail with box scores and, for games
   with play-by-play ingested, a game-flow (score margin) chart and shot chart
 - **Schedule**: a month calendar, one cell per day with its game count. A
@@ -209,11 +221,6 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   button that goes to the Games page, or upcoming games with tip-off (Eastern)
   and the model's pick. Picking a team shows its opponent on each day and its
   whole season with a running record
-- **Advanced**: rate metrics (true shooting, usage, assist/rebound/steal/block
-  rates, game score) with a minutes floor, efficiency leaderboards, a
-  percentile profile per player, and a two-player head-to-head. Official NBA
-  figures are used where the league publishes them (1996-97 on) and box-score
-  derivations fill in earlier seasons
 - **Finances**: every team's payroll for a season against that year's salary
   cap, luxury tax and (2023-24 on) apron lines, with an explainer of what the
   lines mean. Each team gets a plain-English summary, its biggest contracts,
@@ -370,9 +377,11 @@ explains why it works this way.
       era the tests check; the 9 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
-      factors. Official NBA advanced stats pulled for 1996-97 onward (one API
-      call per season); earlier seasons derived from box scores, and withheld
-      entirely before 1985-86 where the source has no rebound or turnover data
+      factors; shown on Players (All players > Advanced, and the Player tab)
+      and Teams (Team stats). Official NBA advanced stats pulled for 1996-97
+      onward (one API call per season); earlier seasons derived from box
+      scores, and withheld entirely before 1985-86 where the source has no
+      rebound or turnover data
 - [x] Team payroll and per-player salaries vs salary cap, luxury tax and apron
       lines (Basketball-Reference, 1984-85 on; Finances page)
 - [x] Game predictions: Elo ratings feeding a ridge model, evaluated with a

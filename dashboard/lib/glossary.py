@@ -1,7 +1,7 @@
 """Plain-English explanations for every stat a casual fan might not know.
 
-One place, so "usage" means the same thing on the Overview, Advanced and
-Players pages. Two ways onto the page:
+One place, so "usage" means the same thing on the Overview, Players and
+Teams pages. Two ways onto the page:
 
   - theme.tip(TERMS[...]) - a hoverable/tappable ⓘ next to a card title,
     KPI label or HTML table header.

@@ -50,7 +50,8 @@ models:
           Every team played for, in order of each stint's first game, joined
           with ' → ' ("CHI → BOS"); a single code for one team. Same tie-break
           as team. The dashboard's team_label; not named team_path because
-          the Advanced page merges a team_path of its own onto this mart.
+          the old Advanced page (now on Players and Teams) merged a
+          team_path of its own onto this mart.
         tests: [not_null]
       - name: rebounds_per_game
         description: &rpg >

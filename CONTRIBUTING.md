@@ -180,9 +180,10 @@ week's warehouse. A warehouse change therefore goes in three steps:
 
 "Additive" also means checking what the live code does with the table. When
 `mart_player_season` gained a column, the planned name was `team_path`. The
-deployed Advanced page reads that mart with `select *` and then merges in
-its own `team_path` column, so pandas would have produced `team_path_x` and
-`team_path_y` and the page would have crashed on the next publish. The
+deployed Advanced page (since folded into Players and Teams) read that mart
+with `select *` and then merged in its own `team_path` column, so pandas
+would have produced `team_path_x` and `team_path_y` and the page would have
+crashed on the next publish. The
 column is called `team_label` instead. A new column can collide with a
 name the old code adds itself.
 

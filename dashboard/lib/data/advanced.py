@@ -1,7 +1,7 @@
 """Advanced metrics: dbt's player-season and team-season marts.
 
 These two read the whole mart row (`select *`) on purpose. The mart's
-columns are the documented interface (_marts_models.yml), the Advanced page
+columns are the documented interface (_marts_models.yml), the Players page
 picks its columns from a table of metrics, and the Teams page checks for
 optional ones (`"effective_fg_pct" in adv`) - a written-out list would turn
 that check into a binder error on a warehouse published before a column

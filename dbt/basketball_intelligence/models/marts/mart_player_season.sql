@@ -272,9 +272,10 @@ select
     -- The dashboard's season line, under the same names in all three
     -- player marts
     d.team_abbreviation                                as team,
-    -- Not called team_path: the Advanced page reads this mart with
-    -- select * and merges player_team_paths()' team_path onto it, which a
-    -- same-named column here would split into team_path_x/_y and break.
+    -- Not called team_path: the Advanced page, since folded into Players and
+    -- Teams, read this mart with select * and merged player_team_paths()'
+    -- team_path onto it, which a same-named column here would split into
+    -- team_path_x/_y and break.
     tp.team_path                                       as team_label,
     d.rebounds_per_game,
     d.assists_per_game,
