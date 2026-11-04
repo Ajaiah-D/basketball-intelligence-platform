@@ -8,7 +8,7 @@ CHI,,,CHI,Chicago Bulls,East,#E23A47,CHI
 CLE,,,CLE,Cleveland Cavaliers,East,#FDBB30,CLE
 DAL,,,DAL,Dallas Mavericks,West,#2E8FE0,DAL
 DEN,,,DEN,Denver Nuggets,West,#FEC524,DEN
-DET,,,DET,Detroit Pistons,East,#E01E38,DET
+DET,,,DET,Detroit Pistons,East,#E2243D,DET
 GSW,,,GSW,Golden State Warriors,West,#FFC72C,GSW
 HOU,,,HOU,Houston Rockets,West,#E5313E,HOU
 IND,,,IND,Indiana Pacers,East,#FDBB30,IND
@@ -29,9 +29,9 @@ SAC,,,SAC,Sacramento Kings,West,#9B6BC9,SAC
 SAS,,,SAS,San Antonio Spurs,West,#C4CED4,SAS
 TOR,,,TOR,Toronto Raptors,East,#E5484D,TOR
 UTA,,,UTA,Utah Jazz,West,#F9A01B,UTA
-WAS,,1996-97,WAS,Washington Bullets,East,#E31837,WSB
-WAS,1997-98,,WAS,Washington Wizards,East,#E31837,WAS
-CAP,,,WAS,Capital Bullets,East,#E31837,CAP
+WAS,,1996-97,WAS,Washington Bullets,East,#E61838,WSB
+WAS,1997-98,,WAS,Washington Wizards,East,#E61838,WAS
+CAP,,,WAS,Capital Bullets,East,#E61838,CAP
 CHH,,2001-02,NOP,Charlotte Hornets,East,#00A9C4,CHH
 GOS,,,GSW,Golden State Warriors,West,#FFC72C,GSW
 KCK,,,SAC,Kansas City Kings,West,#4B8FD4,KCK
@@ -44,4 +44,4 @@ SDC,,,LAC,San Diego Clippers,West,#E5484D,SDC
 SEA,,2007-08,OKC,Seattle SuperSonics,West,#2DA05A,SEA
 UTH,,,UTA,Utah Jazz,West,#F9A01B,UTA
 VAN,,,MEM,Vancouver Grizzlies,West,#00B2A9,VAN
-WSB,,,WAS,Washington Bullets,East,#E31837,WSB
+WSB,,,WAS,Washington Bullets,East,#E61838,WSB

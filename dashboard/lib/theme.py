@@ -24,8 +24,8 @@ from core import teams
 # lighter slate only the contrast check moved: the green in slot 6 measured
 # 2.8:1 against the 3:1 floor, so it went from #008300 to #008900 (3.0:1).
 # Nothing else changed; the lightness band, chroma floor, adjacent CVD
-# separation (worst 8.4, above the 8 target)
-# and the normal-vision floor (worst 19.3) are the same as before.
+# separation (worst 8.4, above the 8 target) and the normal-vision floor
+# (worst 19.3) are the same as before.
 SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008900", "#9085e9", "#e66767"]
 
 ACCENT = SERIES[0]  # blue - primary/emphasis hue
@@ -43,8 +43,9 @@ INK_2 = "#c5cdd8"  # secondary text
 MUTED = "#95a1b1"  # axis / labels
 GRID = "#353e4b"  # hairline gridlines
 BASELINE = "#4b5664"  # axis baseline / de-emphasis marks
-NEUTRAL = "#6b7787"  # quiet mid gray for marks that must recede but still show: between
-# MUTED and BASELINE, 3:1 against SURFACE (the over-the-cap line, a median bar)
+# Quiet mid gray for marks that must recede but still show: between MUTED and
+# BASELINE, 3:1 against SURFACE (the over-the-cap line, a median bar).
+NEUTRAL = "#6b7787"
 BORDER = "rgba(255,255,255,0.09)"
 BRAND = "#f08a3c"  # UI accent: section bars, selected tab, chips, slider, focus
 AVATAR_BG = SURFACE_2  # behind a headshot, where the photo's transparent edges show

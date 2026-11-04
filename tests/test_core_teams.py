@@ -10,6 +10,7 @@ import re
 import pytest
 
 from core import paths, teams
+from dashboard.lib import theme
 
 
 @pytest.mark.parametrize(
@@ -120,7 +121,7 @@ def test_conference_never_defaults(code, season):
 def test_colour_is_per_code_and_unknown_codes_raise():
     assert teams.color("BOS") == "#00B25A"
     assert teams.color("SEA") == "#2DA05A"
-    assert teams.color("CAP") == "#E31837"
+    assert teams.color("CAP") == "#E61838"
     with pytest.raises(KeyError, match="XXX"):
         teams.color("XXX")
 
@@ -155,6 +156,29 @@ def test_seed_lives_with_the_dbt_project():
         paths.PROJECT_ROOT / "dbt" / "basketball_intelligence" / "seeds" / "team_codes.csv"
     )
     assert paths.team_codes_seed_path().exists()
+
+
+def _luminance(hex_color: str) -> float:
+    """WCAG relative luminance of a "#rrggbb" colour."""
+    channels = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_every_team_colour_reads_on_the_page_surface():
+    """Identity dots, names and bars sit on theme.SURFACE; WCAG's 3:1 floor
+    for graphics applies to each of them."""
+    low = {
+        e.team_code: round(_contrast(e.color, theme.SURFACE), 2)
+        for e in teams.eras()
+        if _contrast(e.color, theme.SURFACE) < 3.0
+    }
+    assert not low, f"team colours under 3:1 against {theme.SURFACE}: {low}"
 
 
 def test_seed_rows_are_well_formed():
