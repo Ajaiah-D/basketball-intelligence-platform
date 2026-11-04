@@ -97,3 +97,9 @@ def test_selected_position_is_none_when_the_click_cleared_the_selection(monkeypa
     # Streamlit leaves out the cells list when the table has no cell mode.
     monkeypatch.setattr(st, "session_state", {"t": {"selection": {"rows": []}}})
     assert ws.selected_position("t") is None
+
+
+def test_table_key_is_the_base_plus_the_column_set():
+    # One key per column set, so a switch draws a new grid (see table_key).
+    assert ws.table_key("teams_table", "Four Factors") == "teams_table_four_factors"
+    assert ws.table_key("players_table", "Basic") == "players_table_basic"

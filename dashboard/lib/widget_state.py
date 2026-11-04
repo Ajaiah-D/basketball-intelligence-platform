@@ -1,6 +1,6 @@
 """Widget state the Players and Teams pages share: a keyed choice that
 always holds one of its options, choices held while their tab isn't drawn,
-and the row a click on a table picked.
+a table's key per column set, and the row a click on a table picked.
 
 Both pages draw only the active tab (lib.tabs.keyed_tabs), so their widgets
 come and go as the reader switches tabs; these helpers keep the readers'
@@ -52,12 +52,23 @@ def hold_keys(keys: Iterable[str]) -> None:
             st.session_state[key] = st.session_state[key]
 
 
-def selected_position(table_key: str) -> int | None:
-    """The position of the row picked in the st.dataframe keyed `table_key`,
+def table_key(base: str, columns: str) -> str:
+    """The key of the table keyed `base` showing the column set `columns`
+    ("players_table" and "Four Factors" -> "players_table_four_factors").
+
+    One key per set, so switching sets draws a new grid rather than
+    reshaping the old one. A reshaped grid ignores the first click on a
+    cell after the switch (only its row checkbox still worked), so the
+    reader's first click on a row did nothing."""
+    return f"{base}_{columns.lower().replace(' ', '_')}"
+
+
+def selected_position(key: str) -> int | None:
+    """The position of the row picked in the st.dataframe keyed `key`,
     for its on_select callback, or None when the click cleared the
     selection. The click may be on the row's checkbox (a row selection) or
     on any of its cells (a cell selection, as (row, column)): a table drawn
     with both selection modes opens the row either way."""
-    selection = st.session_state[table_key]["selection"]
+    selection = st.session_state[key]["selection"]
     picked = list(selection.get("rows", [])) or [cell[0] for cell in selection.get("cells", [])]
     return int(picked[0]) if picked else None

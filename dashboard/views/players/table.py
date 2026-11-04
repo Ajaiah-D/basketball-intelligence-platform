@@ -34,7 +34,7 @@ from dashboard.lib.advanced_metrics import PLAYER_COLUMN_CONFIG
 from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import qualification_threshold
-from dashboard.lib.widget_state import choice, hold_keys, selected_position
+from dashboard.lib.widget_state import choice, hold_keys, selected_position, table_key
 from dashboard.views.players.search import open_player
 
 # The column sets, by the frame's column names. Career scope adds Yrs and
@@ -100,7 +100,7 @@ TEAM_KEY = "players_team"
 MIN_CAREER_GP_KEY = "players_min_career_gp"
 COLUMNS_KEY = "players_columns"
 FILTER_KEY = "players_filter"
-# The table's key is this plus the column set (table_key).
+# The table's key is this plus the column set (lib.widget_state.table_key).
 TABLE_KEY = "players_table"
 # (player_id, season, career) for each row of the table as drawn, in order:
 # a row click arrives as a position, and this turns it into a player.
@@ -116,16 +116,6 @@ def keep_filters(also: Sequence[str] = ()) -> None:
     the same way (lib.widget_state.hold_keys). The page calls this on every
     run, before the active tab draws."""
     hold_keys([*_FILTER_KEYS, *also])
-
-
-def table_key(columns: str) -> str:
-    """The table's key for one column set ("players_table_shooting").
-
-    One key per set, so switching sets draws a new grid rather than
-    reshaping the old one. A reshaped grid ignores the first click on a
-    cell after the switch (only its row checkbox still worked), so the
-    reader's first click on a player did nothing."""
-    return f"{TABLE_KEY}_{columns.lower().replace(' ', '_')}"
 
 
 def reset_min_games(season: str) -> None:
@@ -417,7 +407,7 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
             "career": f.career,
         }
     )
-    key = table_key(f.columns)
+    key = table_key(TABLE_KEY, f.columns)
     st.dataframe(
         view[table_cols],
         hide_index=True,

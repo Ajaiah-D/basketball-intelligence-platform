@@ -22,6 +22,7 @@ from dashboard.lib.data import core as data_core
 from dashboard.lib.data import diagnosis as diagnosis_data
 from dashboard.lib.data import teams as team_data
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
+from dashboard.lib.widget_state import table_key
 from dashboard.views.teams import breakdown, league, scatter
 from dashboard.views.teams.common import TEAM_PICK_KEY, TEAMS_TAB_KEY
 
@@ -410,19 +411,21 @@ def _columns(at: AppTest, label: str) -> AppTest:
     return at
 
 
-# The Team stats table has one key per column set (league.table_key).
-TABLE_KEYS = {league.table_key(s) for s in league.COLUMN_SETS}
+# The Team stats table has one key per column set (lib.widget_state.table_key).
+TABLE_KEYS = {table_key(league.TABLE_KEY, s) for s in league.COLUMN_SETS}
 
 
 def _table(at: AppTest):
     """The Team stats table, keyed for the column set on show."""
-    assert at.dataframe(key=league.table_key(at.button_group(key=league.COLUMNS_KEY).value))
+    assert at.dataframe(
+        key=table_key(league.TABLE_KEY, at.button_group(key=league.COLUMNS_KEY).value)
+    )
     (table,) = [d for d in at.dataframe if d.key in TABLE_KEYS]
     return table
 
 
 def test_each_column_set_has_its_own_table_key():
-    assert league.table_key("Four Factors") == "teams_table_four_factors"
+    assert table_key(league.TABLE_KEY, "Four Factors") == "teams_table_four_factors"
     assert len(TABLE_KEYS) == len(league.COLUMN_SETS)
 
 
@@ -442,7 +445,7 @@ def test_team_stats_lists_every_team_by_net_rating(con):
     assert len(shown) == len(standings)
     assert set(shown["team_name"]) == set(standings["team_name"])
     assert at.button_group(key=league.COLUMNS_KEY).value == "Basic"
-    assert list(shown.columns) == ["team_name", "w", "l", "win_pct", "ppg", "opp_ppg", "net"]
+    assert list(shown.columns) == ["team_name", "w", "l", "pct", "ppg", "opp_ppg", "net"]
     order = list(shown["team_name"])
 
     at = _columns(at, "Advanced")
@@ -451,6 +454,35 @@ def test_team_stats_lists_every_team_by_net_rating(con):
     assert shown["net_rating"].is_monotonic_decreasing
     assert "Click a row to open that team." in _captions(at)
     assert "Ratings are NBA official." in _captions(at)
+
+
+def test_team_stats_writes_pct_as_the_standings_do(con):
+    at = _page(MODERN, **{TEAMS_TAB_KEY: "Team stats"})
+    shown = _table(at).value
+    standings = team_data.standings(MODERN).set_index("team_name")["pct"]
+    # The fraction itself (0.780), not a percentage (78.0).
+    assert list(shown["pct"]) == list(standings[shown["team_name"]])
+    config = league._column_config(shown)["pct"]
+    assert config["label"] == "PCT"
+    assert config["type_config"]["format"] == "%.3f"
+    # Standings (on its Eastern table) writes it with three decimals too.
+    east = team_data.standings(MODERN)
+    first = east[east.conf == "East"].iloc[0]
+    _open(at, "Standings")
+    assert f"<td>{first['pct']:.3f}</td>" in _text(at)
+
+
+def test_the_net_rating_bar_is_centred_on_zero():
+    def bar(ratings: list[float]) -> tuple[float, float]:
+        config = league._column_config(pd.DataFrame({"net_rating": ratings}))["net_rating"]
+        return config["type_config"]["min_value"], config["type_config"]["max_value"]
+
+    # As far each way as the largest rating either side of zero.
+    assert bar([-12.5, 1.0, 8.0]) == (-12.5, 12.5)
+    assert bar([-3.0, 0.5, 9.0]) == (-9.0, 9.0)
+    # Nothing to scale to: a range that still draws.
+    assert bar([]) == (-1.0, 1.0)
+    assert bar([0.0, 0.0]) == (-1.0, 1.0)
 
 
 def test_the_four_factors_column_set(con):
@@ -482,7 +514,7 @@ def test_selecting_a_row_opens_that_team(monkeypatch):
     # Row clicks can't be made through AppTest; this is the dataframe's
     # on_select callback, fed the selection Streamlit would hand it.
     rows = pd.Series(["Boston Celtics", "Utah Jazz"])
-    key = league.table_key("Advanced")
+    key = table_key(league.TABLE_KEY, "Advanced")
     state = {key: {"selection": {"rows": [1]}}, league.TABLE_ROWS_KEY: rows}
     monkeypatch.setattr(st, "session_state", state)
     league._on_select(key)

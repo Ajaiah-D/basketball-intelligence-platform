@@ -22,12 +22,12 @@ from dashboard.lib import glossary
 from dashboard.lib import theme as T
 from dashboard.lib.data import advanced
 from dashboard.lib.tabs import open_tab
-from dashboard.lib.widget_state import choice, selected_position
+from dashboard.lib.widget_state import choice, selected_position, table_key
 from dashboard.views.teams.common import ROW_HEIGHT, TEAM_PICK_KEY, TEAMS_TAB_KEY
 
 # Session-state keys.
 COLUMNS_KEY = "teams_columns"
-# The table's key is this plus the column set (table_key).
+# The table's key is this plus the column set (lib.widget_state.table_key).
 TABLE_KEY = "teams_table"
 # The team name of each row of the table as drawn, in order: a row click
 # arrives as a position, and this turns it into a team.
@@ -35,7 +35,7 @@ TABLE_ROWS_KEY = "teams_table_rows"
 
 # The column sets, by the frame's column names.
 COLUMN_SETS = {
-    "Basic": ["team_name", "w", "l", "win_pct", "ppg", "opp_ppg", "net"],
+    "Basic": ["team_name", "w", "l", "pct", "ppg", "opp_ppg", "net"],
     "Advanced": [
         "team_name",
         "w",
@@ -99,7 +99,7 @@ def _frame(season: str, standings: pd.DataFrame) -> pd.DataFrame:
     first. A season without ratings (or a warehouse without the mart) sorts
     by point margin instead, and the team abbreviation settles a tie so a
     rerun can't reshuffle one."""
-    view = standings.assign(win_pct=standings["pct"] * 100)
+    view = standings
     if advanced.marts_available():
         mart = advanced.team_advanced(season)
         # An older warehouse may lack a column; it is left out, not an error.
@@ -113,22 +113,21 @@ def _frame(season: str, standings: pd.DataFrame) -> pd.DataFrame:
 
 def _column_config(view: pd.DataFrame) -> dict:
     """Every column's header, hover text and format, with net rating as the
-    one bar. The bar runs from the season's lowest net rating to its
-    highest rather than from zero, which would leave every negative rating
-    an empty bar; zero is always inside the range, and the signed value
-    beside the bar says which side of it a team is on."""
+    one bar. The bar is centred on zero, running as far each way as the
+    largest net rating in view either side of it: a bar from zero would
+    leave every negative rating empty, and a lopsided range would put an
+    even team off the middle. The signed value beside the bar says which
+    side of zero a team is on. PCT is written as the Standings tab writes
+    it (0.780), so the two tabs agree."""
     net = view["net_rating"].dropna() if "net_rating" in view else pd.Series(dtype=float)
-    low = float(min(0.0, net.min())) if len(net) else -1.0
-    high = float(max(0.0, net.max())) if len(net) else 1.0
-    if high <= low:
-        high = low + 1.0
+    reach = float(net.abs().max()) if len(net) else 0.0
+    if not reach > 0:
+        reach = 1.0
     return {
         "team_name": st.column_config.TextColumn("Team", width="medium"),
         "w": st.column_config.NumberColumn("W"),
         "l": st.column_config.NumberColumn("L"),
-        "win_pct": st.column_config.NumberColumn(
-            **glossary.described("Win%", "PCT"), format="%.1f"
-        ),
+        "pct": st.column_config.NumberColumn(**glossary.described("PCT"), format="%.3f"),
         "ppg": st.column_config.NumberColumn("PTS", format="%.1f"),
         "opp_ppg": st.column_config.NumberColumn(
             **glossary.described("OPP PTS", "OPP"), format="%.1f"
@@ -143,22 +142,12 @@ def _column_config(view: pd.DataFrame) -> dict:
         "net_rating": st.column_config.ProgressColumn(
             **glossary.marked("NET", "Net rating"),
             format="%+.1f",
-            min_value=low,
-            max_value=high,
+            min_value=-reach,
+            max_value=reach,
             color=T.ACCENT,
             width="medium",
         ),
     }
-
-
-def table_key(columns: str) -> str:
-    """The table's key for one column set ("teams_table_four_factors").
-
-    One key per set, so switching sets draws a new grid rather than
-    reshaping the old one. A reshaped grid ignores the first click on a
-    cell after the switch (only its row checkbox still worked), so the
-    reader's first click on a team did nothing."""
-    return f"{TABLE_KEY}_{columns.lower().replace(' ', '_')}"
 
 
 def _on_select(key: str) -> None:
@@ -207,7 +196,7 @@ def render_team_stats(season: str, standings: pd.DataFrame) -> None:
     table_cols = [c for c in COLUMN_SETS[columns] if c in view.columns]
 
     st.session_state[TABLE_ROWS_KEY] = view["team_name"]
-    key = table_key(columns)
+    key = table_key(TABLE_KEY, columns)
     st.dataframe(
         view[table_cols],
         hide_index=True,

@@ -22,6 +22,7 @@ from dashboard.lib.data import advanced, players, seasons
 from dashboard.lib.data import core as data_core
 from dashboard.lib.state import PLAYERS_PICK_KEY
 from dashboard.lib.stats import qualification_threshold
+from dashboard.lib.widget_state import table_key
 from dashboard.views.players import player, table
 from dashboard.views.players.game_log import TREND_KEY
 
@@ -34,6 +35,11 @@ with st.sidebar:
     st.selectbox("Season", seasons.seasons(), key="season")
 players.render()
 """
+
+
+def _table_key(columns: str) -> str:
+    """The All players table's key for one column set."""
+    return table_key(table.TABLE_KEY, columns)
 
 
 def _two_seasons() -> tuple[str, str]:
@@ -460,24 +466,24 @@ def test_an_accented_name_is_labelled_with_its_plain_spelling_too(con):
 
 def test_each_column_set_has_its_own_table_key():
     # Switching sets draws a new grid, so the first click after the switch
-    # lands (table.table_key).
-    assert table.table_key("Shooting") == "players_table_shooting"
-    assert len({table.table_key(s) for s in table.COLUMN_SETS}) == len(table.COLUMN_SETS)
+    # lands (lib.widget_state.table_key).
+    assert _table_key("Shooting") == "players_table_shooting"
+    assert len({_table_key(s) for s in table.COLUMN_SETS}) == len(table.COLUMN_SETS)
 
 
 def test_the_table_is_keyed_for_the_column_set_on_show(con):
     at = _app()
-    assert at.dataframe(key=table.table_key("Basic"))
+    assert at.dataframe(key=_table_key("Basic"))
     at.button_group(key="players_columns").set_value("Shooting").run()
     assert not at.exception, at.exception
-    assert [d.key for d in at.dataframe] == [table.table_key("Shooting")]
+    assert [d.key for d in at.dataframe] == [_table_key("Shooting")]
 
 
 def test_selecting_a_row_opens_that_player(monkeypatch):
     # Row clicks can't be made through AppTest; this is the dataframe's
     # on_select callback, fed the selection Streamlit would hand it.
     rows = pd.DataFrame({"player_id": [11, 22], "season": ["2024-25", "2019-20"], "career": False})
-    key = table.table_key("Shooting")
+    key = _table_key("Shooting")
     monkeypatch.setattr(
         st,
         "session_state",
