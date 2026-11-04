@@ -100,6 +100,7 @@ TEAM_KEY = "players_team"
 MIN_CAREER_GP_KEY = "players_min_career_gp"
 COLUMNS_KEY = "players_columns"
 FILTER_KEY = "players_filter"
+# The table's key is this plus the column set (table_key).
 TABLE_KEY = "players_table"
 # (player_id, season, career) for each row of the table as drawn, in order:
 # a row click arrives as a position, and this turns it into a player.
@@ -115,6 +116,16 @@ def keep_filters(also: Sequence[str] = ()) -> None:
     the same way (lib.widget_state.hold_keys). The page calls this on every
     run, before the active tab draws."""
     hold_keys([*_FILTER_KEYS, *also])
+
+
+def table_key(columns: str) -> str:
+    """The table's key for one column set ("players_table_shooting").
+
+    One key per set, so switching sets draws a new grid rather than
+    reshaping the old one. A reshaped grid ignores the first click on a
+    cell after the switch (only its row checkbox still worked), so the
+    reader's first click on a player did nothing."""
+    return f"{TABLE_KEY}_{columns.lower().replace(' ', '_')}"
 
 
 def reset_min_games(season: str) -> None:
@@ -406,6 +417,7 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
             "career": f.career,
         }
     )
+    key = table_key(f.columns)
     st.dataframe(
         view[table_cols],
         hide_index=True,
@@ -415,12 +427,12 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
         row_height=38,
         column_config=column_config,
         # st.dataframe takes no callback args, hence the partial.
-        on_select=partial(_on_select, TABLE_KEY),
+        on_select=partial(_on_select, key),
         # Row selection alone only reacts to the checkbox at the left edge;
         # a click on a name selects that cell and nothing happens. Cell
         # selection too makes a click anywhere on the row open the player.
         selection_mode=["single-row", "single-cell"],
-        key=TABLE_KEY,
+        key=key,
     )
     st.caption("Click a row to open that player. Click a column header to sort.")
     if f.no_advanced:

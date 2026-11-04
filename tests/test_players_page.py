@@ -457,11 +457,26 @@ def test_an_accented_name_is_labelled_with_its_plain_spelling_too(con):
     assert f"{name} ({plain}) · {hit['team']} · {hit['latest_season']}" in options
 
 
+def test_each_column_set_has_its_own_table_key():
+    # Switching sets draws a new grid, so the first click after the switch
+    # lands (table.table_key).
+    assert table.table_key("Shooting") == "players_table_shooting"
+    assert len({table.table_key(s) for s in table.COLUMN_SETS}) == len(table.COLUMN_SETS)
+
+
+def test_the_table_is_keyed_for_the_column_set_on_show(con):
+    at = _app()
+    assert at.dataframe(key=table.table_key("Basic"))
+    at.button_group(key="players_columns").set_value("Shooting").run()
+    assert not at.exception, at.exception
+    assert [d.key for d in at.dataframe] == [table.table_key("Shooting")]
+
+
 def test_selecting_a_row_opens_that_player(monkeypatch):
     # Row clicks can't be made through AppTest; this is the dataframe's
     # on_select callback, fed the selection Streamlit would hand it.
     rows = pd.DataFrame({"player_id": [11, 22], "season": ["2024-25", "2019-20"], "career": False})
-    key = table.TABLE_KEY
+    key = table.table_key("Shooting")
     monkeypatch.setattr(
         st,
         "session_state",
