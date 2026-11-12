@@ -93,7 +93,7 @@ lives, crash-safe file writes, the constants and team-code facts the
 pipeline and the pages share, and search-text folding. Each rule is defined
 once, there or in a dbt mart.
 
-`scripts/weekly_refresh.py` runs that whole chain once a week from a local
+`scripts/weekly_refresh.py` runs that whole chain every morning from a local
 Windows Scheduled Task (see "How the data refresh works" below). A diagram of the full system, including CI and
 hosting, is in [docs/architecture.excalidraw](docs/architecture.excalidraw)
 (open it at excalidraw.com), and the reasoning behind the main choices is in
@@ -335,7 +335,8 @@ group by 1 order by ppg desc limit 10;
 ## How the data refresh works
 
 `python scripts\weekly_refresh.py` runs steps 2 to 5 for the current season,
-then publishes. A Windows Scheduled Task runs it every Tuesday.
+then publishes. A Windows Scheduled Task runs it daily at 6:00 AM (it was weekly until
+November 2026; the script and task keep their "weekly" names).
 
 - **It builds in a copy.** The run copies the warehouse to
   `warehouse/next/basketball.duckdb` and every step writes there. Only when
@@ -392,7 +393,7 @@ explains why it works this way.
 - [x] Arcade team builder: a player impact model (ridge on on-court
       plus-minus, era-relative box-score rates) and a numpy season and playoff
       simulator
-- [x] Weekly scheduled refresh (`scripts/weekly_refresh.py`, local Windows
+- [x] Daily scheduled refresh (`scripts/weekly_refresh.py`, local Windows
       Scheduled Task), built in a copy and swapped in only when it passes. It
       re-fetches the current season's game logs in full (one call each) and
       adds only the play-by-play it doesn't hold yet
