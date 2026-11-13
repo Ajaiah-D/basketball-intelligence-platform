@@ -35,6 +35,20 @@ def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
     )
 
 
+def player_advanced_history(player_id: int) -> pd.DataFrame:
+    """Every season of one player's advanced metrics, newest first (the
+    whole mart row, as player_advanced)."""
+    return q(
+        """
+        select *
+        from main_marts.mart_player_season
+        where player_id = ?
+        order by season desc
+        """,
+        (player_id,),
+    )
+
+
 def team_advanced(season: str) -> pd.DataFrame:
     """Every team's ratings, Four Factors and pace for one season, best net
     rating first."""

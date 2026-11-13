@@ -694,7 +694,13 @@ def _axis_titles(at: AppTest) -> list[str]:
 
 def test_the_player_tab_has_its_sections(con):
     text = _texts(_player_app(con))
-    titles = ["#### Game by game", "#### Shooting", "#### Advanced", "#### Game log"]
+    titles = [
+        "#### Season by season",
+        "#### Game by game",
+        "#### Shooting",
+        "#### Advanced",
+        "#### Game log",
+    ]
     assert all(t in text for t in titles), [t for t in titles if t not in text]
     assert [text.index(t) for t in titles] == sorted(text.index(t) for t in titles)
 
@@ -906,7 +912,7 @@ def test_net_and_pie_show_only_for_a_season_with_official_figures(con):
 
 def test_the_game_score_bar_starts_at_zero_or_the_lowest_score_in_view():
     def floor(scores: list[float]) -> float:
-        config = table._advanced_config(pd.DataFrame({"game_score": scores}))
+        config = table.advanced_config(pd.DataFrame({"game_score": scores}))
         return config["game_score"]["type_config"]["min_value"]
 
     assert floor([3.0, 8.5, 14.0]) == 0.0
@@ -943,3 +949,141 @@ def test_a_career_row_click_opens_the_player_tab_on_his_career(con, monkeypatch)
     assert at.session_state["players_tab"] == "Player"
     assert at.button_group(key="players_player_scope").value == "Career"
     assert name in _texts(at) and "#### Career trajectory" in _texts(at)
+
+
+# --- The Player tab's season-by-season table: the All players column sets ---------------
+
+
+def _stats_table(at: AppTest) -> pd.DataFrame:
+    """The season-by-season table: the Player tab's one grid (AppTest finds
+    a grid by key only when it is selectable, which this one isn't)."""
+    (grid,) = at.dataframe
+    return grid.value
+
+
+def _multi_season_player(con) -> tuple[int, str, str]:
+    """(id, name, latest season) of a player with a unique name who has
+    played 2+ seasons (so he has a career line), one or more of them with
+    advanced stats. CI's fixture seasons are years apart, so a longer career
+    can't be asked for."""
+    row = con.execute(
+        """
+        select player_id, min(player_name), max(season)
+        from main_marts.mart_player_season
+        where player_name in (
+            select player_name from main_marts.mart_player_season
+            group by player_name having count(distinct player_id) = 1
+        )
+        group by player_id
+        having count(*) >= 2 and bool_or(box_score_complete)
+        order by sum(minutes) desc, player_id
+        limit 1
+        """
+    ).fetchone()
+    assert row, "no 2-season player with advanced stats in this warehouse"
+    return int(row[0]), row[1], str(row[2])
+
+
+def _player_stats_app(con) -> tuple[AppTest, int]:
+    player_id, _name, _season = _multi_season_player(con)
+    at = _app()
+    at.selectbox(key="players_search").select(player_id).run()
+    assert not at.exception, at.exception
+    return at, player_id
+
+
+def test_the_player_tab_offers_the_all_players_column_sets(con):
+    at, _ = _player_stats_app(con)
+    picker = at.button_group(key=player.STATS_COLUMNS_KEY)
+    assert list(picker.options) == list(table.COLUMN_SETS)
+    assert picker.value == "Basic"
+
+
+def test_the_season_by_season_table_follows_the_column_set(con):
+    at, player_id = _player_stats_app(con)
+    history = players.player_season_history(player_id)
+
+    basic = _stats_table(at)
+    assert list(basic.columns) == ["season", *table.COLUMN_SETS["Basic"][1:]]
+    # Every season, newest first, then his career.
+    assert list(basic["season"]) == [*history["season"], "Career"]
+    assert basic["ppg"].iloc[0] == pytest.approx(history["ppg"].iloc[0])
+
+    at.button_group(key=player.STATS_COLUMNS_KEY).set_value("Shooting").run()
+    assert not at.exception, at.exception
+    shooting = _stats_table(at)
+    assert list(shooting.columns) == ["season", *table.COLUMN_SETS["Shooting"][1:]]
+    assert "rpg" not in shooting.columns
+
+    at.button_group(key=player.STATS_COLUMNS_KEY).set_value("Advanced").run()
+    assert not at.exception, at.exception
+    adv = _stats_table(at)
+    assert {"usage_pct", "effective_fg_pct", "turnover_pct", "game_score"} <= set(adv.columns)
+    # Per season only: no career line.
+    assert list(adv["season"]) == list(history["season"])
+    mart = con.execute(
+        "select season, usage_pct from main_marts.mart_player_season where player_id = ?",
+        [player_id],
+    ).fetchall()
+    shown = dict(zip(adv["season"], adv["usage_pct"], strict=True))
+    with_advanced = set(advanced.advanced_seasons())
+    for season, usage in mart:
+        if season in with_advanced and usage is not None:
+            assert shown[season] == pytest.approx(usage)
+        else:  # withheld, as the All players table withholds the set
+            assert pd.isna(shown[season])
+
+
+def test_the_career_line_pools_his_career(con):
+    player_id, _name, _season = _multi_season_player(con)
+    lines, _ = player.season_lines(player_id, "Basic")
+    career = players.player_career_stats()
+    mine = career[career["player_id"] == player_id].iloc[0]
+    line = lines[lines["season"] == "Career"].iloc[0]
+    assert line["gp"] == mine["gp"]
+    assert line["ppg"] == pytest.approx(mine["ppg"])
+
+
+def test_the_column_set_survives_a_visit_to_another_tab(con):
+    at, _ = _player_stats_app(con)
+    at.button_group(key=player.STATS_COLUMNS_KEY).set_value("Advanced").run()
+    _open_tab(at, "Compare")
+    _open_tab(at, "Player")
+    picker = at.button_group(key=player.STATS_COLUMNS_KEY)
+    assert picker.value == "Advanced"
+    assert picker.proto.set_value
+
+
+def test_the_column_sets_are_there_in_career_scope_too(con):
+    at, _ = _player_stats_app(con)
+    at.button_group(key="players_player_scope").set_value("Career").run()
+    at.button_group(key=player.STATS_COLUMNS_KEY).set_value("Advanced").run()
+    assert not at.exception, at.exception
+    assert "#### Career trajectory" in _texts(at)
+    assert "usage_pct" in _stats_table(at).columns
+
+
+def test_a_player_from_before_complete_box_scores_gets_no_advanced_set(con):
+    # By season, as the All players table offers the set: a season counts
+    # once any of its lines has a complete box score.
+    row = con.execute(
+        """
+        select max(season), min(player_name)
+        from main_marts.mart_player_season
+        where player_name in (
+            select player_name from main_marts.mart_player_season
+            group by player_name having count(distinct player_id) = 1
+        )
+        group by player_id
+        having max(games_played) >= 25 and not bool_or(season in (
+            select season from main_marts.mart_player_season where box_score_complete
+        ))
+        order by max(season) desc, min(player_name)
+        limit 1
+        """
+    ).fetchone()
+    if row is None:
+        pytest.skip("no player from before complete box scores")
+    at = _preset_app(row[0], row[1])
+    assert "Advanced" not in at.button_group(key=player.STATS_COLUMNS_KEY).options
+    assert "every season he played is earlier" in _captions(at)

@@ -34,7 +34,7 @@ SEARCH_KEY = "players_search"
 def open_player(player_id: int, season: str, career: bool = False) -> None:
     """Show `player_id` at `season` on the Player tab (his career when
     `career`) and switch to that tab. From then on he follows the sidebar
-    season to any season he played (player._picked). Call it from a widget
+    season to any season he played (player.picked_player). Call it from a widget
     callback, or from the page body before the tabs are drawn; anywhere else
     needs a st.rerun() after it (lib.tabs.open_tab)."""
     st.session_state[PLAYER_ID_KEY] = int(player_id)

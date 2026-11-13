@@ -274,6 +274,45 @@ def with_career_labels(career: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def player_season_history(player_id: int) -> pd.DataFrame:
+    """Every season of one player, newest first: the player_season_stats()
+    columns plus season. The Player tab's season-by-season table."""
+    return q(
+        """
+        select
+            season,
+            player_id,
+            player_name           as player,
+            team,
+            games_played          as gp,
+            minutes_per_game      as mpg,
+            points_per_game       as ppg,
+            rebounds_per_game     as rpg,
+            assists_per_game      as apg,
+            steals_per_game       as spg,
+            blocks_per_game       as bpg,
+            threes_made_per_game  as tpg,
+            fga_per_game          as fga_pg,
+            three_pa_per_game     as tpa_pg,
+            fta_per_game          as fta_pg,
+            fga_total,
+            tpa_total,
+            fta_total,
+            fg_pct,
+            fg3_pct,
+            ft_pct,
+            true_shooting_pct     as ts_pct,
+            assist_to_turnover    as ast_to,
+            plus_minus_per_game   as plus_minus,
+            team_label
+        from main_marts.mart_player_season
+        where player_id = ?
+        order by season desc
+        """,
+        (player_id,),
+    )
+
+
 def player_season_breakdown(player_id: int) -> pd.DataFrame:
     """Per-season averages for one player, oldest first - drives the career
     trajectory chart.

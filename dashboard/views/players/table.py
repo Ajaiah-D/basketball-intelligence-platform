@@ -306,7 +306,7 @@ def _with_advanced(view: pd.DataFrame, season: str) -> tuple[pd.DataFrame, bool]
     return merged, has_official
 
 
-def _column_config(ppg_max: float) -> dict:
+def _base_config(ppg_max: float) -> dict:
     return {
         "player": st.column_config.TextColumn("Player", width="medium"),
         "team_label": st.column_config.TextColumn(
@@ -342,7 +342,7 @@ def _column_config(ppg_max: float) -> dict:
     }
 
 
-def _advanced_config(view: pd.DataFrame) -> dict:
+def advanced_config(view: pd.DataFrame) -> dict:
     """The mart columns' formatting, with game score as the bar. Its floor
     tracks the data instead of assuming zero: game score goes negative for
     a bad season, and a 0 floor would render those as an empty bar
@@ -364,6 +364,27 @@ def _advanced_config(view: pd.DataFrame) -> dict:
     }
 
 
+def stat_columns(columns: str, has_official: bool) -> list[str]:
+    """The column set `columns`' columns, with the NBA's official figures
+    added to the Advanced set when `has_official`. A fresh list each call,
+    so callers can insert their own columns."""
+    return COLUMN_SETS[columns] + (OFFICIAL_COLS if columns == "Advanced" and has_official else [])
+
+
+def column_config(view: pd.DataFrame, columns: str) -> dict:
+    """The formatting for `view` shown as the column set `columns`: one bar
+    per table, PTS in Basic and game score in Advanced. The PTS bar is
+    scaled to the best scorer in `view`, so it still reads as a comparison
+    after a filter narrows the rows (guarded: an empty view has no max)."""
+    ppg_max = float(view["ppg"].max()) if len(view) and view["ppg"].notna().any() else 1.0
+    config = _base_config(ppg_max)
+    if columns != "Basic":
+        config["ppg"] = st.column_config.NumberColumn("PTS", format="%.1f")
+    if columns == "Advanced":
+        config |= advanced_config(view)
+    return config
+
+
 def _on_select(key: str) -> None:
     """The table's on_select (`key` is the table's): open the clicked row's
     player (lib.widget_state.selected_position). A click that clears the
@@ -379,25 +400,12 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
     has_official = False
     if f.columns == "Advanced":
         view, has_official = _with_advanced(view, season)
-    table_cols = COLUMN_SETS[f.columns] + (
-        OFFICIAL_COLS if f.columns == "Advanced" and has_official else []
-    )
+    table_cols = stat_columns(f.columns, has_official)
     if f.career:
         table_cols[2:2] = ["seasons", "span"]
     elif len(others):
         table_cols[1:1] = ["season"]
     table_cols = [c for c in table_cols if c in view.columns]
-
-    # Scale the PTS bar to the best scorer actually in view, so the column
-    # still reads as a comparison after a search or a min-games filter
-    # narrows the table. Guarded because an empty search result has no max.
-    ppg_max = float(view["ppg"].max()) if len(view) and view["ppg"].notna().any() else 1.0
-    column_config = _column_config(ppg_max)
-    if f.columns != "Basic":
-        # One bar per table: PTS in Basic, game score in Advanced.
-        column_config["ppg"] = st.column_config.NumberColumn("PTS", format="%.1f")
-    if f.columns == "Advanced":
-        column_config |= _advanced_config(view)
 
     # What a click on each row opens: the player at the row's season, or
     # his career at his last season in Career scope.
@@ -416,7 +424,7 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
         # a search) would otherwise sit above a block of empty grid.
         height=min(600, (len(view) + 1) * 38 + 3),
         row_height=38,
-        column_config=column_config,
+        column_config=column_config(view, f.columns),
         # st.dataframe takes no callback args, hence the partial.
         on_select=partial(_on_select, key),
         # Row selection alone only reacts to the checkbox at the left edge;

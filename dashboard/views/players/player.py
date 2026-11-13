@@ -1,8 +1,13 @@
 """The Players page's Player tab: one player in depth, at one season or
 across his career, laid out as one titled section per question.
 
-  Season:  header, summary tiles, Game by game, Shooting, Advanced, Game log
-  Career:  header, summary tiles, Career trajectory and the career tiles
+  Season:  header, summary tiles, Season by season, Game by game, Shooting,
+           Advanced, Game log
+  Career:  header, summary tiles, Season by season, Career trajectory and
+           the career tiles
+
+Season by season is his every season in the All players table's column sets
+(Basic, Shooting, Advanced), picked with the same control.
 
 The player is the one the search, a click on an All players row or another
 page chose (search.PLAYER_ID_KEY / PLAYER_SEASON_KEY). When nobody has been
@@ -27,8 +32,8 @@ from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import COMPARE_METRICS, advanced_percentiles, minutes_floor
 from dashboard.lib.data import advanced, players
 from dashboard.lib.stats import ShootingRank, percentile_of, qualification_threshold
-from dashboard.lib.widget_state import choice
-from dashboard.views.players import game_log
+from dashboard.lib.widget_state import choice, table_key
+from dashboard.views.players import game_log, table
 from dashboard.views.players.search import (
     PLAYER_ID_KEY,
     PLAYER_PICKED_AT_KEY,
@@ -38,10 +43,16 @@ from dashboard.views.players.search import (
 
 # The career trajectory's stat picker.
 CAREER_TREND_KEY = "players_career_stat"
+# The season-by-season table's column-set picker: the All players table's
+# sets (table.COLUMN_SETS), with a key of its own, since a player can be
+# offered a set the table isn't (Advanced in Career scope).
+STATS_COLUMNS_KEY = "players_player_columns"
+# The season-by-season table's key is this plus the column set.
+STATS_TABLE_KEY = "players_player_stats"
 # The tab's widgets, which the page keeps as they were while another tab is
 # open (table.keep_filters), so Player (Career) -> Compare -> Player comes
 # back on Career with the same stat picked.
-KEPT_KEYS = [PLAYER_SCOPE_KEY, game_log.TREND_KEY, CAREER_TREND_KEY]
+KEPT_KEYS = [PLAYER_SCOPE_KEY, game_log.TREND_KEY, CAREER_TREND_KEY, STATS_COLUMNS_KEY]
 
 # The comparison metrics the Advanced section ranks. TS% is left out: the
 # Shooting section above already ranks it, among players over a shot-volume
@@ -238,6 +249,110 @@ def _career_detail(row) -> None:
     s4.markdown(T.kpi("Record in games", f"{row.wins}-{row.gp - row.wins}"), unsafe_allow_html=True)
 
 
+def advanced_unavailable(history: pd.DataFrame) -> str:
+    """Why his season-by-season table can't offer the Advanced set, or ""
+    when it can. `history` is data.players.player_season_history."""
+    if not advanced.marts_available():
+        return "Advanced stats are not in this copy of the warehouse yet."
+    if not set(history["season"]) & set(advanced.advanced_seasons()):
+        return (
+            f"Advanced stats start in {COMPLETE_BOX_SCORE_FIRST_SEASON}, and every season "
+            "he played is earlier: those box scores are missing the rebounds, turnovers "
+            "and shot attempts they need."
+        )
+    return ""
+
+
+def season_lines(player_id: int, columns: str) -> tuple[pd.DataFrame, bool]:
+    """His rows for the season-by-season table in the column set `columns`
+    (one of table.COLUMN_SETS), newest first, and whether any has the NBA's
+    official advanced figures.
+
+    Basic and Shooting end with a Career line when he played more than one
+    season (data.players.player_career_stats: percentages from career
+    totals, as the All players table's Career scope has them). Advanced has
+    no career line, since its metrics are per season, and leaves a season
+    before complete box scores blank, as the All players table withholds
+    the set for it."""
+    history = players.player_season_history(player_id)
+    if columns == "Advanced":
+        adv = advanced.player_advanced_history(player_id)
+        adv = adv[adv["season"].isin(advanced.advanced_seasons())]
+        # An older warehouse may lack a column; it is left out, not an error.
+        keep = [c for c in table.MART_COLS if c in adv.columns]
+        merged = history.merge(adv[["season", *keep]], on="season", how="left")
+        official = adv.get("has_official_advanced")
+        return merged, official is not None and bool(official.fillna(False).any())
+    career = players.player_career_stats()
+    mine = career[career["player_id"] == player_id]
+    if len(mine) and int(mine["seasons"].iloc[0]) > 1:
+        line = mine.assign(season="Career", team_label=f"{int(mine['seasons'].iloc[0])} seasons")
+        shared = [c for c in history.columns if c in line.columns]
+        history = pd.concat([history, line[shared]], ignore_index=True)
+    return history, False
+
+
+def _season_by_season(player_id: int) -> None:
+    """His every season (and career) in the All players table's column sets,
+    picked with the same control, so the stats the table shows for the
+    league are here for him."""
+    no_advanced = advanced_unavailable(players.player_season_history(player_id))
+    sets = [s for s in table.COLUMN_SETS if s != "Advanced" or not no_advanced]
+    picker = _title_row("Season by season")
+    columns = choice(STATS_COLUMNS_KEY, sets)
+    # required: a click on the chosen set keeps it rather than clearing it.
+    picker.segmented_control(
+        "Columns",
+        sets,
+        required=True,
+        label_visibility="collapsed",
+        key=STATS_COLUMNS_KEY,
+        help="Which stats the table shows",
+    )
+    view, has_official = season_lines(player_id, columns)
+    # The set's columns with the season in place of the player's name.
+    cols = ["season", *(c for c in table.stat_columns(columns, has_official) if c != "player")]
+    cols = [c for c in cols if c in view.columns]
+    st.dataframe(
+        view[cols],
+        hide_index=True,
+        # About ten seasons, or just the rows there are.
+        height=min(420, (len(view) + 1) * 38 + 3),
+        row_height=38,
+        column_config=table.column_config(view, columns)
+        | {"season": st.column_config.TextColumn("Season", width="small")},
+        key=table_key(STATS_TABLE_KEY, columns),
+    )
+    if columns == "Advanced":
+        st.caption(
+            "One row per season, newest first. Advanced stats are per season, so there "
+            f"is no career line, and a season before {COMPLETE_BOX_SCORE_FIRST_SEASON} "
+            "is blank."
+            + (
+                " Net rating and PIE are official NBA figures; everything else is "
+                "computed from box scores."
+                if has_official
+                else " All metrics are computed from box scores."
+            )
+        )
+        return
+    st.caption(
+        "One row per season, newest first; a traded player's season covers every team."
+        + (
+            " The Career line's percentages come from career totals."
+            if (view["season"] == "Career").any()
+            else ""
+        )
+        + (
+            " Percentages are shown next to their attempt volume (FGA / 3PA / FTA)."
+            if columns == "Shooting"
+            else ""
+        )
+    )
+    if no_advanced:
+        st.caption(no_advanced)
+
+
 def _game_tiles(games: pd.DataFrame) -> None:
     """Home and away scoring, the season high and his teams' record in his games."""
     home = games[~games.is_away]
@@ -340,7 +455,9 @@ def _season_detail(row, row_season: str) -> None:
         game_log.render_game_log(games, figures)
 
 
-class _Pick(NamedTuple):
+class Pick(NamedTuple):
+    """The player the Player and Similar players tabs show, and at which season."""
+
     player_id: int
     season: str
     # For a default player (nobody chosen yet), whether the table he came
@@ -354,7 +471,7 @@ def _played(player_id: int, season: str) -> bool:
     return player_id in set(players.player_season_stats(season)["player_id"])
 
 
-def _picked(default_rows: pd.DataFrame | None, season: str) -> _Pick | None:
+def picked_player(default_rows: pd.DataFrame | None, season: str) -> Pick | None:
     """The player to show: the chosen one, else the top row of the All
     players table when it lists the sidebar season (or careers), else the
     season's top scorer among players over the games floor.
@@ -369,27 +486,27 @@ def _picked(default_rows: pd.DataFrame | None, season: str) -> _Pick | None:
             st.session_state[PLAYER_PICKED_AT_KEY] = season
             if _played(player_id, season):
                 st.session_state[PLAYER_SEASON_KEY] = season
-        return _Pick(player_id, st.session_state.get(PLAYER_SEASON_KEY) or season, None)
+        return Pick(player_id, st.session_state.get(PLAYER_SEASON_KEY) or season, None)
     if default_rows is not None and len(default_rows):
         top = default_rows.iloc[0]
         if "season" not in default_rows:  # Career scope
-            return _Pick(int(top["player_id"]), str(top["last_season"]), True)
+            return Pick(int(top["player_id"]), str(top["last_season"]), True)
         # A table drawn before the sidebar season changed is stale.
         if top["season"] == season:
-            return _Pick(int(top["player_id"]), season, False)
+            return Pick(int(top["player_id"]), season, False)
     stats = players.player_season_stats(season)
     if stats.empty:
         return None
     pool = stats[stats["gp"] >= qualification_threshold(stats)]
     top = (pool if len(pool) else stats).sort_values("ppg", ascending=False).iloc[0]
-    return _Pick(int(top["player_id"]), season, False)
+    return Pick(int(top["player_id"]), season, False)
 
 
 def _choose(player_id: int, season: str, sidebar: str) -> None:
     """The scope toggle's on_change: whoever is on screen becomes the chosen
     player, so a default player keeps the scope the reader just picked
     instead of following the table's again on the next run. He is chosen
-    at the `sidebar` season, so he still follows it from there (_picked)."""
+    at the `sidebar` season, so he still follows it from there (picked_player)."""
     st.session_state[PLAYER_ID_KEY] = player_id
     st.session_state[PLAYER_SEASON_KEY] = season
     st.session_state[PLAYER_PICKED_AT_KEY] = sidebar
@@ -407,7 +524,7 @@ def render_player(default_rows: pd.DataFrame | None, season: str) -> None:
     """The Player tab at the page's `season`. `default_rows` is the All
     players table as last drawn (or None), whose top row is shown when nobody
     has been chosen."""
-    picked = _picked(default_rows, season)
+    picked = picked_player(default_rows, season)
     if picked is None:
         st.info(f"No player stats for {season} yet.")
         return
@@ -445,6 +562,7 @@ def render_player(default_rows: pd.DataFrame | None, season: str) -> None:
     _player_header(row, career, season, picked.season, head)
     if not career and picked.season != season and not _played(picked.player_id, season):
         head.caption(f"{row.player} didn't play {season}; showing {picked.season}.")
+    _season_by_season(picked.player_id)
     if career:
         _career_detail(row)
     else:
