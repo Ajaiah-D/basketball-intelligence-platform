@@ -265,13 +265,20 @@ def test_latest_seasons_search_ignores_case_and_accents(con):
 
 def _short_season_player(con) -> tuple[str, str, int]:
     """The newest season with a player on 10-24 games (in a team's rotation,
-    but under a full season's 25-game floor), and that player. The newest
-    season itself has nobody on 10+ games in its first weeks."""
+    but under a full season's 25-game floor), and that player. Only a season
+    far enough along for the full 25-game floor counts (someone on 42+
+    games: stats.qualification_threshold takes 60% of the most games): a
+    season under way has a lower floor, which a 12-game player may be over,
+    and then the slider has no reason to drop to his games."""
     row = con.execute(
         """
         select season, player_name, games_played
         from main_marts.mart_player_season
         where games_played between 10 and 24
+          and season in (
+              select season from main_marts.mart_player_season
+              group by season having max(games_played) >= 42
+          )
         order by season desc, player_name
         limit 1
         """
