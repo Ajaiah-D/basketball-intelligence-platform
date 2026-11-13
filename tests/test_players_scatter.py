@@ -66,8 +66,13 @@ def _dots(fig: dict) -> int:
     return sum(len(t["x"]) for t in fig["data"])
 
 
+def _tab(at: AppTest):
+    """The Scatter tab, found by its label rather than its position."""
+    return next(t for t in at.tabs if t.label == "Scatter")
+
+
 def _caption(at: AppTest) -> str:
-    return " ".join(c.value for c in at.tabs[3].caption)
+    return " ".join(c.value for c in _tab(at).caption)
 
 
 def test_it_opens_on_points_against_true_shooting_for_the_sidebar_season(con):
@@ -225,11 +230,12 @@ def test_a_stat_nobody_has_that_season_is_one_info_line_and_no_chart(con, season
     at = _app(season)
     at.selectbox(key=scatter.X_KEY).select(x).run()
     assert not at.exception, at.exception
-    assert [i.value for i in at.tabs[3].info] == [
+    tab = _tab(at)
+    assert [i.value for i in tab.info] == [
         f"No player has both {scatter.METRICS[x].label} and TS% in {season}."
     ]
-    assert not at.tabs[3].get("plotly_chart")
-    assert not at.tabs[3].caption
+    assert not tab.get("plotly_chart")
+    assert not tab.caption
 
 
 def test_the_same_stat_on_both_axes_renders(con):

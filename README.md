@@ -187,17 +187,22 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
 - **Overview**: the team with the best record, league leaders, efficiency
   leaders (true shooting, usage, game score, assist-to-turnover), conference
   standings, latest games
-- **Players**: a search box for any player (retired ones included) above four
+- **Players**: a search box for any player (retired ones included) above five
   tabs. *All players* is the filterable league table for a season or the whole
   career, with Basic, Shooting and Advanced column sets (rate stats such as
   true shooting, usage and game score; like the other sets, the table lists
   players over its min-games slider); a click on a row opens that player.
   Official NBA figures are used where the league publishes them (1996-97 on)
   and box-score derivations fill in earlier seasons. *Player* has one section
-  per question: game by game (a trend for any stat, 5-game rolling average),
-  shooting against the league, advanced stats as percentiles among players
-  over a minutes floor, and a game log tinted green or red against his own
-  season average. *Compare* sets two player-seasons from any era side by
+  per question: season by season (his every season and career in the same
+  Basic, Shooting and Advanced column sets), game by game (a trend for any
+  stat, 5-game rolling average), shooting against the league, advanced stats
+  as percentiles among players over a minutes floor, and a game log tinted
+  green or red against his own season average. *Similar players* ranks the
+  players whose season looks most like his (5 to 25 of them): 12 rate stats
+  z-scored over the season's players over a minutes floor, capped at 3
+  standard deviations, compared by cosine similarity; a click on a row opens
+  that player. *Compare* sets two player-seasons from any era side by
   side: a percentile radar, with each player ranked against his own season's
   qualified players, plus per-game bars. *Scatter* plots any two player stats
   for a season, with a minimum-games and team filter

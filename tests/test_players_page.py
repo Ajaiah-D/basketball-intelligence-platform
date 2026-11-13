@@ -376,9 +376,15 @@ def _busiest_player(con, season: str) -> tuple[str, int]:
     return row[0], int(row[1])
 
 
-def test_the_page_has_four_tabs(con):
+def test_the_page_has_five_tabs(con):
     at = _app()
-    assert [t.label for t in at.tabs] == ["All players", "Player", "Compare", "Scatter"]
+    assert [t.label for t in at.tabs] == [
+        "All players",
+        "Player",
+        "Similar players",
+        "Compare",
+        "Scatter",
+    ]
     assert at.session_state["players_tab"] == "All players"
 
 

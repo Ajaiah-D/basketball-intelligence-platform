@@ -1,10 +1,12 @@
-"""Players - a search for any player above four tabs: the league table, one
-player in depth, a head-to-head compare and a scatter of the league.
+"""Players - a search for any player above five tabs: the league table, one
+player in depth, the players most like him, a head-to-head compare and a
+scatter of the league.
 
   search.py    the player search, and open_player (how anything opens the Player tab)
   table.py     the All players tab: the filterable table; a row click opens that player
   player.py    the Player tab: one player, a titled section per question
   game_log.py  the Player tab's game log and game-by-game trend
+  similar.py   the Similar players tab: the Player tab's player, his closest matches
   compare.py   the Compare tab
   scatter.py   the Scatter tab
 
@@ -19,14 +21,15 @@ from dashboard.lib import theme as T
 from dashboard.lib.data import players, seasons
 from dashboard.lib.state import PLAYERS_PICK_KEY, SEASON_KEY
 from dashboard.lib.tabs import keyed_tabs
-from dashboard.views.players import player, table
+from dashboard.views.players import player, similar, table
 from dashboard.views.players.compare import render_compare
 from dashboard.views.players.scatter import render_scatter
 from dashboard.views.players.search import PLAYERS_TAB_KEY, open_player, render_search
 
-TABS = ["All players", "Player", "Compare", "Scatter"]
+TABS = ["All players", "Player", "Similar players", "Compare", "Scatter"]
 # The All players table as last drawn: only one tab runs per pass, and the
-# Player tab opens on its top row when nobody has been chosen.
+# Player and Similar players tabs open on its top row when nobody has been
+# chosen.
 _DEFAULT_ROWS_KEY = "players_default_rows"
 
 
@@ -52,7 +55,7 @@ def _apply_preset(season: str) -> None:
 
 def render() -> None:
     season = st.session_state.get(SEASON_KEY) or seasons.latest_season()
-    table.keep_filters(player.KEPT_KEYS)
+    table.keep_filters([*player.KEPT_KEYS, *similar.KEPT_KEYS])
     table.reset_min_games(season)
     _apply_preset(season)
 
@@ -69,6 +72,8 @@ def render() -> None:
             st.session_state[_DEFAULT_ROWS_KEY] = table.render_table(head)
         elif active == "Player":
             player.render_player(st.session_state.get(_DEFAULT_ROWS_KEY), season)
+        elif active == "Similar players":
+            similar.render_similar(st.session_state.get(_DEFAULT_ROWS_KEY), season)
         elif active == "Compare":
             render_compare()
         else:

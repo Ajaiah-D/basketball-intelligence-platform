@@ -64,7 +64,9 @@ def _app() -> AppTest:
 
 
 def _caption(at: AppTest) -> str:
-    return " ".join(c.value for c in at.tabs[2].caption)
+    # The Compare tab, found by its label rather than its position.
+    tab = next(t for t in at.tabs if t.label == "Compare")
+    return " ".join(c.value for c in tab.caption)
 
 
 def _charts(at: AppTest, kind: str) -> list[dict]:
