@@ -1,5 +1,5 @@
 """Plotly charts for the Players page's Compare tab: a radar of percentiles
-and a per-game stat line, two players in their own colours.
+and a per-game stat line, each side in its own colour.
 
 Both only show numbers. Neither marks a winner: no highlight on the larger
 value, no shading of the larger shape. Kept apart from viz.py and

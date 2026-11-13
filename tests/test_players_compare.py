@@ -173,17 +173,79 @@ def test_it_opens_on_the_sidebars_two_top_scorers_with_a_radar_and_the_line(con)
     assert compare.METHOD in _caption(at)
 
 
-def test_each_side_wears_its_team_colour_and_the_second_takes_the_accent_on_a_tie(con):
+def _oklab(hex_color: str) -> tuple[float, float, float]:
+    h = hex_color.lstrip("#")
+    lin = []
+    for i in (0, 2, 4):
+        c = int(h[i : i + 2], 16) / 255
+        lin.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = lin
+    lms = (
+        (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3),
+        (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3),
+        (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3),
+    )
+    return (
+        0.2104542553 * lms[0] + 0.7936177850 * lms[1] - 0.0040720468 * lms[2],
+        1.9779984951 * lms[0] - 2.4285922050 * lms[1] + 0.4505937099 * lms[2],
+        0.0259040371 * lms[0] + 0.7827717662 * lms[1] - 0.8086757660 * lms[2],
+    )
+
+
+def _distance(a: str, b: str) -> float:
+    """Perceptual distance, OKLab x 100 (the dataviz validator's scale)."""
+    return 100 * sum((x - y) ** 2 for x, y in zip(_oklab(a), _oklab(b), strict=True)) ** 0.5
+
+
+def _side_colours(at: AppTest) -> tuple[list[str], list[str]]:
+    """The radar's two outline colours and the per-game line's first row's
+    two bar colours, A first."""
+    (radar,) = _radars(at)
+    bars = _bars(at)
+    return (
+        [t["line"]["color"] for t in radar["data"]],
+        [t["marker"]["color"] for t in bars["data"][:2]],
+    )
+
+
+def test_the_side_colours_are_a_fixed_pair_far_apart():
+    a, b = compare.SIDE_COLORS
+    assert (a, b) == (T.SERIES[0], T.SERIES[1])
+    # The dataviz normal-vision floor is 15; the pair measures about 32.
+    assert _distance(a, b) >= 15
+    # Why not team colours: the Heat's and the Lakers' are a few points apart,
+    # so LeBron's two teams drew two golds.
+    assert _distance(T.team_color("MIA"), T.team_color("LAL")) < 15
+
+
+def test_each_side_wears_its_side_colour_even_with_one_player_on_both(con):
     at = _app()
     season = at.selectbox(key="season").value
-    rows = [diagnosis.compare_line(season, pid) for pid, _ in _top_two(con, season)]
-    first, second = compare.side_colors(rows[0]["team"], rows[1]["team"])
-    radar = _radars(at)[0]
-    assert radar["data"][0]["line"]["color"] == first
-    assert radar["data"][1]["line"]["color"] == second
-    assert compare.side_colors("BOS", "BOS") == (T.team_color("BOS"), T.ACCENT)
-    # A code the colour seed doesn't know is the accent already.
-    assert compare.side_colors("???", "???")[1] != T.ACCENT
+    pair = list(compare.SIDE_COLORS)
+    assert _side_colours(at) == (pair, pair)
+    # The same player and team on both sides keeps the two colours apart.
+    a_id, a_name = _top_two(con, season)[0]
+    _pick(season, a_id, at, compare.B_KEY, a_name)
+    assert at.selectbox(key=compare.A_KEY).value == at.selectbox(key=compare.B_KEY).value
+    assert _side_colours(at) == (pair, pair)
+
+
+@pytest.mark.full_warehouse
+def test_one_player_in_two_seasons_on_close_team_colours_gets_both_side_colours(con):
+    """The reported case: LeBron's 2012-13 Heat season against his 2019-20
+    Lakers season, two teams whose colours are both gold."""
+    (pid,) = con.execute(
+        "select distinct player_id from main_marts.mart_player_percentiles "
+        "where player_name = 'LeBron James'"
+    ).fetchone()
+    at = _app()
+    _pick("2012-13", pid, at, compare.A_KEY, "LeBron James")
+    _pick("2019-20", pid, at, compare.B_KEY, "LeBron James")
+    pair = list(compare.SIDE_COLORS)
+    assert _side_colours(at) == (pair, pair)
+    # The legend tells the sides apart in words too.
+    (radar,) = _radars(at)
+    assert [t["name"] for t in radar["data"]] == ["LeBron James 2012-13", "LeBron James 2019-20"]
 
 
 def test_changing_both_pickers_changes_both_sides(con):

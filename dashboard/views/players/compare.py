@@ -104,13 +104,18 @@ def available_axes(rows: list[pd.Series]) -> tuple[list[RadarAxis], dict[str, li
     return kept, dropped
 
 
-def side_colors(a_team: str, b_team: str) -> tuple[str, str]:
-    """Each side's team colour; the second takes the accent when the two
-    match (two teams of one colour, or the same player on both sides)."""
-    first, second = T.team_color(a_team), T.team_color(b_team)
-    if second == first:
-        second = T.ACCENT if first != T.ACCENT else T.SERIES[1]
-    return first, second
+# Side A and side B: the first two series slots (blue, orange), the same pair
+# for every compare. The colour follows the side, never the team: team
+# colours are identity accents for UI chrome, and as series they collide.
+# About a quarter of the current teams' pairs sit under the normal-vision
+# floor of 15 (LAL and CLE gold are 0.5 apart, CHI and ATL red 1.1), so
+# LeBron's Miami season against his Lakers season drew two golds, and a
+# Mavericks player against himself drew the team's blue against the accent
+# blue (2.4 apart). This pair passes the dataviz validator on SURFACE in
+# dark mode: normal-vision distance 31.8, worst colour-blind distance 26.8
+# (protan), both above 3:1 contrast. The legend and each side's header name
+# the player and season, so colour is never the only key.
+SIDE_COLORS = (T.SERIES[0], T.SERIES[1])
 
 
 def _label(row: pd.Series) -> str:
@@ -259,7 +264,7 @@ def render_compare() -> None:
         st.info("One of those player-seasons is not in the warehouse. Pick another.")
         return
     rows = [a_row, b_row]
-    colors = list(side_colors(a_row["team"], b_row["team"]))
+    colors = list(SIDE_COLORS)
     a_head.markdown(_who(a_row, colors[0]), unsafe_allow_html=True)
     b_head.markdown(_who(b_row, colors[1]), unsafe_allow_html=True)
     if a_pick == b_pick:
