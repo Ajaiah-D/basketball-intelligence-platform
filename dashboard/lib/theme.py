@@ -164,11 +164,16 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 
 /* ---- KPI tiles ---- */
 .bip-kpi {{ border-left: 3px solid {ACCENT}; }}
+/* The label and its note share a line while both fit; in a narrow tile the
+   note wraps under the label instead of squeezing it (it used to break
+   "PLAY-BY-PLAY GAMES" into four lines and push the note out of the box). */
 .bip-kpi-label {{ font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
                   color: {MUTED}; font-weight: 600;
-                  display: flex; justify-content: space-between; gap: .5rem; }}
+                  display: flex; flex-wrap: wrap; justify-content: space-between;
+                  align-items: baseline; gap: .1rem .5rem; }}
+.bip-kpi-label > span:first-child {{ flex: 1 1 auto; min-width: 0; }}
 .bip-kpi-note  {{ text-transform: none; letter-spacing: 0; font-weight: 500;
-                  color: {MUTED}; white-space: nowrap; }}
+                  color: {MUTED}; flex: 0 1 auto; min-width: 0; }}
 .bip-kpi-value {{ font-size: 1.85rem; font-weight: 800; color: {INK}; line-height: 1.2;
                   font-variant-numeric: tabular-nums; }}
 .bip-kpi-sub   {{ font-size: .75rem; color: {INK_2}; }}
@@ -234,7 +239,32 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
 .bip-name {{ flex: 1; min-width: 0; font-weight: 600; font-size: .88rem; color: {INK};
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 .bip-team {{ flex: none; color: {MUTED}; font-size: .72rem; font-weight: 700; }}
-.bip-val  {{ font-weight: 800; font-size: .95rem; color: {INK}; font-variant-numeric: tabular-nums; }}
+/* flex: none, so a narrow card shortens the name, never the number. */
+.bip-val  {{ flex: none; font-weight: 800; font-size: .95rem; color: {INK}; font-variant-numeric: tabular-nums; }}
+
+/* Leader cards wrap two by two instead of squeezing. Four across beside an
+   open sidebar on a laptop-width window left each card about 100px wide:
+   the names vanished, the numbers ran off the edge and "REBOUNDS" split
+   mid-word. A row of four goes straight to two by two (never three and a
+   lone fourth) once the row is under 780px, sized by the row's own width. */
+[data-testid="stHorizontalBlock"]:has(.bip-row) {{ flex-wrap: wrap; container-type: inline-size; }}
+@container (max-width: 780px) {{
+  [data-testid="stColumn"]:has(.bip-row) {{
+    flex: 1 1 calc(50% - 1rem) !important; min-width: calc(50% - 1rem) !important; }}
+}}
+/* KPI tiles do the same in a very narrow row (under 560px, e.g. beside an
+   open sidebar on a small laptop), where "20%" split over two lines. */
+[data-testid="stHorizontalBlock"]:has(.bip-kpi) {{ flex-wrap: wrap; container-type: inline-size; }}
+@container (max-width: 560px) {{
+  [data-testid="stColumn"]:has(.bip-kpi) {{
+    flex: 1 1 calc(50% - 1rem) !important; min-width: calc(50% - 1rem) !important; }}
+}}
+/* Last resort for a card that is still tight: drop the team code before
+   the name or the number gets cut. Sized by the card's own width. */
+.bip-card:has(.bip-row) {{ container-type: inline-size; }}
+@container (max-width: 150px) {{
+  .bip-team {{ display: none; }}
+}}
 
 /* ---- chips / dots ---- */
 .bip-chip {{ display: inline-block; padding: 3px 12px; border-radius: {RADIUS};
