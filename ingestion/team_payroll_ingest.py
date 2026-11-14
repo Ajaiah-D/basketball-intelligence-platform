@@ -108,8 +108,14 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 log = logging.getLogger("team_payroll_ingest")
 _last_request_at = 0.0
 
+# The player's id is read from his link (/players/f/foxde01.html), which
+# both markups carry. Basketball-Reference used to repeat it in a
+# data-append-csv attribute, and this pattern used to read that; the
+# attribute was dropped (by July 2026), the pattern matched no row on any
+# current page, and every 2026-27 payroll came back empty.
 _SALARY_ROW_RE = re.compile(
-    r'<td[^>]*data-append-csv="([^"]*)"[^>]*data-stat="player"[^>]*><a[^>]*>([^<]+)</a></td>'
+    r'<td[^>]*data-stat="player"[^>]*>'
+    r"<a[^>]*href=[\"']/players/[a-z]/([a-z0-9]+)\.html[\"'][^>]*>([^<]+)</a></td>"
     r'<td[^>]*data-stat="salary"[^>]*csk="(\d+)"',
 )
 

@@ -46,6 +46,25 @@ def test_parse_salary_table_unescapes_player_names():
     ]
 
 
+def test_parse_salary_table_reads_the_markup_without_data_append_csv():
+    # Basketball-Reference's 2026-27 markup (Spurs page, 2026-11-13): no
+    # data-append-csv, single-quoted links. The old pattern read 0 rows here.
+    html = (
+        '<table id="salaries2"><tbody>'
+        '<tr ><th scope="row" class="right " data-stat="ranker" csk="1" >1</th>'
+        '<td class="left " data-stat="player" ><a href=\'/players/f/foxde01.html\'>De\'Aaron Fox</a></td>'
+        '<td class="right " data-stat="salary" csk="49800000" >$49,800,000</td></tr>'
+        '<tr ><th scope="row" class="right " data-stat="ranker" csk="2" >2</th>'
+        '<td class="left " data-stat="player" ><a href=\'/players/v/vassede01.html\'>Devin Vassell</a></td>'
+        '<td class="right " data-stat="salary" csk="27000000" >$27,000,000</td></tr>'
+        "</tbody></table>"
+    )
+    assert parse_salary_table(html) == [
+        {"bbref_player_id": "foxde01", "player": "De'Aaron Fox", "salary_usd": 49800000},
+        {"bbref_player_id": "vassede01", "player": "Devin Vassell", "salary_usd": 27000000},
+    ]
+
+
 def test_parse_salary_table_total_matches_known_payroll():
     html = FIXTURE.read_text(encoding="utf-8")
     rows = parse_salary_table(html)
