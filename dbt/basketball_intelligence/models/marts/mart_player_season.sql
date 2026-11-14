@@ -281,6 +281,7 @@ select
     d.assists_per_game,
     d.steals_per_game,
     d.blocks_per_game,
+    d.turnovers_per_game,
     d.threes_made_per_game,
     d.fga_per_game,
     d.three_pa_per_game,

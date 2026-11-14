@@ -39,6 +39,7 @@
         round(avg(assists), 1)                   as assists_per_game,
         round(avg(steals), 1)                    as steals_per_game,
         round(avg(blocks), 1)                    as blocks_per_game,
+        round(avg(turnovers), 1)                 as turnovers_per_game,
         round(avg(three_pointers_made), 1)       as threes_made_per_game,
         round(avg(field_goals_attempted), 1)     as fga_per_game,
         round(avg(three_pointers_attempted), 1)  as three_pa_per_game,

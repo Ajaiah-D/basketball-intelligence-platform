@@ -63,6 +63,8 @@ models:
         description: &spg avg(steals), 1 decimal.
       - name: blocks_per_game
         description: &bpg avg(blocks), 1 decimal.
+      - name: turnovers_per_game
+        description: &topg avg(turnovers), 1 decimal.
       - name: threes_made_per_game
         description: &tpg avg(three_pointers_made), 1 decimal.
       - name: fga_per_game
@@ -148,6 +150,8 @@ models:
         description: *spg
       - name: blocks_per_game
         description: *bpg
+      - name: turnovers_per_game
+        description: *topg
       - name: threes_made_per_game
         description: *tpg
       - name: fga_per_game
@@ -226,6 +230,8 @@ models:
         description: *spg
       - name: blocks_per_game
         description: *bpg
+      - name: turnovers_per_game
+        description: *topg
       - name: threes_made_per_game
         description: *tpg
       - name: fga_per_game
