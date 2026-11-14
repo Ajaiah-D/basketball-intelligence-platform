@@ -478,6 +478,22 @@ def write_season(
         len(players),
         empty,
     )
+    if empty == len(df) and not allow_shrink:
+        # One team without a salary table happens (an early-era page); every
+        # team without one means the scraper no longer reads the page. That
+        # ran unnoticed from July to November 2026, when Basketball-Reference
+        # dropped an attribute the row pattern needed and each run wrote 30
+        # empty payrolls while reporting ok. Flag it: the weekly refresh
+        # treats payroll as non-fatal, so this marks payroll_ok false in the
+        # run log without blocking the rest of the refresh. --allow-shrink is
+        # an explicit acceptance of an empty re-fetch, so it is not flagged.
+        log.error(
+            "%s: no salary rows on any of the %d team pages - the page format may have "
+            "changed (check parse_salary_table against a live page)",
+            season,
+            len(df),
+        )
+        return False
     return not failed
 
 

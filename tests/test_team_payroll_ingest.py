@@ -452,6 +452,22 @@ def test_write_season_writes_nothing_when_every_team_failed(monkeypatch, raw):
     assert not (raw / "team_payroll" / "2009-10.parquet").exists()
 
 
+def test_write_season_flags_a_season_where_no_page_had_salary_rows(monkeypatch, raw, caplog):
+    # Every page fetched, none with a row the parser reads: the scraper is
+    # broken, not the season empty. The rows are still written (a null
+    # payroll per team), and the run is flagged.
+    _fake_pages({"BOS": "<html>x</html>", "DAL": "<html>y</html>"}, monkeypatch)
+    assert team_payroll_ingest.write_season("2026-27", ["BOS", "DAL"]) is False
+    df = pd.read_parquet(raw / "team_payroll" / "2026-27.parquet")
+    assert sorted(df["team_abbreviation"]) == ["BOS", "DAL"]
+    assert "no salary rows on any" in caplog.text
+
+
+def test_write_season_does_not_flag_one_team_without_salary_rows(monkeypatch, raw):
+    _fake_pages({"BOS": BOS_HTML, "DAL": "<html>x</html>"}, monkeypatch)
+    assert team_payroll_ingest.write_season("2009-10", ["BOS", "DAL"]) is True
+
+
 def test_a_season_missing_a_team_is_fetched_again(monkeypatch, raw):
     # Without this a team that failed once would be missing for good: the
     # season's files exist, so the next run would skip the season.
