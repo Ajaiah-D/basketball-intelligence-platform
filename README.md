@@ -1,4 +1,4 @@
-# Basketball Intelligence Platform 🏀
+# Basketball Intelligence Platform
 
 **Live dashboard:** https://basketball-intelligence-platform.streamlit.app
 
@@ -117,8 +117,8 @@ Game data comes from the **unofficial stats.nba.com API** via the
 
 Net rating and PIE are the NBA's own official advanced stats, available from
 1996-97 onward. Earlier seasons derive the equivalent rate stats from box
-scores instead - see `stg_player_advanced.sql` and `mart_player_season.sql`
-for the exact cutoffs.
+scores instead (see `stg_player_advanced.sql` and `mart_player_season.sql`
+for the exact cutoffs).
 
 Because the API is unofficial and throttles aggressive clients, every request
 goes through a rate limiter (≥1.5s between calls) with exponential-backoff
@@ -242,7 +242,7 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   settle: accuracy, Brier score and margin error, a calibration chart (how
   often a 70% favorite actually won) in a collapsed section, and the 10 most
   recent results with ✓/✗, all read from the `mart_settled_predictions`
-  mart. Later games are on the Schedule page. Currently Elo ratings only - rolling-form features
+  mart. Later games are on the Schedule page. Currently Elo ratings only: rolling-form features
   (recent record, rest days) aren't computed for future games yet, so treat
   it as a first pass rather than the model's intended accuracy
 - **Arcade**: games on top of the full history. *Higher or Lower* (which

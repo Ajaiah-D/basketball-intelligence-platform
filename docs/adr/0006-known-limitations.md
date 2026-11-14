@@ -19,7 +19,7 @@ current architecture:
 
 1. **Single-desktop dependency.** The weekly refresh only runs if one
    specific Windows machine is on, connected, and has the Scheduled Task
-   enabled (see `0004-local-task-scheduler-over-github-actions.md`) - there
+   enabled (see `0004-local-task-scheduler-over-github-actions.md`). There
    is no redundancy, and nothing in the repo alerts anyone if a refresh
    silently stops happening. `data/last_updated.json` and
    `logs/refresh_runs.jsonl` record outcomes, and `scripts/health_check.py`
@@ -29,7 +29,7 @@ current architecture:
 
 2. **Monetization is constrained by the data source's terms, not by a
    formal license.** The data comes from stats.nba.com, an *unofficial*
-   API accessed via `nba_api` (`README.md`, "Data sources") - there is no data license,
+   API accessed via `nba_api` (`README.md`, "Data sources"). There is no data license,
    formal or informal, only the general expectation that heavy or
    commercial use of an unofficial, throttled endpoint is not what it is
    meant for (`DEPLOYMENT.md`, "Capacity and the monetization path": "Terms allow hobby/portfolio use; it is
@@ -85,17 +85,16 @@ current architecture:
 
 ## Consequences
 
-Writing these down makes the operational, data and business risk profile
-visible to anyone reasoning about this system's reliability or its future,
-instead of leaving them as tribal knowledge. It also commits them to a
-permanent record as accepted debt rather than problems already being worked
+Writing these down keeps the risks in view for anyone judging this system's
+reliability or its future, instead of leaving them as tribal knowledge. It
+also records them as accepted debt rather than problems already being worked
 on.
 
 For limitation 1, this would be resolved by adding staleness alerting on
 `data/last_updated.json` / `logs/refresh_runs.jsonl`, or by moving the
 refresh off the single desktop once a residential-IP-equivalent path
 reachable from another host exists. For limitation 2, this would need to
-be revisited only if the platform pursued a genuinely commercial use,
+be revisited only if the platform pursued a commercial use,
 which would mean evaluating an official or licensed data provider rather
 than continuing on an unofficial endpoint's implicit tolerance.
 

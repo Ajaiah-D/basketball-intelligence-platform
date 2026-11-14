@@ -132,15 +132,15 @@
       "seed": 479341424,
       "version": 1,
       "versionNonce": 299655413,
-      "text": "Developer (Claude Code +\nuser) - git commit / push",
-      "rawText": "Developer (Claude Code +\nuser) - git commit / push",
+      "text": "Developer\ngit commit / push",
+      "rawText": "Developer\ngit commit / push",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
       "baseline": 24,
       "containerId": null,
-      "originalText": "Developer (Claude Code +\nuser) - git commit / push",
+      "originalText": "Developer\ngit commit / push",
       "lineHeight": 1.25
     },
     {

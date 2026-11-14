@@ -9,7 +9,7 @@ release) needs to run on a schedule without manual intervention. A GitHub
 Actions workflow (`.github/workflows/refresh-data.yml`) was built and run
 in production across commits `22f7850` through `94a69ea`. It was then
 deleted after stats.nba.com was found to silently block requests from
-cloud and datacenter IP ranges, GitHub-hosted runners included - confirmed
+cloud and datacenter IP ranges, GitHub-hosted runners included, confirmed
 by a failed test run: every request timed out from GitHub's network but
 worked instantly from a home IP (`DEPLOYMENT.md`, "Data refresh cadence").
 

@@ -203,7 +203,6 @@ The reasoning is in
 - An imperative subject line under about 72 characters ("Fold search text
   in one place"), then a short body that says why.
 - One logical change per commit.
-- No AI attribution: no `Co-Authored-By` trailers or "generated with"
-  lines. No emoji (the README title carries the project's one).
+- No emoji.
 - Comments explain why, not what. Public functions have docstrings.
 - Never commit `.env`, the warehouse, or `data/raw/`.

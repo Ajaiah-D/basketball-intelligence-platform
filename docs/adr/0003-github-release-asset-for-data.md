@@ -29,7 +29,7 @@ This keeps the git repo small and fast regardless of how many refreshes
 have run, and gives a stable, unchanging download URL for the cloud
 deployment. It costs a real download on cold boot (the full file, over
 HTTP) and means the warehouse's history is not versioned the way committed
-files are - only the current release asset is kept, not a diffable history
+files are: only the current release asset is kept, not a diffable history
 of every past state of the data. Publishing a new version also requires
 release-write access (the `gh` CLI authenticated as the repo owner), which
 only the machine running the weekly refresh has. This would need to change

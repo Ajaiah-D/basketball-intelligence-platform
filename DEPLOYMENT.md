@@ -130,7 +130,7 @@ To change it, delete and redeploy with the same address and secrets:
   the ingestion step has to run from a real residential connection. The
   live app checks a version marker next to the Release asset hourly and
   re-downloads on its own when it changes, so new *data* needs no manual
-  reboot (new *code* sometimes does - see "Shipping a code change" above).
+  reboot (new *code* sometimes does; see "Shipping a code change" above).
   Two steps are allowed to fail without stopping the run: the salary scrape
   and the player impact scoring. The rest of the refresh still publishes
   (the warehouse keeps last week's salary or impact tables), and each
@@ -171,7 +171,7 @@ To change it, delete and redeploy with the same address and secrets:
 
   Before a scheduled run, and after any change to the pipeline,
   `python scripts/weekly_refresh.py --no-publish` does a dry run: every step
-  against the copy, then the copy is deleted - no swap, upload or commit,
+  against the copy, then the copy is deleted, with no swap, upload or commit,
   and no rows added to the predictions history. It does still update the
   raw parquet files and `data/last_updated.json`, and logs a
   `"dry_run": true` line (which `health_check.py` skips); the next
@@ -189,7 +189,7 @@ To change it, delete and redeploy with the same address and secrets:
   `BasketballIntelligence-WeeklyRefresh` (action: this repo's
   `.venv\Scripts\python.exe scripts\weekly_refresh.py`, working directory
   the repo root). That `.venv` is Python 3.12, installed from the lock
-  files like any other checkout (see the README's Setup). **This task lives in Windows, not in git** - nothing in
+  files like any other checkout (see the README's Setup). **This task lives in Windows, not in git.** Nothing in
   the repo controls whether it's enabled, paused, or what time it fires.
   Checking or changing it requires a shell on the machine it's registered
   on (currently the user's desktop PC, always on):
@@ -221,9 +221,7 @@ To change it, delete and redeploy with the same address and secrets:
 `python scripts/health_check.py` reports whether the warehouse exists, row
 counts look sane, the most recent game isn't stale, whether the last
 scheduled run succeeded, and (unless `--skip-api`) whether stats.nba.com
-is still responding the way the ingestion script expects. Run it any time,
-or hand it to an AI assistant pointed at this repo and ask it to check the
-data's health.
+is still responding the way the ingestion script expects. Run it any time.
 
 For a quick glance without pulling the full warehouse: `weekly_refresh.py`
 commits `data/last_updated.json` (timestamp, season range, row counts) and

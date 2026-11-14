@@ -14,7 +14,7 @@ and a rewrite is a real cost measured in tens of hours, not an afternoon.
 Stay on Streamlit. `docs/frontend-migration-options.md` measured the actual
 query layer (warm DuckDB queries run 1.2-8.4 ms) and found the felt latency
 visitors experience comes from Streamlit Community Cloud's free-tier cold
-start and its per-interaction rerun model, not from the Python data layer -
+start and its per-interaction rerun model, not from the Python data layer,
 so rewriting the frontend would not fix the thing that is actually slow.
 That document lays out the full options comparison (stay and fix hosting,
 FastAPI + Next.js, DuckDB-WASM, a Go/Rust backend) and their costs; this
