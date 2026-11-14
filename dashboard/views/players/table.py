@@ -41,7 +41,19 @@ from dashboard.views.players.search import open_player
 # Span after the team; a filter that reaches into other seasons adds a
 # Season column after the name.
 COLUMN_SETS = {
-    "Basic": ["player", "team_label", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg", "plus_minus"],
+    "Basic": [
+        "player",
+        "team_label",
+        "gp",
+        "mpg",
+        "ppg",
+        "rpg",
+        "apg",
+        "spg",
+        "bpg",
+        "topg",
+        "plus_minus",
+    ],
     "Shooting": [
         "player",
         "team_label",
@@ -330,6 +342,7 @@ def _base_config(ppg_max: float) -> dict:
         "apg": st.column_config.NumberColumn("AST", format="%.1f"),
         "spg": st.column_config.NumberColumn("STL", format="%.1f"),
         "bpg": st.column_config.NumberColumn("BLK", format="%.1f"),
+        "topg": st.column_config.NumberColumn("TOV", help="Turnovers per game", format="%.1f"),
         "fg_pct": st.column_config.NumberColumn(**glossary.described("FG%"), format="%.1f"),
         "fga_pg": st.column_config.NumberColumn(**glossary.described("FGA"), format="%.1f"),
         "tpg": st.column_config.NumberColumn(**glossary.described("3PM"), format="%.1f"),

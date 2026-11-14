@@ -57,7 +57,13 @@ def _qualified_player(con) -> tuple[str, int, str]:
 
 
 def _table(at: AppTest, player_id: int, season: str) -> pd.DataFrame:
+    """The table as drawn: his own line first, then the matches."""
     return at.dataframe(key=f"{similar.SIMILAR_TABLE_KEY}_{player_id}_{season}").value
+
+
+def _matches(at: AppTest, player_id: int, season: str) -> pd.DataFrame:
+    """The table's matches, without his own line on top."""
+    return _table(at, player_id, season).iloc[1:].reset_index(drop=True)
 
 
 def _captions(at: AppTest) -> str:
@@ -67,10 +73,16 @@ def _captions(at: AppTest) -> str:
 def test_the_list_ranks_others_and_says_how(con):
     season, player_id, name = _qualified_player(con)
     at = _app(season, name)
-    shown = _table(at, player_id, season)
+    table = _table(at, player_id, season)
+    assert list(table.columns) == similar.COLUMNS
+    # His own line on top, for reference: no rank, no similarity.
+    me = table.iloc[0]
+    assert me["player_name"] == name
+    assert me["rank"] == similar.REFERENCE_RANK
+    assert pd.isna(me["similarity"])
+    shown = _matches(at, player_id, season)
     assert len(shown) == similar.N_DEFAULT
-    assert list(shown.columns) == similar.COLUMNS
-    assert list(shown["rank"]) == list(range(1, similar.N_DEFAULT + 1))
+    assert list(shown["rank"]) == [str(i) for i in range(1, similar.N_DEFAULT + 1)]
     assert name not in set(shown["player_name"])
     assert shown["similarity"].is_monotonic_decreasing
     assert shown["similarity"].between(0, 1).all()
@@ -93,12 +105,12 @@ def test_the_slider_sets_how_many_are_listed(con):
     for n in (5, 25):
         at.slider(key=similar.SIMILAR_N_KEY).set_value(n).run()
         assert not at.exception, at.exception
-        assert len(_table(at, player_id, season)) == n
+        assert len(_matches(at, player_id, season)) == n
     # The five are the top five of the 25.
     at.slider(key=similar.SIMILAR_N_KEY).set_value(5).run()
-    five = list(_table(at, player_id, season)["player_name"])
+    five = list(_matches(at, player_id, season)["player_name"])
     at.slider(key=similar.SIMILAR_N_KEY).set_value(25).run()
-    assert list(_table(at, player_id, season)["player_name"])[:5] == five
+    assert list(_matches(at, player_id, season)["player_name"])[:5] == five
 
 
 def test_the_list_size_survives_a_visit_to_another_tab(con):
@@ -111,7 +123,7 @@ def test_the_list_size_survives_a_visit_to_another_tab(con):
     at.run()
     assert not at.exception, at.exception
     assert at.slider(key=similar.SIMILAR_N_KEY).value == 15
-    assert len(_table(at, player_id, season)) == 15
+    assert len(_matches(at, player_id, season)) == 15
 
 
 def test_a_player_under_the_minutes_floor_gets_no_list(con):
@@ -165,3 +177,34 @@ def test_selecting_a_row_opens_that_player(monkeypatch):
     st.session_state[key] = {"selection": {"rows": [], "cells": []}}
     similar._on_select(key)
     assert len(opened) == 2
+
+
+def _ranked() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "rank": [1, 2],
+            "player_id": [22, 33],
+            "player_name": ["B", "C"],
+            "similarity": [0.8, 0.6],
+            "points_per_game": [20.0, 15.0],
+        }
+    )
+
+
+def test_his_line_is_pinned_above_the_matches():
+    me = pd.Series({"player_id": 11, "player_name": "A", "points_per_game": 18.0})
+    columns = ["rank", "player_name", "points_per_game", "similarity"]
+    table = similar.with_reference_row(me, _ranked(), columns)
+    assert list(table["player_name"]) == ["A", "B", "C"]
+    assert list(table["rank"]) == [similar.REFERENCE_RANK, "1", "2"]
+    assert pd.isna(table["similarity"].iloc[0])
+    assert list(table["points_per_game"]) == [18.0, 20.0, 15.0]
+
+
+def test_an_older_warehouse_without_turnovers_drops_tov_instead_of_failing():
+    with_tov = pd.DataFrame(columns=[c for c in similar.COLUMNS if c not in ("rank", "similarity")])
+    assert similar.shown_columns(with_tov) == similar.COLUMNS
+    without = with_tov.drop(columns=["turnovers_per_game"])
+    assert similar.shown_columns(without) == [
+        c for c in similar.COLUMNS if c != "turnovers_per_game"
+    ]

@@ -2,13 +2,16 @@
 most like the chosen player's, ranked by lib.similarity.
 
 The player is the Player tab's (player.picked_player), at his season there,
-so the two tabs always agree on who and when. A slider sets how many to
-list, and a click on a row opens that player in the Player tab.
+so the two tabs always agree on who and when. His own line is pinned on top
+of the list, tinted, so each match reads against him column by column. A
+slider sets how many to list, and a click on a row opens that player in the
+Player tab.
 """
 
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -44,15 +47,62 @@ COLUMNS = [
     "points_per_game",
     "rebounds_per_game",
     "assists_per_game",
+    "turnovers_per_game",
     "true_shooting_pct",
     "usage_pct",
     "similarity",
 ]
 
 
+# His own line sits on top of the list, tinted with the UI accent, so each
+# match reads against him column by column without switching tabs.
+REFERENCE_TINT = T.rgba(T.BRAND, 0.16)
+# The rank shown on his line, which is not a match.
+REFERENCE_RANK = "–"
+# Print formats for the styled table: a Styler's display text replaces the
+# column config's own format.
+_FORMATS = {
+    "games_played": "{:.0f}",
+    "minutes_per_game": "{:.1f}",
+    "points_per_game": "{:.1f}",
+    "rebounds_per_game": "{:.1f}",
+    "assists_per_game": "{:.1f}",
+    "turnovers_per_game": "{:.1f}",
+    "true_shooting_pct": "{:.1f}",
+    "usage_pct": "{:.1f}",
+}
+
+
+def shown_columns(pool: pd.DataFrame) -> list[str]:
+    """COLUMNS that `pool` has. An older published warehouse has no
+    turnovers_per_game; the list then goes without TOV rather than failing."""
+    extra = {"rank", "similarity"}
+    return [c for c in COLUMNS if c in extra or c in pool.columns]
+
+
+def with_reference_row(me: pd.Series, ranked: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """The list with his own line pinned on top: a dash for a rank and no
+    similarity. Ranks become text so his row can carry the dash."""
+    ref = pd.DataFrame([me]).assign(rank=REFERENCE_RANK, similarity=float("nan"))
+    rest = ranked.assign(rank=ranked["rank"].astype(str))
+    return pd.concat([ref[columns], rest[columns]], ignore_index=True)
+
+
+def _style(table: pd.DataFrame):
+    """Tint and bold his row (the first) and print the numbers."""
+
+    def highlight(row: pd.Series) -> list[str]:
+        css = f"background-color: {REFERENCE_TINT}; font-weight: 700" if row.name == 0 else ""
+        return [css] * len(row)
+
+    # Typed loosely: Styler.format wants dict[Any, str | Callable | None].
+    formats: dict[Any, Any] = {c: f for c, f in _FORMATS.items() if c in table.columns}
+    return table.style.apply(highlight, axis=1).format(formats, na_rep="")
+
+
 def _column_config() -> dict:
     return {
-        "rank": st.column_config.NumberColumn("#", width="small"),
+        "rank": st.column_config.TextColumn("#", width="small"),
         "player_name": st.column_config.TextColumn("Player", width="medium"),
         "team_label": st.column_config.TextColumn(
             "Team",
@@ -66,6 +116,9 @@ def _column_config() -> dict:
         "points_per_game": st.column_config.NumberColumn("PTS", format="%.1f"),
         "rebounds_per_game": st.column_config.NumberColumn("REB", format="%.1f"),
         "assists_per_game": st.column_config.NumberColumn("AST", format="%.1f"),
+        "turnovers_per_game": st.column_config.NumberColumn(
+            "TOV", help="Turnovers per game", format="%.1f"
+        ),
         "true_shooting_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
         "usage_pct": PLAYER_COLUMN_CONFIG["usage_pct"],
         "similarity": st.column_config.ProgressColumn(
@@ -160,14 +213,17 @@ def render_similar(default_rows: pd.DataFrame | None, season: str) -> None:
     result = similarity.rank_similar(pool, picked.player_id, floor, n)
     ranked = result.ranked.assign(similarity=result.ranked["similarity"].clip(lower=0.0))
 
-    st.session_state[SIMILAR_ROWS_KEY] = pd.DataFrame(
-        {"player_id": ranked["player_id"], "season": at}
-    )
+    columns = shown_columns(pool)
+    table = with_reference_row(me, ranked, columns)
+    # His row is first, so a click on it opens him: the same as any row.
+    ids = pd.concat([pd.Series([me["player_id"]]), ranked["player_id"]], ignore_index=True)
+
+    st.session_state[SIMILAR_ROWS_KEY] = pd.DataFrame({"player_id": ids, "season": at})
     key = f"{SIMILAR_TABLE_KEY}_{picked.player_id}_{at}"
     st.dataframe(
-        ranked[COLUMNS],
+        _style(table),
         hide_index=True,
-        height=(len(ranked) + 1) * 38 + 3,
+        height=(len(table) + 1) * 38 + 3,
         row_height=38,
         column_config=_column_config(),
         on_select=partial(_on_select, key),
