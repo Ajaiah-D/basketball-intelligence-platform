@@ -252,6 +252,12 @@ h4 {{ font-weight: 700; letter-spacing: -0.01em; }}
   [data-testid="stColumn"]:has(.bip-row) {{
     flex: 1 1 calc(50% - 1rem) !important; min-width: calc(50% - 1rem) !important; }}
 }}
+/* On a phone two across left each card about 160px, cutting every name to
+   "Luka D...". Under 520px the cards stack one per row, full names showing. */
+@container (max-width: 520px) {{
+  [data-testid="stColumn"]:has(.bip-row) {{
+    flex: 1 1 100% !important; min-width: 100% !important; }}
+}}
 /* KPI tiles do the same in a very narrow row (under 560px, e.g. beside an
    open sidebar on a small laptop), where "20%" split over two lines. */
 [data-testid="stHorizontalBlock"]:has(.bip-kpi) {{ flex-wrap: wrap; container-type: inline-size; }}
