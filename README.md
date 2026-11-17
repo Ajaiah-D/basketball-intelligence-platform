@@ -379,7 +379,7 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (10 models), intermediate (1) and marts (15), plus salary
-      cap history and team code seeds; 132 dbt tests and 1,002 pytest cases.
+      cap history and team code seeds; 132 dbt tests and 1,033 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
       era the tests check; the 17 tests that need all seasons are marked
