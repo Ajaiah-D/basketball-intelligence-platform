@@ -189,15 +189,19 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   standings, latest games
 - **Players**: a search box for any player (retired ones included) above five
   tabs. *All players* is the filterable league table for a season or the whole
-  career, with Basic, Shooting and Advanced column sets (rate stats such as
-  true shooting, usage and game score; like the other sets, the table lists
-  players over its min-games slider); a click on a row opens that player.
+  career, with Basic (age included), Shooting, Advanced and Defense column
+  sets (rate stats such as true shooting, usage and game score; like the
+  other sets, the table lists players over its min-games slider) and a G / F /
+  C position filter; a click on a row opens that player.
   Official NBA figures are used where the league publishes them (1996-97 on)
-  and box-score derivations fill in earlier seasons. *Player* has one section
-  per question: season by season (his every season and career in the same
-  Basic, Shooting and Advanced column sets), game by game (a trend for any
+  and box-score derivations fill in earlier seasons. *Player* has a bio line
+  under his name (position, height, weight, age, birthdate, country, college,
+  draft) and one section per question: season by season (his every season
+  and career in the same column sets), game by game (a trend for any
   stat, 5-game rolling average), shooting against the league, advanced stats
-  as percentiles among players over a minutes floor, and a game log tinted
+  and defense as percentiles among players over a minutes floor (defense
+  uses the NBA's defender tracking from 2013-14 and hustle stats from
+  2016-17), and a game log tinted
   green or red against his own season average. *Similar players* ranks the
   players whose season looks most like his (5 to 25 of them): 12 rate stats
   z-scored over the season's players over a minutes floor, capped at 3
@@ -297,6 +301,10 @@ python ingestion\nba_ingest.py --season 2025-26 --pbp-games 120
 #     1979-80 is the start of the 3-point era; earlier seasons lack most stats.
 python ingestion\nba_ingest.py --backfill 1979-80 --pbp-games 0
 
+# 2c. Birthdates are one request per player, so a normal run fetches at most
+#     50 new ones. Fetch them all once (about 2 hours for ~3,900 players):
+python ingestion\nba_ingest.py --birthdate-backfill --pbp-games 0
+
 # 3. Load raw parquet into DuckDB
 python scripts\load_to_duckdb.py
 
@@ -378,11 +386,11 @@ explains why it works this way.
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging (10 models), intermediate (1) and marts (15), plus salary
-      cap history and team code seeds; 132 dbt tests and 1,033 pytest cases.
+- [x] dbt staging (15 models), intermediate (1) and marts (16), plus salary
+      cap history and team code seeds; 145 dbt tests and 1,062 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
-      era the tests check; the 17 tests that need all seasons are marked
+      era the tests check; the 18 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors; shown on Players (All players > Advanced, and the Player tab)
