@@ -66,3 +66,10 @@ select 'mart_player_bio' as model, 'all' as season, cast(player_id as varchar) a
 from {{ ref('mart_player_bio') }}
 group by player_id
 having count(*) > 1
+
+union all
+
+select 'stg_player_on_off' as model, season, cast(team_id as varchar) || '/' || cast(player_id as varchar) as entity, count(*) as rows
+from {{ ref('stg_player_on_off') }}
+group by season, team_id, player_id
+having count(*) > 1

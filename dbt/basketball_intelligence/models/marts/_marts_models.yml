@@ -568,15 +568,18 @@ models:
 
   - name: mart_player_defense
     description: >
-      One row per player per season: an estimated defensive on/off and how
-      often he fouls. The off-court rating is backed out of two published
-      numbers - the team's defensive rating over all its minutes and the
-      player's official on-court defensive rating - weighted by the share of
-      the team's 48-minute games he played. An estimate, not a lineup-based
-      on/off. The on/off columns (est_off_court_def_rating, def_on_minus_off)
-      are null unless he played for one team all season, 500+ minutes, in
-      1996-97 or later, with a minutes share under 0.95 (checked by
-      assert_player_defense_on_off_rules). fouls_per_36 is null below 100
+      One row per player per season: defensive on/off and how often he
+      fouls. From 2007-08 on/off is the NBA's lineup-based number
+      (on_off_source 'official', from stg_player_on_off): the team's
+      defensive rating with him on minus off, a traded player's teams
+      weighted by his on-court minutes on each, shown from 500 minutes.
+      Before that (and for any later player the NBA's on/off leaves out) it
+      is an estimate (on_off_source 'estimate'): the off-court rating is
+      backed out of the team's defensive rating and the player's official
+      on-court rating, weighted by the share of the team's 48-minute games
+      he played, and is null unless he played for one team all season,
+      500+ minutes, in 1996-97 or later, with a minutes share under 0.95.
+      Both rules are checked by assert_player_defense_on_off_rules. fouls_per_36 is null below 100
       minutes. Grain checked by assert_mart_grain_is_unique; the 0-15 range of
       fouls_per_36 by assert_player_defense_on_off_rules.
     columns:
@@ -599,9 +602,24 @@ models:
       - name: minutes_share
         description: minutes / (team_games x 48).
       - name: est_off_court_def_rating
-        description: (team_def_rating - minutes_share x on_court_def_rating) / (1 - minutes_share). Null unless the on/off rules hold.
+        description: >
+          The team's defensive rating with him off the floor. Official
+          rows - the NBA's off-court rating (a traded player's teams
+          weighted by his on-court minutes on each). Estimate rows -
+          (team_def_rating - minutes_share x on_court_def_rating) /
+          (1 - minutes_share). Null when on_off_source is null.
       - name: def_on_minus_off
-        description: on_court_def_rating - est_off_court_def_rating. Negative means the team defended better with him on the floor. Null unless the on/off rules hold.
+        description: >
+          The team's defensive rating with him on the floor minus off it.
+          Negative means the team defended better with him on the floor.
+          Official rows use the NBA's on-court rating (minutes-weighted
+          across teams), estimate rows on_court_def_rating. Null when
+          on_off_source is null.
+      - name: on_off_source
+        description: "'official' (the NBA's lineup-based on/off, 2007-08 on), 'estimate', or null when there is no on/off."
+        tests:
+          - accepted_values:
+              values: ['official', 'estimate']
       - name: fouls_per_36
         description: Personal fouls per 36 minutes, from the game logs. Null below 100 minutes.
       - name: steals_per_36

@@ -1,7 +1,18 @@
--- One row per player per season: a rough defensive on/off estimate and how
--- often he fouls.
+-- One row per player per season: defensive on/off and how often he fouls.
 --
--- The NBA publishes no off-court rating without play-by-play lineups, but
+-- On/off is the team's defensive rating with him on the floor minus with him
+-- off it: negative means the team defended better with him (lower is
+-- better). on_off_source says where the number comes from.
+--
+-- 'official' (2007-08 on): the NBA's lineup-based on and off ratings
+-- (stg_player_on_off). A traded player has a pair for each team; each
+-- team's on and off ratings are weighted by his on-court minutes there, so
+-- def_on_minus_off is the minutes-weighted average of his per-team gaps.
+-- Shown from 500 minutes, for traded players and players who barely sat
+-- too; a team stint with no off-court minutes is left out of the average.
+--
+-- 'estimate' (1996-97 to 2006-07, and any later player the NBA's on/off
+-- leaves out): the NBA publishes no off-court rating before 2007-08, but
 -- two published numbers pin it down. The team allowed team_def_rating over
 -- all its minutes, and while the player was on the floor it allowed his
 -- official defensive_rating, so the minutes he sat must have averaged
@@ -12,7 +23,7 @@
 -- a lineup-based on/off: it leans on rounded published ratings and says
 -- nothing about who he played beside.
 --
--- The on/off columns are null unless the number can be trusted:
+-- The estimate is null unless the number can be trusted:
 --   - one team all season (team_label has no arrow): a traded player's
 --     minutes belong to two team ratings, and team_def_rating is one;
 --   - 500+ minutes: a few games make the on-court rating too noisy;
@@ -29,7 +40,21 @@
 -- rates use the minutes the hustle tracking covers, and are null under 100
 -- of them.
 
-with fouls as (
+with official as (
+    select
+        season,
+        player_id,
+        sum(on_minutes * on_def_rating) / sum(on_minutes)  as official_on_def_rating,
+        sum(on_minutes * off_def_rating) / sum(on_minutes) as official_off_def_rating
+    from {{ ref('stg_player_on_off') }}
+    where on_minutes > 0
+      and off_minutes > 0
+      and on_def_rating is not null
+      and off_def_rating is not null
+    group by season, player_id
+),
+
+fouls as (
     select
         season,
         player_id,
@@ -70,7 +95,9 @@ joined as (
         h.contested_shots,
         h.charges_drawn,
         h.def_loose_balls,
-        h.def_box_outs
+        h.def_box_outs,
+        x.official_on_def_rating,
+        x.official_off_def_rating
     from {{ ref('mart_player_season') }} p
     left join {{ ref('mart_team_season') }} t
            on t.season = p.season
@@ -87,30 +114,45 @@ joined as (
     left join {{ ref('stg_player_hustle') }} h
            on h.season = p.season
           and h.player_id = p.player_id
+    left join official x
+           on x.season = p.season
+          and x.player_id = p.player_id
 ),
 
--- The null rules, written once.
+-- The null rules, written once: the official number from 500 minutes,
+-- otherwise the estimate where its rules hold.
 estimated as (
     select
         *,
-        coalesce(
-            team_label not like '%→%'
-            and minutes >= 500
-            and cast(left(season, 4) as int) >= 1996
-            and minutes_share < 0.95
-            and on_court_def_rating is not null
-            and team_def_rating is not null,
-            false
-        )                                            as has_on_off
+        case
+            when minutes >= 500 and official_off_def_rating is not null then 'official'
+            when coalesce(
+                team_label not like '%→%'
+                and minutes >= 500
+                and cast(left(season, 4) as int) >= 1996
+                and minutes_share < 0.95
+                and on_court_def_rating is not null
+                and team_def_rating is not null,
+                false
+            ) then 'estimate'
+        end                                          as on_off_source
     from joined
 ),
 
 off_court as (
     select
         *,
-        case when has_on_off then
-            (team_def_rating - minutes_share * on_court_def_rating) / (1 - minutes_share)
-        end                                          as est_off_court_def_rating
+        case on_off_source
+            when 'official' then official_off_def_rating
+            when 'estimate' then
+                (team_def_rating - minutes_share * on_court_def_rating) / (1 - minutes_share)
+        end                                          as est_off_court_def_rating,
+        case on_off_source
+            when 'official' then official_on_def_rating - official_off_def_rating
+            when 'estimate' then
+                on_court_def_rating
+                - (team_def_rating - minutes_share * on_court_def_rating) / (1 - minutes_share)
+        end                                          as on_minus_off
     from estimated
 )
 
@@ -126,7 +168,8 @@ select
     team_games,
     round(minutes_share, 3)                          as minutes_share,
     round(est_off_court_def_rating, 1)               as est_off_court_def_rating,
-    round(on_court_def_rating - est_off_court_def_rating, 1) as def_on_minus_off,
+    round(on_minus_off, 1)                           as def_on_minus_off,
+    on_off_source,
     case when minutes >= 100 and games_missing_fouls = 0 then
         round(36 * personal_fouls / minutes, 2)
     end                                              as fouls_per_36,

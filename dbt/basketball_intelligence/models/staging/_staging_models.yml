@@ -69,6 +69,21 @@ models:
       - name: player_id
         tests: [not_null]
 
+  - name: stg_player_on_off
+    description: >
+      The team's defensive rating with a player on the floor and off it,
+      one row per player, team and season (2007-08 on). A player traded
+      mid-season has a row for each team.
+      Unique on season, team and player (checked in
+      assert_mart_grain_is_unique).
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: on_minutes
+        tests: [not_null]
+
   - name: stg_teams
     description: NBA franchise dimension.
     columns:

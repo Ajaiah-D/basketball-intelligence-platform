@@ -1,14 +1,18 @@
-"""mart_player_defense: the defensive on/off estimate and fouls per 36.
+"""mart_player_defense: defensive on/off and fouls per 36.
 
-The dbt test assert_player_defense_on_off_rules checks the null rules for
-every player; these pin them to named players and recompute Jrue Holiday's
-2024-25 estimate by hand from the published team and player ratings.
+The dbt test assert_player_defense_on_off_rules checks the on/off rules for
+every player; these pin them to named players: Jrue Holiday's and Zach
+LaVine's official 2024-25 on/off recomputed from the NBA's on and off
+ratings, and Tim Duncan's 2002-03 estimate by hand from the published team
+and player ratings.
 """
 
 import pytest
 
 SEASON = "2024-25"
 HOLIDAY = 201950
+LAVINE = 203897
+DUNCAN = 1495
 
 
 def _row(con, season, player_id):
@@ -18,36 +22,46 @@ def _row(con, season, player_id):
     ).df()
 
 
-def test_jrue_holiday_2024_25_matches_the_hand_calculation(con):
-    """BOS allowed 110.1 over the season and 107.7 with Holiday on the
-    floor for 1,901 of 82 x 48 minutes (share 0.48), so the other minutes
-    averaged (110.1 - 0.48 x 107.7) / 0.52 = 112.3: on minus off = -4.6."""
+def test_jrue_holiday_2024_25_is_the_nbas_on_off(con):
+    """BOS allowed 107.7 with Holiday on the floor (1,896 minutes) and
+    110.5 with him off (2,070): on minus off = -2.8."""
     row = _row(con, SEASON, HOLIDAY).iloc[0]
-    assert row["team_abbreviation"] == "BOS"
-    assert row["on_court_def_rating"] == pytest.approx(107.7)
-    assert row["team_def_rating"] == pytest.approx(110.1)
-    assert row["team_games"] == 82
-    assert row["minutes_share"] == pytest.approx(0.48, abs=0.01)
+    assert row["on_off_source"] == "official"
+    assert row["est_off_court_def_rating"] == pytest.approx(110.5)
+    assert row["def_on_minus_off"] == pytest.approx(-2.8)
+
+
+def test_a_traded_player_gets_the_minutes_weighted_on_off(con):
+    """LaVine played 1,432 on-court minutes for CHI (114.4 on, 113.8 off)
+    and 1,170 for SAC (119.9 on, 107.8 off): (1432 x 0.6 + 1170 x 12.1) /
+    2602 = 5.8."""
+    row = _row(con, SEASON, LAVINE).iloc[0]
+    assert row["on_off_source"] == "official"
+    stints = con.execute(
+        "select on_minutes, on_def_rating, off_def_rating from main_staging.stg_player_on_off"
+        " where season = ? and player_id = ?",
+        [SEASON, LAVINE],
+    ).fetchall()
+    assert len(stints) == 2
+    by_hand = sum(m * (on - off) for m, on, off in stints) / sum(m for m, _, _ in stints)
+    assert by_hand == pytest.approx(5.8, abs=0.05)
+    assert row["def_on_minus_off"] == pytest.approx(by_hand, abs=0.05)
+
+
+@pytest.mark.full_warehouse
+def test_tim_duncan_2002_03_matches_the_estimate_by_hand(con):
+    """Before 2007-08 there is no NBA on/off. SAS allowed 98.1 over the
+    season and 96.4 with Duncan on the floor for 3,183 of 82 x 48 minutes
+    (share 0.809), so the other minutes averaged (98.1 - 0.809 x 96.4) /
+    0.191 = 105.3: on minus off = -8.9."""
+    row = _row(con, "2002-03", DUNCAN).iloc[0]
+    assert row["on_off_source"] == "estimate"
     share = row["minutes"] / (row["team_games"] * 48)
-    by_hand = 107.7 - (110.1 - share * 107.7) / (1 - share)
-    assert by_hand == pytest.approx(-4.6, abs=0.2)
-    assert row["def_on_minus_off"] == pytest.approx(-4.6, abs=0.2)
+    by_hand = row["on_court_def_rating"] - (
+        row["team_def_rating"] - share * row["on_court_def_rating"]
+    ) / (1 - share)
+    assert by_hand == pytest.approx(-8.9, abs=0.1)
     assert row["def_on_minus_off"] == pytest.approx(by_hand, abs=0.1)
-
-
-def test_a_traded_player_has_no_on_off(con):
-    traded = con.execute(
-        """
-        select d.def_on_minus_off, d.est_off_court_def_rating, d.on_court_def_rating
-        from main_marts.mart_player_defense d
-        join main_marts.mart_player_season s using (season, player_id)
-        where d.season = ? and s.team_label like '%→%' and d.minutes >= 500
-        """,
-        [SEASON],
-    ).df()
-    assert len(traded) > 0
-    assert traded["def_on_minus_off"].isna().all()
-    assert traded["est_off_court_def_rating"].isna().all()
 
 
 def test_few_minutes_or_no_official_rating_means_no_on_off(con):
@@ -63,7 +77,7 @@ def test_few_minutes_or_no_official_rating_means_no_on_off(con):
     assert early == 0
 
 
-def test_enough_single_team_players_have_an_estimate(con):
+def test_enough_players_have_on_off(con):
     n = con.execute(
         "select count(*) from main_marts.mart_player_defense"
         " where season = ? and def_on_minus_off is not null",

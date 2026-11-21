@@ -295,7 +295,7 @@ def test_bos_2024_25_rotation(con):
     # The rotation can't take more threes than the whole team did.
     assert 0.8 < rows["team_three_pa_share"].sum() <= 1.0
     holiday = rows.set_index("player_id").loc[HOLIDAY]
-    assert holiday["def_on_minus_off"] == pytest.approx(-4.6, abs=0.2)
+    assert holiday["def_on_minus_off"] == pytest.approx(-2.8, abs=0.1)
     for col in D.driver_measures():
         assert rows[f"{col}_league_median"].nunique() == 1, col
 

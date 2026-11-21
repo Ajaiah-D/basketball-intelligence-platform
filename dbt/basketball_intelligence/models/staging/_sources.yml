@@ -49,6 +49,11 @@ sources:
           Hustle stats per season, 2016-17 on (LeagueHustleStatsPlayer,
           season totals): deflections, contested shots, charges drawn,
           loose balls, box-outs.
+      - name: player_on_off
+        description: >
+          Team defensive rating with each player on and off the floor, per
+          team and season, 2007-08 on (TeamPlayerOnOffSummary, season
+          totals). One row per team, player and court status (On or Off).
       - name: teams
         description: The 30 NBA franchises (nba_api static data).
       - name: schedule
