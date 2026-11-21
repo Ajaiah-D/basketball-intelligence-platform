@@ -13,6 +13,15 @@ ADVANCED_STATS_FIRST_SEASON = "1996-97"
 # same boundary from the data itself (box_score_complete), not from this.
 COMPLETE_BOX_SCORE_FIRST_SEASON = "1985-86"
 
+# Defender tracking (LeagueDashPtDefend: opponents' shooting with him as the
+# closest defender) starts here. 2012-13 returns no rows.
+DEFENSE_TRACKING_FIRST_SEASON = "2013-14"
+
+# Hustle stats (deflections, contested shots, charges, loose balls, box-outs).
+# 2015-16 holds only 147 players, a partial first year, so this is the first
+# full season.
+HUSTLE_FIRST_SEASON = "2016-17"
+
 # current_season() rolls over to the new season on the 1st of this month,
 # about three weeks before opening night.
 SEASON_START_MONTH = 10
@@ -99,6 +108,15 @@ PLAYERS_ON_FLOOR = 5
 # catch up a whole week with room for some retries, and the first run of a
 # season backfills over a few weeks instead of one multi-hour fetch.
 PBP_MAX_NEW_GAMES_PER_RUN = 120
+
+# Birthdates take one CommonPlayerInfo call per player. A run fetches at most
+# this many players it has not cached (a minute or so for a week's new
+# signings); the first fill of every player is a one-off --birthdate-backfill.
+BIRTHDATE_MAX_NEW_PER_RUN = 50
+
+# Birthdates are fetched for players whose career reached this year: the
+# warehouse's game logs start in 1979-80.
+BIRTHDATE_FIRST_YEAR = 1979
 
 # --- Health check ---------------------------------------------------------------
 

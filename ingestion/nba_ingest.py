@@ -6,6 +6,12 @@ Pulls, for a given season:
   - Advanced player and team stats     (one API call each, 1996-97 onward)
   - Play-by-play events                (one API call PER GAME - rate limited)
   - Player index and team dimension    (one API call + static data)
+  - Defender tracking, overall and at the rim (one API call each, 2013-14 onward)
+  - Hustle stats                       (one API call, 2016-17 onward)
+  - Player bio: position, height, weight, college, country, draft (one API call)
+  - Birthdates                         (one API call PER PLAYER, only players
+                                        not cached yet, at most 50 a run;
+                                        --birthdate-backfill fetches them all)
 
 Raw results are written as parquet files to data/raw/. Load them into
 DuckDB with scripts/load_to_duckdb.py.
@@ -34,6 +40,8 @@ Usage:
     python ingestion/nba_ingest.py --season 2025-26 --pbp-games 50
     python ingestion/nba_ingest.py --backfill 1979-80   # everything from 1979-80 to now
     python ingestion/nba_ingest.py --all-pbp            # every missing game (slow: ~1300 calls)
+    python ingestion/nba_ingest.py --backfill 2013-14 --birthdate-backfill --pbp-games 0
+                                                        # one-off: defense seasons + every birthdate
     python ingestion/nba_ingest.py --smoke-test         # tiny pull to verify the API works
     python ingestion/nba_ingest.py --force --allow-shrink  # accept a smaller re-fetch
 """
@@ -50,10 +58,14 @@ import pandas as pd
 import requests
 from nba_api.stats.endpoints import (
     commonallplayers,
+    commonplayerinfo,
     leaguedashplayerstats,
+    leaguedashptdefend,
     leaguedashteamstats,
     leaguegamelog,
+    leaguehustlestatsplayer,
     playbyplayv3,
+    playerindex,
     scheduleleaguev2,
 )
 from nba_api.stats.static import teams as static_teams
@@ -61,7 +73,14 @@ from nba_api.stats.static import teams as static_teams
 # Run as `python ingestion/nba_ingest.py`, so the repo root is not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import paths
-from core.constants import ADVANCED_STATS_FIRST_SEASON, PBP_MAX_NEW_GAMES_PER_RUN
+from core.constants import (
+    ADVANCED_STATS_FIRST_SEASON,
+    BIRTHDATE_FIRST_YEAR,
+    BIRTHDATE_MAX_NEW_PER_RUN,
+    DEFENSE_TRACKING_FIRST_SEASON,
+    HUSTLE_FIRST_SEASON,
+    PBP_MAX_NEW_GAMES_PER_RUN,
+)
 from core.io import (
     TransientError,
     atomic_write_parquet,
@@ -99,7 +118,16 @@ TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
 # than SHRINK_GUARD_MIN_RATIO of their rows (see core.io). Play-by-play is
 # left out: run() merges new games into the file, so it only ever grows.
 SHRINK_GUARDED = frozenset(
-    {"player_game_logs", "team_game_logs", "player_advanced", "team_advanced", "schedule"}
+    {
+        "player_game_logs",
+        "team_game_logs",
+        "player_advanced",
+        "team_advanced",
+        "schedule",
+        "player_defend_overall",
+        "player_defend_rim",
+        "player_hustle",
+    }
 )
 
 log = logging.getLogger("nba_ingest")
@@ -355,6 +383,96 @@ def fetch_players(season: str) -> pd.DataFrame:
     return df
 
 
+def has_defense_tracking(season: str) -> bool:
+    """Whether the NBA publishes defender tracking for `season`."""
+    return int(season[:4]) >= int(DEFENSE_TRACKING_FIRST_SEASON[:4])
+
+
+def has_hustle(season: str) -> bool:
+    """Whether the NBA publishes a full season of hustle stats for `season`."""
+    return int(season[:4]) >= int(HUSTLE_FIRST_SEASON[:4])
+
+
+def fetch_player_defend(season: str, category: str) -> pd.DataFrame:
+    """Defender tracking for one season, as season totals: how opponents shot
+    with him as the closest defender. `category` is "Overall" or
+    "Less Than 6Ft" (shots at the rim)."""
+    log.info("Fetching defender tracking (%s) for %s ...", category, season)
+    df = call_endpoint(
+        leaguedashptdefend.LeagueDashPtDefend,
+        season=season,
+        defense_category=category,
+        per_mode_simple="Totals",
+        season_type_all_star="Regular Season",
+    )
+    df["season"] = season
+    log.info("  %d defender rows", len(df))
+    return df
+
+
+def fetch_player_hustle(season: str) -> pd.DataFrame:
+    """Hustle stats for one season, as season totals: deflections, contested
+    shots, charges drawn, loose balls, box-outs."""
+    log.info("Fetching hustle stats for %s ...", season)
+    df = call_endpoint(
+        leaguehustlestatsplayer.LeagueHustleStatsPlayer,
+        season=season,
+        per_mode_time="Totals",
+        season_type_all_star="Regular Season",
+    )
+    df["season"] = season
+    log.info("  %d hustle rows", len(df))
+    return df
+
+
+def fetch_player_bio(season: str) -> pd.DataFrame:
+    """Every player ever (PlayerIndex, historical): position, height, weight,
+    college, country and draft. One call."""
+    log.info("Fetching player bio index ...")
+    df = call_endpoint(playerindex.PlayerIndex, historical_nullable=1, season=season)
+    log.info("  %d players", len(df))
+    return df
+
+
+# What the birthdate cache keeps from each CommonPlayerInfo answer.
+BIRTHDATE_COLS = ["PERSON_ID", "BIRTHDATE", "SCHOOL", "COUNTRY"]
+
+
+def accumulate_birthdates(bio: pd.DataFrame, cap: int | None) -> pd.DataFrame | None:
+    """The birthdate file with up to `cap` uncached players added (every one
+    when None), taken from `bio` (the PlayerIndex frame) for careers that
+    reached BIRTHDATE_FIRST_YEAR.
+
+    One CommonPlayerInfo call per player. A call that fails is logged and the
+    player stays uncached, so the next run asks again. The file only grows,
+    like play-by-play. Returns None when there is nothing new to write."""
+    path = RAW_DIR / "player_birthdates.parquet"
+    existing = pd.read_parquet(path) if is_valid_parquet(path) else None
+    have = set(existing["PERSON_ID"].astype(int)) if existing is not None else set()
+    to_year = pd.to_numeric(bio["TO_YEAR"], errors="coerce")
+    wanted = bio.loc[to_year >= BIRTHDATE_FIRST_YEAR, "PERSON_ID"].astype(int)
+    missing = [p for p in wanted if p not in have]
+    if cap is not None:
+        missing = missing[:cap]
+    if not missing:
+        log.info("Birthdates are up to date (%d players)", len(have))
+        return None
+    log.info("Fetching %d birthdates ...", len(missing))
+    rows = []
+    for pid in missing:
+        try:
+            rows.append(
+                call_endpoint(commonplayerinfo.CommonPlayerInfo, player_id=pid)[BIRTHDATE_COLS]
+            )
+        except Exception as exc:  # one player's bad answer must not stop the run
+            log.warning("  birthdate for player %s failed (%s): retried next run", pid, exc)
+    if not rows:
+        return None
+    new = pd.concat(rows, ignore_index=True)
+    combined = new if existing is None else pd.concat([existing, new], ignore_index=True)
+    return combined.drop_duplicates("PERSON_ID", keep="first", ignore_index=True)
+
+
 def fetch_teams() -> pd.DataFrame:
     # Static data bundled with nba_api - no API call.
     df = pd.DataFrame(static_teams.get_teams())
@@ -416,9 +534,13 @@ def run(
     smoke_test: bool = False,
     force: bool = False,
     allow_shrink: bool = False,
+    birthdate_cap: int | None = BIRTHDATE_MAX_NEW_PER_RUN,
 ) -> list[str]:
     """Ingest `seasons`. Returns the files the shrink guard refused to
-    replace, as "name/season" - empty when everything was written."""
+    replace, as "name/season" - empty when everything was written.
+
+    `birthdate_cap` is how many uncached players' birthdates to fetch: None
+    for all of them (the one-off backfill), 0 for none."""
     latest = seasons[-1]
     refused: list[str] = []
 
@@ -466,11 +588,19 @@ def run(
         # not special-case it into always-fetch outside of needed() - that
         # would just duplicate the guarantee `stale` already gives.
         wants_schedule = needed("schedule")
+        # Overall and rim tracking are fetched together, so either missing
+        # file asks for both.
+        wants_defend = has_defense_tracking(season) and (
+            needed("player_defend_overall") or needed("player_defend_rim")
+        )
+        wants_hustle = has_hustle(season) and needed("player_hustle")
         if not (
             needed("player_game_logs")
             or needed("team_game_logs")
             or wants_advanced
             or wants_schedule
+            or wants_defend
+            or wants_hustle
         ):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
@@ -495,11 +625,18 @@ def run(
             )
         if wants_schedule:
             save(fetch_schedule(season), "schedule", season)
+        if wants_defend:
+            save(fetch_player_defend(season, "Overall"), "player_defend_overall", season)
+            save(fetch_player_defend(season, "Less Than 6Ft"), "player_defend_rim", season)
+        if wants_hustle:
+            save(fetch_player_hustle(season), "player_hustle", season)
         if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 
     save(fetch_players(latest), "players")
     save(fetch_teams(), "teams")
+    bio = fetch_player_bio(latest)
+    save(bio, "player_bio")
 
     # Play-by-play comes last, and only for the latest requested season (one
     # API call per game). It is the slow, flaky part of the run, so nothing
@@ -519,6 +656,14 @@ def run(
             pbp = accumulate_play_by_play(latest, game_ids, pbp_games)
             if pbp is not None:
                 save(pbp, "play_by_play", latest)
+
+    # Birthdates last of all: one call per player, like play-by-play, and the
+    # one-off backfill runs for hours. Whatever arrived before a failure is
+    # kept by the next run's merge.
+    if birthdate_cap != 0:
+        births = accumulate_birthdates(bio, birthdate_cap)
+        if births is not None:
+            save(births, "player_birthdates")
 
     if refused:
         log.error("Ingestion finished, but kept the old file for: %s", ", ".join(refused))
@@ -562,6 +707,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pull play-by-play for every game in the latest season not yet stored (slow)",
     )
     parser.add_argument(
+        "--birthdate-backfill",
+        action="store_true",
+        help="Fetch every uncached player's birthdate (one call each, about 2 hours "
+        f"the first time) instead of at most {BIRTHDATE_MAX_NEW_PER_RUN} a run",
+    )
+    parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="Single small API call to verify connectivity, no files written",
@@ -585,6 +736,7 @@ def main() -> None:
         smoke_test=args.smoke_test,
         force=args.force,
         allow_shrink=args.allow_shrink,
+        birthdate_cap=None if args.birthdate_backfill else BIRTHDATE_MAX_NEW_PER_RUN,
     )
     if refused:
         sys.exit(1)
