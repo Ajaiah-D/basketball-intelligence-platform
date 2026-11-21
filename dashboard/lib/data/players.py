@@ -52,7 +52,8 @@ def player_season_stats(season: str, min_games: int = 1) -> pd.DataFrame:
             true_shooting_pct     as ts_pct,
             assist_to_turnover    as ast_to,
             plus_minus_per_game   as plus_minus,
-            team_label
+            team_label,
+            age
         from main_marts.mart_player_season
         where season = ? and games_played >= ?
         order by player_id
@@ -163,7 +164,8 @@ def player_latest_seasons(name: str, min_games: int = 1, limit: int = 30) -> pd.
             true_shooting_pct     as ts_pct,
             assist_to_turnover    as ast_to,
             plus_minus_per_game   as plus_minus,
-            team_label
+            team_label,
+            age
         from main_marts.mart_player_season
         join latest using (player_id, season)
         order by season desc, player_id
@@ -309,7 +311,8 @@ def player_season_history(player_id: int) -> pd.DataFrame:
             true_shooting_pct     as ts_pct,
             assist_to_turnover    as ast_to,
             plus_minus_per_game   as plus_minus,
-            team_label
+            team_label,
+            age
         from main_marts.mart_player_season
         where player_id = ?
         order by season desc
@@ -395,3 +398,77 @@ def league_shooting_averages(season: str) -> pd.Series:
     if df.empty:
         return pd.Series({col: float("nan") for col in df.columns}, dtype=float)
     return df.iloc[0]
+
+
+# --- Bio and defense --------------------------------------------------------------
+#
+# mart_player_bio and the tracking columns of mart_player_defense are newer than
+# some published warehouses. Each reader below has an *_available() check, and
+# the pages show a notice instead of a catalog or binder error without them.
+
+# The tracking columns that mark a mart_player_defense new enough to read.
+_DEFENSE_TRACKING_COLS = {"d_fg_pct_diff", "deflections_per_36", "steals_per_36"}
+
+
+def bio_available() -> bool:
+    """Whether the warehouse has mart_player_bio."""
+    return objects_exist("main_marts.mart_player_bio")
+
+
+def player_bio(player_id: int) -> dict | None:
+    """His mart_player_bio row as a dict, or None when the warehouse has no
+    bio mart or no row for him."""
+    if not bio_available():
+        return None
+    df = q("select * from main_marts.mart_player_bio where player_id = ?", (player_id,))
+    return df.iloc[0].to_dict() if len(df) else None
+
+
+def player_positions() -> pd.DataFrame:
+    """player_id and position for every player with a position on record,
+    for the All players position filter. Empty without the bio mart."""
+    if not bio_available():
+        return pd.DataFrame({"player_id": pd.Series(dtype="int64"), "position": []})
+    return q(
+        """
+        select player_id, position
+        from main_marts.mart_player_bio
+        where position is not null
+        """
+    )
+
+
+def defense_available() -> bool:
+    """Whether mart_player_defense exists and has the tracking columns (an
+    older warehouse has the mart with only the on/off estimate)."""
+    if not objects_exist("main_marts.mart_player_defense"):
+        return False
+    columns = set(q("select * from main_marts.mart_player_defense limit 0").columns)
+    return _DEFENSE_TRACKING_COLS.issubset(columns)
+
+
+def player_defense(season: str) -> pd.DataFrame:
+    """Every player's mart_player_defense row for `season` (the whole row:
+    on/off estimate, steals and blocks per 36, defender tracking, hustle)."""
+    return q(
+        """
+        select *
+        from main_marts.mart_player_defense
+        where season = ?
+        order by player_id
+        """,
+        (season,),
+    )
+
+
+def player_defense_history(player_id: int) -> pd.DataFrame:
+    """Every season of one player's mart_player_defense row, newest first."""
+    return q(
+        """
+        select *
+        from main_marts.mart_player_defense
+        where player_id = ?
+        order by season desc
+        """,
+        (player_id,),
+    )
