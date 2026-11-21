@@ -20,8 +20,8 @@ from ingestion import nba_ingest
 
 @pytest.fixture(autouse=True)
 def _no_bio_or_defense_calls(monkeypatch):
-    """run() also pulls the player bio, birthdates, defender tracking and
-    hustle stats (tests/test_nba_ingest_bio_defense.py covers those). Stubbed
+    """run() also pulls the player bio, birthdates, defender tracking, hustle
+    stats and on/off (tests/test_nba_ingest_bio_defense.py covers those). Stubbed
     here so no test in this file reaches stats.nba.com through them."""
     monkeypatch.setattr(
         nba_ingest, "fetch_player_bio", lambda s: pd.DataFrame({"PERSON_ID": [], "TO_YEAR": []})
@@ -29,6 +29,7 @@ def _no_bio_or_defense_calls(monkeypatch):
     monkeypatch.setattr(nba_ingest, "accumulate_birthdates", lambda bio, cap: None)
     monkeypatch.setattr(nba_ingest, "fetch_player_defend", lambda s, c: pd.DataFrame({"x": [1]}))
     monkeypatch.setattr(nba_ingest, "fetch_player_hustle", lambda s: pd.DataFrame({"x": [1]}))
+    monkeypatch.setattr(nba_ingest, "fetch_player_on_off", lambda s: pd.DataFrame({"x": [1]}))
 
 
 def test_a_season_with_no_games_yet_skips_play_by_play(monkeypatch):

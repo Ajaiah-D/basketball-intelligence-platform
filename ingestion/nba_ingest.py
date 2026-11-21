@@ -8,6 +8,8 @@ Pulls, for a given season:
   - Player index and team dimension    (one API call + static data)
   - Defender tracking, overall and at the rim (one API call each, 2013-14 onward)
   - Hustle stats                       (one API call, 2016-17 onward)
+  - On/off: team ratings with each player on and off the floor
+                                       (one API call PER TEAM, 2007-08 onward)
   - Player bio: position, height, weight, college, country, draft (one API call)
   - Birthdates                         (one API call PER PLAYER, only players
                                         not cached yet, at most 50 a run;
@@ -67,6 +69,7 @@ from nba_api.stats.endpoints import (
     playbyplayv3,
     playerindex,
     scheduleleaguev2,
+    teamplayeronoffsummary,
 )
 from nba_api.stats.static import teams as static_teams
 
@@ -79,6 +82,7 @@ from core.constants import (
     BIRTHDATE_MAX_NEW_PER_RUN,
     DEFENSE_TRACKING_FIRST_SEASON,
     HUSTLE_FIRST_SEASON,
+    ON_OFF_FIRST_SEASON,
     PBP_MAX_NEW_GAMES_PER_RUN,
 )
 from core.io import (
@@ -127,6 +131,7 @@ SHRINK_GUARDED = frozenset(
         "player_defend_overall",
         "player_defend_rim",
         "player_hustle",
+        "player_on_off",
     }
 )
 
@@ -142,7 +147,7 @@ def _throttle() -> None:
     _last_request_at = time.monotonic()
 
 
-def _request_once(endpoint_cls, kwargs: dict) -> pd.DataFrame:
+def _request_once(endpoint_cls, kwargs: dict) -> list[pd.DataFrame]:
     """One throttled request, with server errors raised as TransientError.
 
     nba_api never looks at the HTTP status: whatever comes back is parsed as
@@ -169,7 +174,7 @@ def _request_once(endpoint_cls, kwargs: dict) -> pd.DataFrame:
                 f"HTTP {status} from {endpoint_cls.__name__}", status=status
             ) from exc
         raise
-    return endpoint.get_data_frames()[0]
+    return endpoint.get_data_frames()
 
 
 def call_endpoint(endpoint_cls, **kwargs) -> pd.DataFrame:
@@ -182,6 +187,11 @@ def call_endpoint(endpoint_cls, **kwargs) -> pd.DataFrame:
     valid answer, and a TypeError, KeyError or unparseable 200 would fail
     the same way every time.
     """
+    return call_endpoint_frames(endpoint_cls, **kwargs)[0]
+
+
+def call_endpoint_frames(endpoint_cls, **kwargs) -> list[pd.DataFrame]:
+    """call_endpoint, but every result set the endpoint returns, in order."""
     return retry_transient(
         lambda: _request_once(endpoint_cls, kwargs),
         attempts=MAX_RETRIES,
@@ -227,7 +237,7 @@ def fetch_play_by_play(game_ids: list[str], season: str) -> pd.DataFrame:
         len(game_ids),
         len(game_ids) * MIN_SECONDS_BETWEEN_REQUESTS,
     )
-    frames = []
+    frames: list[pd.DataFrame] = []
     failed = 0
     empty = 0
     for i, game_id in enumerate(game_ids, 1):
@@ -425,6 +435,48 @@ def fetch_player_hustle(season: str) -> pd.DataFrame:
     return df
 
 
+def has_on_off(season: str) -> bool:
+    """Whether the NBA publishes lineup-based on/off for `season`."""
+    return int(season[:4]) >= int(ON_OFF_FIRST_SEASON[:4])
+
+
+# What player_on_off keeps from each team's on and off result sets.
+ON_OFF_COLS = [
+    "TEAM_ID",
+    "TEAM_ABBREVIATION",
+    "VS_PLAYER_ID",
+    "VS_PLAYER_NAME",
+    "COURT_STATUS",
+    "GP",
+    "MIN",
+    "DEF_RATING",
+]
+
+
+def fetch_player_on_off(season: str) -> pd.DataFrame:
+    """Every team's defensive rating with each of its players on the floor
+    and off it, as season totals: one row per team, player and court status
+    ("On" or "Off"). One call per team; a traded player has a pair of rows
+    for each team he played for."""
+    log.info("Fetching on/off for %s (one call per team) ...", season)
+    frames: list[pd.DataFrame] = []
+    for team in static_teams.get_teams():
+        on_off = call_endpoint_frames(
+            teamplayeronoffsummary.TeamPlayerOnOffSummary,
+            team_id=team["id"],
+            season=season,
+            measure_type_detailed_defense="Advanced",
+            per_mode_detailed="Totals",
+            season_type_all_star="Regular Season",
+        )
+        # Result set 0 is the team overall; 1 and 2 are the on and off rows.
+        frames.extend(f[ON_OFF_COLS] for f in on_off[1:3] if not f.empty)
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=ON_OFF_COLS)
+    df["season"] = season
+    log.info("  %d on/off rows", len(df))
+    return df
+
+
 def fetch_player_bio(season: str) -> pd.DataFrame:
     """Every player ever (PlayerIndex, historical): position, height, weight,
     college, country and draft. One call."""
@@ -594,6 +646,7 @@ def run(
             needed("player_defend_overall") or needed("player_defend_rim")
         )
         wants_hustle = has_hustle(season) and needed("player_hustle")
+        wants_on_off = has_on_off(season) and needed("player_on_off")
         if not (
             needed("player_game_logs")
             or needed("team_game_logs")
@@ -601,6 +654,7 @@ def run(
             or wants_schedule
             or wants_defend
             or wants_hustle
+            or wants_on_off
         ):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
@@ -630,6 +684,8 @@ def run(
             save(fetch_player_defend(season, "Less Than 6Ft"), "player_defend_rim", season)
         if wants_hustle:
             save(fetch_player_hustle(season), "player_hustle", season)
+        if wants_on_off:
+            save(fetch_player_on_off(season), "player_on_off", season)
         if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 

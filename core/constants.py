@@ -22,6 +22,11 @@ DEFENSE_TRACKING_FIRST_SEASON = "2013-14"
 # full season.
 HUSTLE_FIRST_SEASON = "2016-17"
 
+# The NBA's lineup-based on/off (TeamPlayerOnOffSummary: each player's team
+# defensive rating with him on and off the floor) starts here. 2006-07 and
+# earlier return no rows.
+ON_OFF_FIRST_SEASON = "2007-08"
+
 # current_season() rolls over to the new season on the 1st of this month,
 # about three weeks before opening night.
 SEASON_START_MONTH = 10
