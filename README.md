@@ -217,7 +217,8 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   (percentile bars for 15 stats, with the value and rank printed on each),
   *Player breakdown* (pick an area, such as scoring efficiency, ball
   security, rebounding or fouling, and see the rotation's numbers against
-  the league median; "defense on/off" is an estimate, see
+  the league median; "defense on/off" is the NBA's lineup number from
+  2007-08 and an estimate before, see
   [ADR 0006](docs/adr/0006-known-limitations.md)) and *Compare two stats*
   (any two team stats across all 30 teams). The roster follows. *Team stats*
   is every team's table with Basic, Advanced (ratings, pace) and Four Factors
@@ -305,6 +306,10 @@ python ingestion\nba_ingest.py --backfill 1979-80 --pbp-games 0
 #     50 new ones. Fetch them all once (about 2 hours for ~3,900 players):
 python ingestion\nba_ingest.py --birthdate-backfill --pbp-games 0
 
+# 2d. On/off is one request per team per season (2007-08 on). A dataset new
+#     to the code reaches older seasons only through a backfill:
+python ingestion\nba_ingest.py --backfill 2007-08 --pbp-games 0
+
 # 3. Load raw parquet into DuckDB
 python scripts\load_to_duckdb.py
 
@@ -386,11 +391,11 @@ explains why it works this way.
       recent games. Game logs land as one parquet per season under
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
-- [x] dbt staging (15 models), intermediate (1) and marts (16), plus salary
-      cap history and team code seeds; 145 dbt tests and 1,062 pytest cases.
+- [x] dbt staging (16 models), intermediate (1) and marts (16), plus salary
+      cap history and team code seeds; 149 dbt tests and 1,065 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
-      era the tests check; the 18 tests that need all seasons are marked
+      era the tests check; the 19 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors; shown on Players (All players > Advanced, and the Player tab)
@@ -413,5 +418,8 @@ explains why it works this way.
 - [ ] Play-by-play for older games: it accumulates from October 2026 on,
       and earlier games aren't backfilled (`--all-pbp` can, slowly)
 - [ ] Alerting when a scheduled refresh fails or stops running
-- [ ] Lineup and on/off data (needs possession-level substitution parsing)
+- [x] On/off: the NBA's lineup-based on/off from 2007-08 (one call per team
+      per season), an estimate for 1996-97 to 2006-07
+- [ ] Lineup data, and on/off before 2007-08 (needs possession-level
+      substitution parsing)
 - [ ] Full Q&A dashboard (natural-language questions over marts)

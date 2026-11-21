@@ -32,7 +32,7 @@ from dashboard.lib import bio, glossary
 from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import PLAYER_COLUMN_CONFIG
 from dashboard.lib.data import advanced, players, seasons
-from dashboard.lib.defense_metrics import missing_sources
+from dashboard.lib.defense_metrics import ON_OFF_THRESHOLD_NOTE, missing_sources
 from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import qualification_threshold
 from dashboard.lib.widget_state import choice, hold_keys, selected_position, table_key
@@ -403,7 +403,7 @@ def defense_caption(season: str | None = None) -> str:
         "points allowed per 100 possessions with him on. Opp FG% vs normal and "
         "Rim FG% come from player tracking, deflections and contests from hustle "
         "tracking. Lower is better for Def rating, Opp FG% vs normal, Rim FG% "
-        "and On/off."
+        f"and On/off. {ON_OFF_THRESHOLD_NOTE}"
     )
     if season:
         text = " ".join([text, *missing_sources(season)])

@@ -95,3 +95,16 @@ def test_missing_sources():
     ]
     assert dm.missing_sources("2014-15") == ["Hustle stats start in 2016-17."]
     assert dm.missing_sources("2020-21") == []
+
+
+def test_on_off_note():
+    has_it = pd.Series({"def_on_minus_off": -1.5, "minutes": 900})
+    assert dm.on_off_note(has_it, "2024-25") is None
+    early = pd.Series({"def_on_minus_off": None, "minutes": 312.6})
+    assert (
+        dm.on_off_note(early, "2026-27")
+        == "On/off appears once he reaches 500 minutes (he has 312)."
+    )
+    old_traded = pd.Series({"def_on_minus_off": float("nan"), "minutes": 1800})
+    assert "starts in 2007-08" in dm.on_off_note(old_traded, "2003-04")
+    assert dm.on_off_note(old_traded, "2015-16") == "No on/off for him this season."

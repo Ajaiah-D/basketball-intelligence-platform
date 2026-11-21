@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from core.constants import DEFENSE_TRACKING_FIRST_SEASON, HUSTLE_FIRST_SEASON
+from core.constants import (
+    DEFENSE_TRACKING_FIRST_SEASON,
+    HUSTLE_FIRST_SEASON,
+    ON_OFF_FIRST_SEASON,
+)
 from dashboard.lib.stats import percentile_of
 
 # Label -> (mart_player_defense column, higher_is_better), in bar order.
@@ -29,6 +33,31 @@ DEFENSE_METRICS: dict[str, tuple[str, bool]] = {
 }
 
 LOWER_IS_BETTER = [label for label, (_, higher) in DEFENSE_METRICS.items() if not higher]
+
+# mart_player_defense shows on/off from this many minutes in a season.
+ON_OFF_MIN_MINUTES = 500
+
+ON_OFF_THRESHOLD_NOTE = f"On/off appears once a player reaches {ON_OFF_MIN_MINUTES} minutes."
+
+
+def on_off_note(row: pd.Series, season: str) -> str | None:
+    """Why `row` (a mart_player_defense row) has no on/off, or None when
+    it has one."""
+    value = row.get("def_on_minus_off")
+    if value is not None and value == value:
+        return None
+    minutes = row.get("minutes")
+    if minutes is not None and minutes == minutes and minutes < ON_OFF_MIN_MINUTES:
+        return (
+            f"On/off appears once he reaches {ON_OFF_MIN_MINUTES} minutes "
+            f"(he has {int(minutes):,})."
+        )
+    if int(season[:4]) < int(ON_OFF_FIRST_SEASON[:4]):
+        return (
+            f"No on/off: the NBA's on/off starts in {ON_OFF_FIRST_SEASON}, and the "
+            "estimate used before it needs one team all season and time on the bench."
+        )
+    return "No on/off for him this season."
 
 
 def defense_percentiles(row: pd.Series, pool: pd.DataFrame) -> list[tuple[str, float, float]]:

@@ -39,7 +39,7 @@ _EXTRA = {
     ],
     "on_off": [
         diagnosis.Measure("on_court_def_rating", "DRtg on", "Def. on/off", "num"),
-        diagnosis.Measure("est_off_court_def_rating", "DRtg off (est.)", "Def. on/off", "num"),
+        diagnosis.Measure("est_off_court_def_rating", "DRtg off", "Def. on/off", "num"),
     ],
 }
 

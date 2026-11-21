@@ -33,7 +33,12 @@ from dashboard.lib import bio, glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import COMPARE_METRICS, advanced_percentiles, minutes_floor
 from dashboard.lib.data import advanced, players
-from dashboard.lib.defense_metrics import LOWER_IS_BETTER, defense_percentiles, missing_sources
+from dashboard.lib.defense_metrics import (
+    LOWER_IS_BETTER,
+    defense_percentiles,
+    missing_sources,
+    on_off_note,
+)
 from dashboard.lib.stats import ShootingRank, percentile_of, qualification_threshold
 from dashboard.lib.widget_state import choice, table_key
 from dashboard.views.players import game_log, table
@@ -512,6 +517,9 @@ def _defense(row, row_season: str) -> None:
     if rim_fga is not None and rim_fga == rim_fga:
         notes.append(f"He was the closest defender on {int(rim_fga):,} shots at the rim.")
     notes.extend(missing_sources(row_season))
+    missing_on_off = on_off_note(me, row_season)
+    if missing_on_off:
+        notes.append(missing_on_off)
     st.caption(" ".join(notes))
 
 

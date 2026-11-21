@@ -136,9 +136,11 @@ TERMS = {
     "Loose balls/36": "Loose balls he recovered on defense, per 36 minutes (from 2016-17).",
     "Box-outs/36": "Times he boxed out on a defensive rebound, per 36 minutes (from 2016-17).",
     "On/off": (
-        "The team's defensive rating with him on the court minus an estimate "
-        "with him off. Below 0, the team allowed fewer points with him on. "
-        "Lower is better. Only for 500+ minutes with one team, from 1996-97."
+        "The team's defensive rating with him on the court minus with him off. "
+        "Below 0, the team allowed fewer points with him on. Lower is better. "
+        "From 500 minutes. The NBA's lineup numbers from 2007-08, a traded "
+        "player's teams weighted by his minutes on each; from 1996-97 to "
+        "2006-07 an estimate, only for players with one team all season."
     ),
     "GmSc": _GMSC,
     "P/36": "Points per 36 minutes: his scoring rate if he played a starter's minutes.",
