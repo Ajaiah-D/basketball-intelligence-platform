@@ -29,7 +29,7 @@ COLUMNS = """
     three_pa_per_game double, fta_per_game double, fga_total integer,
     tpa_total integer, fta_total integer, fg_pct double, fg3_pct double,
     ft_pct double, true_shooting_pct double, assist_to_turnover double,
-    plus_minus_per_game double, team_label varchar
+    plus_minus_per_game double, team_label varchar, age integer
 """
 
 

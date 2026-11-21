@@ -28,10 +28,11 @@ from streamlit.delta_generator import DeltaGenerator
 
 from core.constants import ADVANCED_STATS_FIRST_SEASON, COMPLETE_BOX_SCORE_FIRST_SEASON
 from core.text import fold
-from dashboard.lib import glossary
+from dashboard.lib import bio, glossary
 from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import PLAYER_COLUMN_CONFIG
 from dashboard.lib.data import advanced, players, seasons
+from dashboard.lib.defense_metrics import missing_sources
 from dashboard.lib.state import SEASON_KEY
 from dashboard.lib.stats import qualification_threshold
 from dashboard.lib.widget_state import choice, hold_keys, selected_position, table_key
@@ -44,6 +45,7 @@ COLUMN_SETS = {
     "Basic": [
         "player",
         "team_label",
+        "age",
         "gp",
         "mpg",
         "ppg",
@@ -84,7 +86,24 @@ COLUMN_SETS = {
         "block_pct",
         "game_score",
     ],
+    "Defense": [
+        "player",
+        "team_label",
+        "gp",
+        "mpg",
+        "steals_per_36",
+        "blocks_per_36",
+        "on_court_def_rating",
+        "d_fg_pct_diff",
+        "rim_fg_pct",
+        "rim_fga",
+        "deflections_per_36",
+        "contested_per_36",
+        "def_on_minus_off",
+    ],
 }
+# What the Defense set takes from mart_player_defense (data.players.player_defense).
+DEFENSE_COLS = COLUMN_SETS["Defense"][4:]
 # The NBA's own figures, which exist only from ADVANCED_STATS_FIRST_SEASON.
 OFFICIAL_COLS = ["net_rating", "player_impact_estimate"]
 # What the Advanced set takes from mart_player_season. TS% and the box-score
@@ -112,6 +131,9 @@ TEAM_KEY = "players_team"
 MIN_CAREER_GP_KEY = "players_min_career_gp"
 COLUMNS_KEY = "players_columns"
 FILTER_KEY = "players_filter"
+POSITION_KEY = "players_position"
+# The position filter's choices: a hyphenated position (G-F) matches each letter.
+POSITIONS = ["G", "F", "C"]
 # The table's key is this plus the column set (lib.widget_state.table_key).
 TABLE_KEY = "players_table"
 # (player_id, season, career) for each row of the table as drawn, in order:
@@ -119,7 +141,15 @@ TABLE_KEY = "players_table"
 TABLE_ROWS_KEY = "players_table_rows"
 
 # The filter widgets, whose values keep_filters holds on to.
-_FILTER_KEYS = [SCOPE_KEY, TEAM_KEY, PLAYERS_MIN_GP_KEY, MIN_CAREER_GP_KEY, COLUMNS_KEY, FILTER_KEY]
+_FILTER_KEYS = [
+    SCOPE_KEY,
+    TEAM_KEY,
+    PLAYERS_MIN_GP_KEY,
+    MIN_CAREER_GP_KEY,
+    COLUMNS_KEY,
+    FILTER_KEY,
+    POSITION_KEY,
+]
 
 
 def keep_filters(also: Sequence[str] = ()) -> None:
@@ -173,6 +203,10 @@ class Filters(NamedTuple):
     columns: str
     # Why the Advanced set isn't offered, or "" when it is.
     no_advanced: str
+    # The position filter's letters (empty: everyone), and why the Defense
+    # set isn't offered, or "" when it is.
+    positions: tuple[str, ...] = ()
+    no_defense: str = ""
 
 
 def _advanced_unavailable(career: bool, season: str) -> str:
@@ -189,13 +223,27 @@ def _advanced_unavailable(career: bool, season: str) -> str:
     return ""
 
 
+def _defense_unavailable(career: bool, season: str) -> str:
+    """Why the Defense column set can't be shown, or "" when it can."""
+    if career:
+        return "Defense stats are per season: switch Scope to Season to see them."
+    if not players.defense_available():
+        return "Defense stats arrive with the next data refresh."
+    if int(season[:4]) < int(ADVANCED_STATS_FIRST_SEASON[:4]):
+        return (
+            f"Defense stats start in {ADVANCED_STATS_FIRST_SEASON}, the first season "
+            "with official defensive ratings."
+        )
+    return ""
+
+
 def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
     """Title (into `head`, the page's container above the search, once the
     scope toggle is known), scope toggle, season / team / min-games /
     column-set / filter controls."""
     # The two segmented controls get the room their labels need; squeezed,
     # Streamlit cuts "Career" and "Advanced" off mid-word.
-    f0, fs, f1, f2, fc, f3 = st.columns([3, 2, 2, 2, 5, 3], vertical_alignment="bottom")
+    f0, fs, f1, fp, f2, fc, f3 = st.columns([3, 2, 2, 2, 2, 6, 3], vertical_alignment="bottom")
     # required: a click on the chosen option keeps it, rather than clearing
     # the control and sending it back to its first option.
     career = choice(SCOPE_KEY, ["Season", "Career"]) == "Career"
@@ -252,8 +300,24 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
         key=TEAM_KEY,
     )
 
+    # The position filter needs the bio mart; an older warehouse goes without.
+    positions: tuple[str, ...] = ()
+    if players.bio_available():
+        positions = tuple(
+            fp.multiselect(
+                "Position",
+                POSITIONS,
+                placeholder="Position",
+                label_visibility="collapsed",
+                key=POSITION_KEY,
+                help="G, F or C. A G-F is listed under both guards and forwards.",
+            )
+        )
+
     no_advanced = _advanced_unavailable(career, season)
-    sets = [s for s in COLUMN_SETS if s != "Advanced" or not no_advanced]
+    no_defense = _defense_unavailable(career, season)
+    unavailable = {"Advanced": no_advanced, "Defense": no_defense}
+    sets = [s for s in COLUMN_SETS if not unavailable.get(s)]
     columns = choice(COLUMNS_KEY, sets)
     fc.segmented_control(
         "Columns",
@@ -267,7 +331,16 @@ def _filter_bar(season: str, head: DeltaGenerator) -> Filters:
     search = f3.text_input(
         "Search", placeholder="Filter the table...", label_visibility="collapsed", key=FILTER_KEY
     )
-    return Filters(career, stats, min_gp, team, search, columns, no_advanced)
+    return Filters(career, stats, min_gp, team, search, columns, no_advanced, positions, no_defense)
+
+
+def _by_position(view: pd.DataFrame, wanted: Sequence[str]) -> pd.DataFrame:
+    """The rows whose player is listed at one of the `wanted` letters
+    (lib.bio.position_matches); a player with no position is left out."""
+    positions = players.player_positions().set_index("player_id")["position"]
+    listed = view["player_id"].map(positions)
+    keep = [bio.position_matches(p, list(wanted)) for p in listed]
+    return view[keep]
 
 
 def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -279,6 +352,8 @@ def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         view = view[view.team_label.str.contains(f.team, regex=False)]
     if f.search:
         view = view[view.player.map(fold).str.contains(fold(f.search).strip(), regex=False)]
+    if f.positions:
+        view = _by_position(view, f.positions)
     view = view.sort_values("ppg", ascending=False)
 
     # Season scope: a searched player who didn't play this season shows at
@@ -289,6 +364,8 @@ def _filter_rows(f: Filters, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         others = others[~others.player_id.isin(view.player_id)]
         if f.team != "All teams":
             others = others[others.team_label.str.contains(f.team, regex=False)]
+        if f.positions:
+            others = _by_position(others, f.positions)
         others = others.sort_values("ppg", ascending=False)
     if not f.career:
         view = view.assign(season=season)
@@ -316,6 +393,33 @@ def _with_advanced(view: pd.DataFrame, season: str) -> tuple[pd.DataFrame, bool]
     official = mart.get("has_official_advanced")
     has_official = official is not None and bool(official[mart["season"] == season].any())
     return merged, has_official
+
+
+def defense_caption(season: str | None = None) -> str:
+    """What the Defense set's columns are, and (for one season) which
+    tracking sources it predates."""
+    text = (
+        "Steals and blocks per 36 come from box scores. Def rating is the NBA's "
+        "points allowed per 100 possessions with him on. Opp FG% vs normal and "
+        "Rim FG% come from player tracking, deflections and contests from hustle "
+        "tracking. Lower is better for Def rating, Opp FG% vs normal, Rim FG% "
+        "and On/off."
+    )
+    if season:
+        text = " ".join([text, *missing_sources(season)])
+    return text
+
+
+def _with_defense(view: pd.DataFrame) -> pd.DataFrame:
+    """`view` with the Defense set's mart_player_defense columns joined on
+    player and season (a left join, so the filters above still decide the
+    rows). Seasons before a tracking source leave its columns blank."""
+    wanted = sorted(set(view["season"]))
+    if not wanted:
+        return view
+    mart = pd.concat([players.player_defense(s) for s in wanted], ignore_index=True)
+    keep = [c for c in DEFENSE_COLS if c in mart.columns]
+    return view.merge(mart[["player_id", "season", *keep]], on=["player_id", "season"], how="left")
 
 
 def _base_config(ppg_max: float) -> dict:
@@ -352,6 +456,25 @@ def _base_config(ppg_max: float) -> dict:
         "fta_pg": st.column_config.NumberColumn(**glossary.described("FTA"), format="%.1f"),
         "ts_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
         "plus_minus": st.column_config.NumberColumn(**glossary.marked("+/-"), format="%.1f"),
+        "age": st.column_config.NumberColumn(**glossary.described("Age"), format="%d"),
+    }
+
+
+def defense_config() -> dict:
+    """The Defense set's columns (mart_player_defense), each with its
+    glossary text. Lower is better for the ratings and the two FG% columns,
+    which their hover text says."""
+    cols = st.column_config
+    return {
+        "steals_per_36": cols.NumberColumn(**glossary.described("STL/36"), format="%.2f"),
+        "blocks_per_36": cols.NumberColumn(**glossary.described("BLK/36"), format="%.2f"),
+        "on_court_def_rating": cols.NumberColumn(**glossary.marked("Def rating"), format="%.1f"),
+        "d_fg_pct_diff": cols.NumberColumn(**glossary.marked("Opp FG% vs normal"), format="%+.1f"),
+        "rim_fg_pct": cols.NumberColumn(**glossary.marked("Rim FG% allowed"), format="%.1f"),
+        "rim_fga": cols.NumberColumn(**glossary.described("Rim FGA"), format="%d"),
+        "deflections_per_36": cols.NumberColumn(**glossary.marked("Deflections/36"), format="%.2f"),
+        "contested_per_36": cols.NumberColumn(**glossary.marked("Contested/36"), format="%.2f"),
+        "def_on_minus_off": cols.NumberColumn(**glossary.marked("On/off"), format="%+.1f"),
     }
 
 
@@ -395,6 +518,8 @@ def column_config(view: pd.DataFrame, columns: str) -> dict:
         config["ppg"] = st.column_config.NumberColumn("PTS", format="%.1f")
     if columns == "Advanced":
         config |= advanced_config(view)
+    if columns == "Defense":
+        config |= defense_config()
     return config
 
 
@@ -413,6 +538,8 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
     has_official = False
     if f.columns == "Advanced":
         view, has_official = _with_advanced(view, season)
+    elif f.columns == "Defense":
+        view = _with_defense(view)
     table_cols = stat_columns(f.columns, has_official)
     if f.career:
         table_cols[2:2] = ["seasons", "span"]
@@ -449,6 +576,8 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
     st.caption("Click a row to open that player. Click a column header to sort.")
     if f.no_advanced:
         st.caption(f.no_advanced)
+    if f.no_defense and not f.career:
+        st.caption(f.no_defense)
     if f.career:
         st.caption(
             "Career view pools every ingested season (1979-80 onward) - "
@@ -476,6 +605,8 @@ def _stats_table(view: pd.DataFrame, others: pd.DataFrame, f: Filters, season: s
             else "All metrics are computed from box scores. The NBA did not "
             f"publish official advanced stats until {ADVANCED_STATS_FIRST_SEASON}."
         )
+    elif f.columns == "Defense":
+        st.caption(defense_caption(season))
 
 
 def render_table(head: DeltaGenerator) -> pd.DataFrame | None:

@@ -20,17 +20,20 @@ line under his name says so.
 
 from __future__ import annotations
 
+import html
+from datetime import date
 from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from core.constants import COMPLETE_BOX_SCORE_FIRST_SEASON
-from dashboard.lib import glossary, media, viz
+from core.constants import ADVANCED_STATS_FIRST_SEASON, COMPLETE_BOX_SCORE_FIRST_SEASON
+from dashboard.lib import bio, glossary, media, viz
 from dashboard.lib import theme as T
 from dashboard.lib.advanced_metrics import COMPARE_METRICS, advanced_percentiles, minutes_floor
 from dashboard.lib.data import advanced, players
+from dashboard.lib.defense_metrics import LOWER_IS_BETTER, defense_percentiles, missing_sources
 from dashboard.lib.stats import ShootingRank, percentile_of, qualification_threshold
 from dashboard.lib.widget_state import choice, table_key
 from dashboard.views.players import game_log, table
@@ -167,6 +170,20 @@ def _title_row(title: str) -> DeltaGenerator:
     return p
 
 
+def _bio_line(player_id: int, career: bool, season_age) -> str:
+    """The muted line under his name (lib.bio.bio_line), or "" without a
+    bio. In Season scope the age is his age that season; in Career scope it
+    is his age today for an active player and left out for a retired one."""
+    b = players.player_bio(player_id)
+    if b is None:
+        return ""
+    if career:
+        age = bio.age_now(b.get("birthdate"), date.today()) if b.get("is_active") else None
+    else:
+        age = None if pd.isna(season_age) else int(season_age)
+    return bio.bio_line(b, age)
+
+
 def _player_header(row, career: bool, season: str, row_season: str, head: DeltaGenerator) -> None:
     """Avatar, name and team chip (into `head`, beside the Season / Career
     toggle), the six KPI tiles and the small-sample note."""
@@ -177,12 +194,19 @@ def _player_header(row, career: bool, season: str, row_season: str, head: DeltaG
         else f"{row.team_label} &middot; {row.gp} GP &middot; {row.mpg:.1f} MPG"
         + (f" &middot; {row_season}" if row_season != season else "")
     )
+    line = _bio_line(int(row.player_id), career, getattr(row, "age", None))
+    bio_html = (
+        f'<div style="color:{T.INK_2};font-size:.85rem;margin-top:.35rem">{html.escape(line)}</div>'
+        if line
+        else ""
+    )
     head.markdown(
         f'<div style="display:flex;align-items:center;gap:14px;margin:.4rem 0 .8rem 0">'
         f"{media.avatar_html(int(row.player_id), row.player, size=84, ring=tc)}"
         f'<div><span style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em">'
         f"{row.player}</span><br>"
         f"{T.chip(chip_text, tc)}"
+        f"{bio_html}"
         f"</div></div>",
         unsafe_allow_html=True,
     )
@@ -275,6 +299,10 @@ def season_lines(player_id: int, columns: str) -> tuple[pd.DataFrame, bool]:
     before complete box scores blank, as the All players table withholds
     the set for it."""
     history = players.player_season_history(player_id)
+    if columns == "Defense":
+        defense = players.player_defense_history(player_id)
+        keep = [c for c in table.DEFENSE_COLS if c in defense.columns]
+        return history.merge(defense[["season", *keep]], on="season", how="left"), False
     if columns == "Advanced":
         adv = advanced.player_advanced_history(player_id)
         adv = adv[adv["season"].isin(advanced.advanced_seasons())]
@@ -297,7 +325,11 @@ def _season_by_season(player_id: int) -> None:
     picked with the same control, so the stats the table shows for the
     league are here for him."""
     no_advanced = advanced_unavailable(players.player_season_history(player_id))
-    sets = [s for s in table.COLUMN_SETS if s != "Advanced" or not no_advanced]
+    unavailable = {
+        "Advanced": bool(no_advanced),
+        "Defense": not players.defense_available(),
+    }
+    sets = [s for s in table.COLUMN_SETS if not unavailable.get(s)]
     picker = _title_row("Season by season")
     columns = choice(STATS_COLUMNS_KEY, sets)
     # required: a click on the chosen set keeps it rather than clearing it.
@@ -323,6 +355,12 @@ def _season_by_season(player_id: int) -> None:
         | {"season": st.column_config.TextColumn("Season", width="small")},
         key=table_key(STATS_TABLE_KEY, columns),
     )
+    if columns == "Defense":
+        st.caption(
+            "One row per season, newest first, with no career line. Seasons before "
+            f"{ADVANCED_STATS_FIRST_SEASON} have only steals and blocks. " + table.defense_caption()
+        )
+        return
     if columns == "Advanced":
         st.caption(
             "One row per season, newest first. Advanced stats are per season, so there "
@@ -430,6 +468,53 @@ def _advanced(row, row_season: str) -> None:
     )
 
 
+def _defense(row, row_season: str) -> None:
+    """His defense as percentiles (lib.defense_metrics), against players over
+    the season's minutes floor, with a line for each tracking source the
+    season predates."""
+    if not players.defense_available():
+        st.caption("Defense stats arrive with the next data refresh.")
+        return
+    if int(row_season[:4]) < int(ADVANCED_STATS_FIRST_SEASON[:4]):
+        st.caption(
+            f"Defense stats start in {ADVANCED_STATS_FIRST_SEASON}, the first season "
+            "with official defensive ratings."
+        )
+        return
+    season_pool = players.player_defense(row_season)
+    floor = minutes_floor(season_pool)
+    mine = season_pool[season_pool["player_id"] == int(row.player_id)]
+    if mine.empty:
+        st.caption(f"No defense stats for him in {row_season}.")
+        return
+    me = mine.iloc[0]
+    if me["minutes"] < floor:
+        st.caption(f"Under {floor} minutes: too few to rank.")
+        return
+    pool = season_pool[season_pool["minutes"] >= floor]
+    ranks = defense_percentiles(me, pool)
+    st.plotly_chart(
+        viz.percentile_bars(ranks, axis_title=f"Percentile among players with {floor}+ minutes"),
+        config=viz.PLOTLY_CONFIG,
+        width="stretch",
+    )
+    shown = {label for label, _, _ in ranks}
+    reversed_here = [label for label in LOWER_IS_BETTER if label in shown]
+    notes = [
+        f"Percentile among players with {floor}+ minutes this season; the number is the raw value."
+    ]
+    if reversed_here:
+        notes.append(
+            "Lower is better for " + ", ".join(reversed_here) + ", so those are ranked in "
+            "reverse: a longer bar is always better."
+        )
+    rim_fga = me.get("rim_fga")
+    if rim_fga is not None and rim_fga == rim_fga:
+        notes.append(f"He was the closest defender on {int(rim_fga):,} shots at the rim.")
+    notes.extend(missing_sources(row_season))
+    st.caption(" ".join(notes))
+
+
 def _season_detail(row, row_season: str) -> None:
     # A warehouse published before mart_player_game has no games to list:
     # one notice, and the season-level sections still draw.
@@ -448,6 +533,9 @@ def _season_detail(row, row_season: str) -> None:
 
     st.markdown("#### Advanced")
     _advanced(row, row_season)
+
+    st.markdown("#### Defense")
+    _defense(row, row_season)
 
     if games is not None:
         st.markdown("#### Game log")

@@ -21,7 +21,7 @@ def _missing(value) -> bool:
 
 def height_text(height: str | None) -> str | None:
     """'6-6' (the NBA's form) as 6'6", or None when there is no height."""
-    if _missing(height) or "-" not in height:
+    if not isinstance(height, str) or "-" not in height:
         return None
     feet, inches = height.split("-", 1)
     return f"{feet}'{inches}\""
@@ -75,6 +75,6 @@ def position_matches(position: str | None, wanted: list[str]) -> bool:
     with no position on record; otherwise those are left out."""
     if not wanted:
         return True
-    if _missing(position):
+    if not isinstance(position, str) or not position:
         return False
     return any(letter in position.split("-") for letter in wanted)

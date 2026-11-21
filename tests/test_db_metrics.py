@@ -423,11 +423,16 @@ _OLD_LATEST_SQL = """
     group by player_id
 """
 
-# arcade_pool(): the pool, with each player-season's age attached.
+# arcade_pool(): the pool, with each player-season's age attached. The age
+# rule has since gained a birthdate step (mart_player_season.age), added here.
 _OLD_ARCADE_POOL_SQL = """
     select p.*,
-           cast(floor(coalesce(adv.age, anchor.age0
-                + (cast(left(p.season, 4) as int) - anchor.y0))) as int) as age
+           cast(floor(coalesce(
+                adv.age,
+                date_diff('year', bd.birthdate,
+                          make_date(cast(left(p.season, 4) as int) + 1, 2, 1))
+                    - case when strftime(bd.birthdate, '%m-%d') > '02-01' then 1 else 0 end,
+                anchor.age0 + (cast(left(p.season, 4) as int) - anchor.y0))) as int) as age
     from (
         select
             season,
@@ -460,6 +465,7 @@ _OLD_ARCADE_POOL_SQL = """
         from main_staging.stg_player_advanced where age is not null
         group by player_id
     ) anchor using (player_id)
+    left join main_staging.stg_player_birthdates bd using (player_id)
 """
 
 # The old and new names of the season line, for the checks that read a mart
@@ -492,6 +498,7 @@ _LINE = {
 _SNAPSHOT_TABLES = [
     "main_staging.stg_player_game_logs",
     "main_staging.stg_player_advanced",
+    "main_staging.stg_player_birthdates",
     "main_marts.mart_player_season",
     "main_marts.mart_player_team_season",
     "main_marts.mart_player_career",
@@ -831,8 +838,9 @@ def test_player_latest_seasons_match_the_old_search(player_snapshot, needle, min
         line = line.merge(paths, on="player_id")
         old_rows.append(line[line["player_id"].isin(ids)])
     old = pd.concat(old_rows, ignore_index=True)
+    # age is newer than the old search, which had no such column.
     assert sorted(old.columns) == sorted(
-        [c for c in new.columns if c != "team_label"] + ["team_path"]
+        [c for c in new.columns if c not in ("team_label", "age")] + ["team_path"]
     )
     columns = _same(c for c in old.columns if c not in [*keys, "team_path"])
     _assert_same_rows(old, new, keys, columns, f"player_latest_seasons {needle!r}")
@@ -883,15 +891,23 @@ def test_arcade_pool_matches_the_old_query(player_snapshot):
 
 
 def test_season_mart_age_matches_the_old_age_rule(player_snapshot):
-    """mart_player_season.age against the old Arcade age rule, applied to
-    every player-season (not only the pool's)."""
+    """mart_player_season.age against the Arcade age rule, applied to every
+    player-season (not only the pool's), with the birthdate step added
+    between the NBA's age and the count back: the age on February 1 of the
+    season's second year."""
     snap = player_snapshot
     old = snap.execute(
         """
         select p.season, p.player_id,
-               cast(floor(coalesce(adv.age, anchor.age0
-                    + (cast(left(p.season, 4) as int) - anchor.y0))) as int) as age
+               cast(floor(coalesce(
+                    adv.age,
+                    date_diff('year', bd.birthdate,
+                              make_date(cast(left(p.season, 4) as int) + 1, 2, 1))
+                        - case when strftime(bd.birthdate, '%m-%d') > '02-01'
+                               then 1 else 0 end,
+                    anchor.age0 + (cast(left(p.season, 4) as int) - anchor.y0))) as int) as age
         from main_marts.mart_player_season p
+        left join main_staging.stg_player_birthdates bd using (player_id)
         left join (
             select player_id, season, age
             from main_staging.stg_player_advanced where age is not null

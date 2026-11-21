@@ -104,6 +104,42 @@ TERMS = {
         "allowed fewer points with him on. Only for 500+ minutes with one team, "
         "from 1996-97, when the NBA's on-court ratings begin."
     ),
+    # Defense (mart_player_defense), the Player tab's Defense section and the
+    # All players table's Defense set
+    "Age": (
+        "His age that season: the NBA's own figure from 1996-97, otherwise his "
+        "age on February 1 of the season from his birthdate."
+    ),
+    "STL/36": "Steals per 36 minutes on the court.",
+    "BLK/36": "Blocks per 36 minutes on the court.",
+    "Def rating": (
+        "Defensive rating: points his team allowed per 100 possessions while he "
+        "was on the court (NBA figure, from 1996-97). Lower is better, but it "
+        "depends a lot on his teammates."
+    ),
+    "Opp FG% vs normal": (
+        "How opponents shot with him as the closest defender, minus how those "
+        "same shooters usually shoot. -3 means they made 3 points' worth of "
+        "percentage less than normal. Lower is better. NBA player tracking, "
+        "from 2013-14."
+    ),
+    "Rim FG% allowed": (
+        "Opponents' field goal % on shots within 6 feet when he was the closest "
+        "defender. Lower is better. From 2013-14."
+    ),
+    "Rim FGA": "Shots within 6 feet he defended as the closest defender over the season.",
+    "Deflections/36": (
+        "Passes or dribbles he got a hand on, per 36 minutes. NBA hustle tracking, from 2016-17."
+    ),
+    "Contested/36": "Shots he contested per 36 minutes (hustle tracking, from 2016-17).",
+    "Charges/36": "Offensive fouls he drew by taking a charge, per 36 minutes (from 2016-17).",
+    "Loose balls/36": "Loose balls he recovered on defense, per 36 minutes (from 2016-17).",
+    "Box-outs/36": "Times he boxed out on a defensive rebound, per 36 minutes (from 2016-17).",
+    "On/off": (
+        "The team's defensive rating with him on the court minus an estimate "
+        "with him off. Below 0, the team allowed fewer points with him on. "
+        "Lower is better. Only for 500+ minutes with one team, from 1996-97."
+    ),
     "GmSc": _GMSC,
     "P/36": "Points per 36 minutes: his scoring rate if he played a starter's minutes.",
     "P/100": "Points per 100 possessions: his scoring rate with team pace taken out.",

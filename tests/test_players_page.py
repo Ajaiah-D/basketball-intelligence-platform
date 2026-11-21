@@ -537,7 +537,7 @@ def test_the_basic_set_is_the_default(con):
     at = _app()
     assert at.button_group(key="players_columns").value == "Basic"
     cols = list(at.dataframe[0].value.columns)
-    assert cols[:3] == ["player", "team_label", "gp"]
+    assert cols[:4] == ["player", "team_label", "age", "gp"]
     assert {"ppg", "rpg", "apg", "spg", "bpg", "plus_minus"} <= set(cols)
     assert "fg_pct" not in cols
 
@@ -726,11 +726,13 @@ def test_the_advanced_section_leaves_true_shooting_to_the_shooting_section(con):
     assert set(COMPARE_METRICS) - set(player.ADVANCED_SECTION_METRICS) == {"TS%"}
     name, _ = _busiest_player(con, "2024-25")
     at = _preset_app("2024-25", name)
+    # The Defense section's chart is ranked over the same minutes floor.
     (chart,) = [
         c.proto.spec
         for c in at.get("plotly_chart")
         if "minutes"
         in json.loads(c.proto.spec)["layout"].get("xaxis", {}).get("title", {}).get("text", "")
+        and "Opp FG% vs normal" not in c.proto.spec
     ]
     assert "USG%" in chart
     assert "TS%" not in chart
@@ -742,7 +744,8 @@ def test_advanced_section_hides_without_the_mart(con, monkeypatch):
     at = _preset_app("2024-25", name)
     assert "#### Advanced" in _texts(at)
     assert "No advanced stats" in " ".join(c.value for c in at.caption)
-    assert not any("minutes" in t for t in _axis_titles(at))
+    # The Defense chart still draws; the Advanced one (USG% and the rest) doesn't.
+    assert not any("USG%" in c.proto.spec for c in at.get("plotly_chart"))
 
 
 def test_a_player_under_the_minutes_floor_is_not_ranked(con):
@@ -1093,3 +1096,73 @@ def test_a_player_from_before_complete_box_scores_gets_no_advanced_set(con):
     at = _preset_app(row[0], row[1])
     assert "Advanced" not in at.button_group(key=player.STATS_COLUMNS_KEY).options
     assert "every season he played is earlier" in _captions(at)
+
+
+# --- Bio line, age, Defense, position filter ------------------------------------
+
+
+def test_the_bio_line_sits_under_his_name(con):
+    # LeBron is in both the fixture and the full warehouse's 2024-25.
+    at = _preset_app("2024-25", "LeBron James")
+    _open_tab(at, "Player")
+    text = _texts(at)
+    assert "2003 R1 #1" in text and "Age 40" in text
+
+
+def test_the_player_tab_has_a_defense_section_after_advanced(con):
+    name, _ = _busiest_player(con, "2024-25")
+    at = _preset_app("2024-25", name)
+    text = _texts(at)
+    assert "#### Defense" in text
+    assert text.index("#### Advanced") < text.index("#### Defense")
+    captions = " ".join(c.value for c in at.caption)
+    assert "Lower is better for" in captions
+    charts = [c.proto.spec for c in at.get("plotly_chart")]
+    assert any("Opp FG% vs normal" in c for c in charts)
+
+
+def test_the_defense_section_says_when_the_warehouse_is_too_old(con, monkeypatch):
+    monkeypatch.setattr(players, "defense_available", lambda: False)
+    name, _ = _busiest_player(con, "2024-25")
+    at = _preset_app("2024-25", name)
+    assert "#### Defense" in _texts(at)
+    assert "arrive with the next data refresh" in " ".join(c.value for c in at.caption)
+
+
+def test_the_defense_column_set(con):
+    at = _app()
+    at.selectbox(key="season").select("2024-25").run()
+    assert "Defense" in at.button_group(key="players_columns").options
+    at.button_group(key="players_columns").set_value("Defense").run()
+    assert not at.exception, at.exception
+    shown = at.dataframe[0].value
+    assert set(table.DEFENSE_COLS) <= set(shown.columns)
+    assert shown["d_fg_pct_diff"].notna().any()
+
+
+def test_defense_columns_are_off_in_career_scope(con):
+    at = _app()
+    at.button_group(key="players_scope").set_value("Career").run()
+    assert not at.exception, at.exception
+    assert "Defense" not in at.button_group(key="players_columns").options
+
+
+def test_the_position_filter_keeps_matching_players(con):
+    at = _app()
+    at.selectbox(key="season").select("2024-25").run()
+    at.multiselect(key=table.POSITION_KEY).set_value(["C"]).run()
+    assert not at.exception, at.exception
+    shown = at.dataframe[0].value
+    positions = players.player_positions().set_index("player_id")["position"]
+    ids = at.session_state[table.TABLE_ROWS_KEY]["player_id"]
+    assert len(shown) > 0
+    assert all("C" in str(positions.get(i, "")).split("-") for i in ids)
+
+
+def test_the_player_season_table_has_a_defense_set(con):
+    at, _ = _player_stats_app(con)
+    at.button_group(key=player.STATS_COLUMNS_KEY).set_value("Defense").run()
+    assert not at.exception, at.exception
+    df = _stats_table(at)
+    assert "steals_per_36" in df.columns
+    assert "Career" not in list(df["season"])
