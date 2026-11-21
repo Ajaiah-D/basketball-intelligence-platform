@@ -26,6 +26,29 @@ sources:
         description: One row per play-by-play event (PlayByPlayV3), subset of games.
       - name: players
         description: All-time player index (CommonAllPlayers).
+      - name: player_bio
+        description: >
+          Every player ever (PlayerIndex, historical): position, height,
+          weight, college, country, draft. Re-fetched every run.
+      - name: player_birthdates
+        description: >
+          Birthdate, school and country per player (CommonPlayerInfo, one
+          call per player). Grows a few players a run; the first fill is
+          nba_ingest.py --birthdate-backfill.
+      - name: player_defend_overall
+        description: >
+          Defender tracking per season, 2013-14 on (LeagueDashPtDefend,
+          Overall, season totals): opponents' shooting with him as the
+          closest defender.
+      - name: player_defend_rim
+        description: >
+          Defender tracking within 6 feet per season, 2013-14 on
+          (LeagueDashPtDefend, "Less Than 6Ft", season totals).
+      - name: player_hustle
+        description: >
+          Hustle stats per season, 2016-17 on (LeagueHustleStatsPlayer,
+          season totals): deflections, contested shots, charges drawn,
+          loose balls, box-outs.
       - name: teams
         description: The 30 NBA franchises (nba_api static data).
       - name: schedule

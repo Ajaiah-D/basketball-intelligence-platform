@@ -59,3 +59,10 @@ select 'mart_team_finances' as model, season, cast(team_abbreviation as varchar)
 from {{ ref('mart_team_finances') }}
 group by season, team_abbreviation
 having count(*) > 1
+
+union all
+
+select 'mart_player_bio' as model, 'all' as season, cast(player_id as varchar) as entity, count(*) as rows
+from {{ ref('mart_player_bio') }}
+group by player_id
+having count(*) > 1

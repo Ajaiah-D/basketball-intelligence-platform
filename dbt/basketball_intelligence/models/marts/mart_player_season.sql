@@ -296,12 +296,19 @@ select
     d.assist_to_turnover,
     d.shot_poss,
 
-    -- The NBA's age where it publishes one (1996-97 on); otherwise a year
-    -- per season from the player's earliest known age (Jordan, 33 in
-    -- 1996-97, was 25 in 1988-89). Null for a career that ended before
-    -- 1996-97.
-    cast(floor(coalesce(a.age, an.age0
-        + (cast(left(d.season, 4) as int) - an.y0))) as int) as age
+    -- The NBA's age where it publishes one (1996-97 on). Otherwise his age on
+    -- February 1 of the season's second year, from his birthdate (the
+    -- Basketball-Reference convention: Jordan, born 1963-02-17, was 25 in
+    -- 1988-89). date_diff('year') counts calendar-year boundaries, so a
+    -- birthday after February 1 takes one off. Without a birthdate, a year
+    -- per season from his earliest NBA-published age; null for a career that
+    -- ended before 1996-97 with no birthdate fetched yet.
+    cast(floor(coalesce(
+        a.age,
+        date_diff('year', bd.birthdate, make_date(cast(left(d.season, 4) as int) + 1, 2, 1))
+            - case when strftime(bd.birthdate, '%m-%d') > '02-01' then 1 else 0 end,
+        an.age0 + (cast(left(d.season, 4) as int) - an.y0)
+    )) as int) as age
 from derived d
 left join {{ ref('stg_player_advanced') }} a
        on a.season = d.season
@@ -311,3 +318,5 @@ left join team_paths tp
       and tp.player_id = d.player_id
 left join age_anchor an
        on an.player_id = d.player_id
+left join {{ ref('stg_player_birthdates') }} bd
+       on bd.player_id = d.player_id

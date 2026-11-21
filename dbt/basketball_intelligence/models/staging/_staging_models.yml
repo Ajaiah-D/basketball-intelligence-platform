@@ -33,6 +33,42 @@ models:
       - name: player_id
         tests: [not_null, unique]
 
+  - name: stg_player_bio
+    description: One row per player ever, from PlayerIndex (position, height, weight, college, country, draft).
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+
+  - name: stg_player_birthdates
+    description: One row per player whose birthdate has been fetched.
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+
+  - name: stg_player_defend_overall
+    description: Defender tracking, every shot defended, one row per player per season (2013-14 on).
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+
+  - name: stg_player_defend_rim
+    description: Defender tracking within 6 feet, one row per player per season (2013-14 on).
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+
+  - name: stg_player_hustle
+    description: Hustle stats as season totals, one row per player per season (2016-17 on).
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+
   - name: stg_teams
     description: NBA franchise dimension.
     columns:

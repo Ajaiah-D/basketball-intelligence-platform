@@ -604,6 +604,60 @@ models:
         description: on_court_def_rating - est_off_court_def_rating. Negative means the team defended better with him on the floor. Null unless the on/off rules hold.
       - name: fouls_per_36
         description: Personal fouls per 36 minutes, from the game logs. Null below 100 minutes.
+      - name: steals_per_36
+        description: Steals per 36 minutes, from the game logs. Null below 100 minutes.
+      - name: blocks_per_36
+        description: Blocks per 36 minutes, from the game logs. Null below 100 minutes.
+      - name: d_fga
+        description: Shots he defended as the closest defender over the season (defender tracking, 2013-14 on).
+      - name: d_fg_pct
+        description: Opponents' FG% on those shots.
+      - name: normal_fg_pct
+        description: The same shooters' usual FG%.
+      - name: d_fg_pct_diff
+        description: d_fg_pct minus normal_fg_pct, in points. Negative means opponents shot worse than usual against him (lower is better).
+      - name: rim_fga
+        description: Shots within 6 feet he defended as the closest defender (2013-14 on).
+      - name: rim_fg_pct
+        description: Opponents' FG% on those shots (lower is better).
+      - name: rim_fg_pct_diff
+        description: rim_fg_pct minus those shooters' usual FG% within 6 feet, in points.
+      - name: deflections_per_36
+        description: Deflections per 36 minutes the hustle tracking covers (2016-17 on). Null under 100 tracked minutes, as are the other hustle rates.
+      - name: contested_per_36
+        description: Shots contested per 36 tracked minutes.
+      - name: charges_per_36
+        description: Charges drawn per 36 tracked minutes.
+      - name: loose_balls_per_36
+        description: Defensive loose balls recovered per 36 tracked minutes.
+      - name: box_outs_per_36
+        description: Defensive box-outs per 36 tracked minutes.
+
+  - name: mart_player_bio
+    description: >
+      One row per player ever: position (the NBA's broad label, G / F / C or
+      a hyphenated pair), height, weight, birthdate, country, college and
+      draft, for the Player tab's bio line and the All players position
+      filter. PlayerIndex is the source, with the CommonPlayerInfo cache
+      adding the birthdate and filling a missing college or country. A null
+      draft_year means undrafted; a null birthdate means not fetched yet.
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: position
+      - name: height
+        description: Feet-inches as the NBA writes it ("6-6").
+      - name: height_inches
+      - name: weight
+        description: Pounds.
+      - name: birthdate
+      - name: country
+      - name: college
+      - name: draft_year
+      - name: draft_round
+      - name: draft_number
+      - name: is_active
+        description: On an NBA roster now (CommonAllPlayers).
 
   - name: fct_team_game
     description: >
