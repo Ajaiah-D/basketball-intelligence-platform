@@ -18,6 +18,9 @@ team-seasons named below. Keep each file under about 2 MB.
 | `player_advanced/`, `team_advanced/` `2024-25` | the official advanced stats beside the 2024-25 box scores |
 | `team_payroll/`, `team_payroll_players/` `1984-85`, `2024-25` | two whole payroll seasons (all 23 and 30 teams), so `assert_payroll_covers_every_team` sees a full league |
 | `team_payroll/`, `team_payroll_players/` `1986-87` (DEN, GOS), `1988-89` (MIA), `1989-90` (BOS), `1998-99` (HOU), `2009-10` (BOS), `2023-24` (the eight taxpayers) | exactly the team-seasons the `assert_team_finances_*` known-case tests name, so each test finds its rows. 1986-87 GOS has no salary rows at all |
+| `player_bio.parquet` | the whole PlayerIndex answer (every player ever): `mart_player_bio`, the bio line and the position filter |
+| `player_birthdates.parquet` | 30 players' CommonPlayerInfo birthdates: 8 from 1990-91 whose careers ended before 1996-97 (their age comes from the birthdate, `assert_player_age_fallback`), 7 more 1990-91 players and 15 from 2024-25, LeBron James among them |
+| `player_defend_overall/`, `player_defend_rim/`, `player_hustle/` `2024-25` | defender tracking and hustle stats beside the 2024-25 box scores: the Defense section and column set |
 | `play_by_play/2025-26.parquet` | shot charts and the play-by-play grain test |
 | `schedule/2026-27.parquet` | upcoming games for the predictions |
 | `bbref_team_salary_page.html` | one Basketball-Reference team page, for the payroll parser tests |
