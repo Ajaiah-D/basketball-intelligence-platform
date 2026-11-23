@@ -74,7 +74,7 @@ def test_the_list_ranks_others_and_says_how(con):
     season, player_id, name = _qualified_player(con)
     at = _app(season, name)
     table = _table(at, player_id, season)
-    assert list(table.columns) == similar.COLUMNS
+    assert list(table.columns) == similar.COLUMNS + similar.BLOCK_COLUMNS
     # His own line on top, for reference: no rank, no similarity.
     me = table.iloc[0]
     assert me["player_name"] == name
@@ -85,15 +85,21 @@ def test_the_list_ranks_others_and_says_how(con):
     assert list(shown["rank"]) == [str(i) for i in range(1, similar.N_DEFAULT + 1)]
     assert name not in set(shown["player_name"])
     assert shown["similarity"].is_monotonic_decreasing
-    assert shown["similarity"].between(0, 1).all()
+    assert shown["similarity"].between(0, 100).all()
+    for column in similar.BLOCK_COLUMNS:
+        assert pd.isna(me[column])
+        assert shown[column].between(0, 100).all()
     # The same ranking the module gives.
-    pool = advanced.player_advanced(season)
+    pool = advanced.similarity_pool(season)
     expected = similarity.rank_similar(pool, player_id, minutes_floor(pool), similar.N_DEFAULT)
     assert list(shown["player_name"]) == list(expected.ranked["player_name"])
     floor = minutes_floor(pool)
     caption = _captions(at)
-    assert f"{floor}+ minutes" in caption and "z-score" in caption and "cosine" in caption
-    assert all(label in caption for label in similarity.FEATURES.values())
+    assert f"{floor}+ minutes" in caption and "z-score" in caption
+    assert "how he plays, not how well" in caption
+    for block in similarity.BLOCKS:
+        assert f"{block.name} (weight {block.weight:g}" in caption
+    assert all(label in caption for label in similarity.FEATURE_LABELS.values())
     assert f"Players most like {name}" in " ".join(m.value for m in at.markdown)
 
 
@@ -203,8 +209,24 @@ def test_his_line_is_pinned_above_the_matches():
 
 def test_an_older_warehouse_without_turnovers_drops_tov_instead_of_failing():
     with_tov = pd.DataFrame(columns=[c for c in similar.COLUMNS if c not in ("rank", "similarity")])
-    assert similar.shown_columns(with_tov) == similar.COLUMNS
+    assert similar.shown_columns(with_tov, []) == similar.COLUMNS
     without = with_tov.drop(columns=["turnovers_per_game"])
-    assert similar.shown_columns(without) == [
+    assert similar.shown_columns(without, []) == [
         c for c in similar.COLUMNS if c != "turnovers_per_game"
     ]
+
+
+def test_only_the_blocks_the_ranking_used_get_a_column():
+    pool = pd.DataFrame(columns=[c for c in similar.COLUMNS if c not in ("rank", "similarity")])
+    every = [b.name for b in similarity.BLOCKS]
+    assert similar.shown_columns(pool, every) == similar.COLUMNS + similar.BLOCK_COLUMNS
+    # A season before tracking defense has no Defense block.
+    no_defense = [b for b in every if b != "Defense"]
+    assert similarity.block_column("Defense") not in similar.shown_columns(pool, no_defense)
+
+
+def test_the_caption_names_a_block_the_season_lacks():
+    used = [f for b in similarity.BLOCKS if b.name != "Defense" for f in b.features]
+    caption = similar.method_caption(used, 500, 300, "2005-06")
+    assert "2005-06 has no data for Defense." in caption
+    assert "Defense (weight" not in caption

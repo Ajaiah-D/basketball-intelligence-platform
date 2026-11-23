@@ -52,6 +52,8 @@ COLUMNS = [
     "usage_pct",
     "similarity",
 ]
+# One match score per block of the model, after the overall one.
+BLOCK_COLUMNS = [similarity.block_column(b.name) for b in similarity.BLOCKS]
 
 
 # His own line sits on top of the list, tinted with the UI accent, so each
@@ -70,20 +72,29 @@ _FORMATS = {
     "turnovers_per_game": "{:.1f}",
     "true_shooting_pct": "{:.1f}",
     "usage_pct": "{:.1f}",
+    "similarity": "{:.0f}",
+    **dict.fromkeys(BLOCK_COLUMNS, "{:.0f}"),
 }
 
 
-def shown_columns(pool: pd.DataFrame) -> list[str]:
-    """COLUMNS that `pool` has. An older published warehouse has no
-    turnovers_per_game; the list then goes without TOV rather than failing."""
+def shown_columns(pool: pd.DataFrame, blocks: list[str]) -> list[str]:
+    """COLUMNS that `pool` has, then the match score of each of `blocks` (the
+    blocks the ranking used). An older published warehouse has no
+    turnovers_per_game; the list then goes without TOV rather than failing.
+    A season without tracking defense has no Defense block, and no column
+    for it."""
     extra = {"rank", "similarity"}
-    return [c for c in COLUMNS if c in extra or c in pool.columns]
+    used = {similarity.block_column(b) for b in blocks}
+    return [c for c in COLUMNS if c in extra or c in pool.columns] + [
+        c for c in BLOCK_COLUMNS if c in used
+    ]
 
 
 def with_reference_row(me: pd.Series, ranked: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """The list with his own line pinned on top: a dash for a rank and no
     similarity. Ranks become text so his row can carry the dash."""
-    ref = pd.DataFrame([me]).assign(rank=REFERENCE_RANK, similarity=float("nan"))
+    scores = {c: float("nan") for c in ["similarity", *BLOCK_COLUMNS]}
+    ref = pd.DataFrame([me]).assign(rank=REFERENCE_RANK, **scores)
     rest = ranked.assign(rank=ranked["rank"].astype(str))
     return pd.concat([ref[columns], rest[columns]], ignore_index=True)
 
@@ -101,6 +112,17 @@ def _style(table: pd.DataFrame):
 
 
 def _column_config() -> dict:
+    blocks = {
+        similarity.block_column(b.name): st.column_config.NumberColumn(
+            b.name,
+            help=f"How close the two are on {b.name.lower()} alone: "
+            + ", ".join(similarity.FEATURE_LABELS[f] for f in b.features)
+            + ". 100 is the same, 0 as different as a typical player",
+            format="%.0f",
+            width="small",
+        )
+        for b in similarity.BLOCKS
+    }
     return {
         "rank": st.column_config.TextColumn("#", width="small"),
         "player_name": st.column_config.TextColumn("Player", width="medium"),
@@ -122,15 +144,16 @@ def _column_config() -> dict:
         "true_shooting_pct": st.column_config.NumberColumn(**glossary.marked("TS%"), format="%.1f"),
         "usage_pct": PLAYER_COLUMN_CONFIG["usage_pct"],
         "similarity": st.column_config.ProgressColumn(
-            "Similarity",
-            help="Cosine similarity of the two players' capped z-scores: 1 is the same "
-            "profile, 0 unrelated",
-            format="%.2f",
+            "Match",
+            help="How close the two profiles are, all blocks together: 100 is the "
+            "same, 0 as different as a typical player in the pool",
+            format="%.0f",
             min_value=0.0,
-            max_value=1.0,
+            max_value=100.0,
             color=T.ACCENT,
             width="medium",
         ),
+        **blocks,
     }
 
 
@@ -160,16 +183,24 @@ def _header(me: pd.Series, season: str) -> None:
 
 
 def method_caption(features: list[str], floor: int, pool_size: int, season: str) -> str:
-    """The line under the list that says how it was ranked."""
-    labels = ", ".join(similarity.FEATURES[c] for c in features)
+    """The line under the list that says how it was ranked: the pool, then
+    each block used with its weight and stats."""
+    used = set(features)
+    parts = []
+    for b in similarity.BLOCKS:
+        mine = [similarity.FEATURE_LABELS[f] for f in b.features if f in used]
+        if mine:
+            parts.append(f"{b.name} (weight {b.weight:g}: {', '.join(mine)})")
+    missing = [b.name for b in similarity.BLOCKS if not any(f in used for f in b.features)]
+    gap = f" {season} has no data for {', '.join(missing)}." if missing else ""
     return (
-        f"Compared with the {pool_size} players who played {floor}+ minutes in {season}, "
-        f"on {len(features)} stats: {labels}. Each stat is turned into a z-score over "
-        f"those players (capped at ±{similarity.Z_CAP:g}, so no single stat decides a "
-        "match), and players are ranked by the cosine similarity of their z-scores. "
-        "Rates and shares rather than totals, so he is matched on how he plays more "
-        "than how much. The data has no positions, so they play no part. "
-        "Click a row to open that player."
+        f"Matched on how he plays, not how well. Compared with the {pool_size} players "
+        f"who played {floor}+ minutes in {season}, in blocks: {'; '.join(parts)}.{gap} "
+        f"Each stat is a z-score over those players (capped at ±{similarity.Z_CAP:g}), "
+        "each block counts by its weight however many stats it has, and players are "
+        "ranked by how far apart their profiles are. Role weighs least, so stars "
+        "aren't matched just for being stars. Positions play no part; height a small "
+        "one. Click a row to open that player."
     )
 
 
@@ -191,7 +222,7 @@ def render_similar(default_rows: pd.DataFrame | None, season: str) -> None:
             "box scores."
         )
         return
-    pool = advanced.player_advanced(at)
+    pool = advanced.similarity_pool(at)
     mine = pool[pool["player_id"] == picked.player_id]
     if mine.empty:
         st.info(f"No {at} line for this player.")
@@ -211,9 +242,9 @@ def render_similar(default_rows: pd.DataFrame | None, season: str) -> None:
     slider, _ = st.columns([2, 3])
     n = slider.slider("Players to show", N_MIN, N_MAX, key=SIMILAR_N_KEY)
     result = similarity.rank_similar(pool, picked.player_id, floor, n)
-    ranked = result.ranked.assign(similarity=result.ranked["similarity"].clip(lower=0.0))
+    ranked = result.ranked
 
-    columns = shown_columns(pool)
+    columns = shown_columns(pool, result.blocks)
     table = with_reference_row(me, ranked, columns)
     # His row is first, so a click on it opens him: the same as any row.
     ids = pd.concat([pd.Series([me["player_id"]]), ranked["player_id"]], ignore_index=True)

@@ -203,10 +203,17 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   uses the NBA's defender tracking from 2013-14 and hustle stats from
   2016-17), and a game log tinted
   green or red against his own season average. *Similar players* ranks the
-  players whose season looks most like his (5 to 25 of them): 12 rate stats
-  z-scored over the season's players over a minutes floor, capped at 3
-  standard deviations, compared by cosine similarity; a click on a row opens
-  that player. *Compare* sets two player-seasons from any era side by
+  players whose season plays most like his (5 to 25 of them). The profile is
+  split into weighted blocks (scoring 3, creation 2, rebounding 1.5, defense
+  1.5, role size 1), each stat z-scored over the season's players over a
+  minutes floor and capped at 3 standard deviations, and players are ranked
+  by weighted distance, with a 0-100 match score overall and per block.
+  Role weighs least so stars aren't matched just for being stars;
+  `scripts/evaluate_similarity.py` scores the model (a player's season
+  should find his own next season) and writes
+  [docs/similarity-evaluation.md](docs/similarity-evaluation.md). A click
+  on a row opens that player. *Compare* opens on the player you have open,
+  or the season's top scorers when nobody is. It sets two player-seasons from any era side by
   side: a percentile radar, with each player ranked against his own season's
   qualified players, plus per-game bars. *Scatter* plots any two player stats
   for a season, with a minimum-games and team filter
@@ -392,10 +399,10 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (16 models), intermediate (1) and marts (16), plus salary
-      cap history and team code seeds; 149 dbt tests and 1,065 pytest cases.
+      cap history and team code seeds; 149 dbt tests and 1,084 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
-      era the tests check; the 19 tests that need all seasons are marked
+      era the tests check; the 18 tests that need all seasons are marked
       `full_warehouse` and run locally only
 - [x] Advanced metrics: per-possession ratings, usage and rate stats, four
       factors; shown on Players (All players > Advanced, and the Player tab)

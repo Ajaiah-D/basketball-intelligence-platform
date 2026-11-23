@@ -35,6 +35,51 @@ def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
     )
 
 
+def similarity_pool(season: str) -> pd.DataFrame:
+    """player_advanced(season) plus the columns lib.similarity needs that
+    the season mart doesn't hold: threes_per_36, height_inches (the bio
+    mart) and fouls_per_36, rim_share, contests_per_36 and
+    deflections_per_36 (the defense mart). rim_share is the share of the
+    shots he defended that came at the rim. A warehouse published before
+    the bio or defense mart gets those columns as nulls, and the model
+    leaves them out."""
+    has_bio = objects_exist("main_marts.mart_player_bio")
+    has_defense = objects_exist("main_marts.mart_player_defense")
+    bio = "b.height_inches" if has_bio else "null::double"
+    defense = (
+        """d.fouls_per_36,
+            d.rim_fga / nullif(d.d_fga, 0)  as rim_share,
+            d.contested_per_36              as contests_per_36,
+            d.deflections_per_36"""
+        if has_defense
+        else """null::double as fouls_per_36,
+            null::double as rim_share,
+            null::double as contests_per_36,
+            null::double as deflections_per_36"""
+    )
+    joins = ""
+    if has_bio:
+        joins += " left join main_marts.mart_player_bio b on b.player_id = s.player_id"
+    if has_defense:
+        joins += (
+            " left join main_marts.mart_player_defense d"
+            " on d.season = s.season and d.player_id = s.player_id"
+        )
+    return q(
+        f"""
+        select
+            s.*,
+            36.0 * s.tpa_total / nullif(s.minutes, 0)  as threes_per_36,
+            {bio} as height_inches,
+            {defense}
+        from main_marts.mart_player_season s{joins}
+        where s.season = ?
+        order by s.player_id
+        """,
+        (season,),
+    )
+
+
 def player_advanced_history(player_id: int) -> pd.DataFrame:
     """Every season of one player's advanced metrics, newest first (the
     whole mart row, as player_advanced)."""
