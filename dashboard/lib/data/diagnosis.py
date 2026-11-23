@@ -265,6 +265,26 @@ def top_scorers(season: str, limit: int) -> pd.DataFrame:
     )
 
 
+def compare_pick(season: str, player_id: int) -> pd.DataFrame:
+    """One player-season as a Compare picker row (the columns top_scorers
+    gives), qualified or not; empty when the percentiles mart has no such
+    row."""
+    return q(
+        """
+        select
+            player_id,
+            season,
+            player_name  as player,
+            team_abbreviation as team,
+            team_label,
+            points_per_game
+        from main_marts.mart_player_percentiles
+        where season = ? and player_id = ?
+        """,
+        (season, int(player_id)),
+    )
+
+
 def compare_line(season: str, player_id: int) -> pd.Series | None:
     """One player-season for the Compare tab, or None when the percentiles
     mart has no such row: who he was (player, team his last, team_label,

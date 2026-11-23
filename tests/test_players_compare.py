@@ -19,7 +19,7 @@ from dashboard.lib import glossary
 from dashboard.lib import theme as T
 from dashboard.lib.data import core as data_core
 from dashboard.lib.data import diagnosis, players, seasons
-from dashboard.views.players import compare
+from dashboard.views.players import compare, search
 
 SCRIPT = """
 import streamlit as st
@@ -171,6 +171,61 @@ def test_it_opens_on_the_sidebars_two_top_scorers_with_a_radar_and_the_line(con)
     bars = _bars(at)
     assert [t["y"][0] for t in bars["data"]][::2] == [label for label, _ in compare.STAT_LINE]
     assert compare.METHOD in _caption(at)
+
+
+def _app_with_player(season: str, player_id: int) -> AppTest:
+    """The Compare tab with `player_id` open in the Player tab at `season`,
+    as the search or a row click leaves it."""
+    at = AppTest.from_string(SCRIPT, default_timeout=60)
+    at.session_state["season"] = season
+    at.session_state[search.PLAYER_ID_KEY] = player_id
+    at.session_state[search.PLAYER_SEASON_KEY] = season
+    at.session_state[search.PLAYER_PICKED_AT_KEY] = season
+    at.session_state["players_tab"] = "Compare"
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def test_with_a_player_open_side_a_opens_on_him_even_off_the_top_scorers(con):
+    season = seasons.latest_season()
+    # A qualified player well outside the top scorers.
+    pid, name = con.execute(
+        """
+        select player_id, player_name from main_marts.mart_player_percentiles
+        where season = ? and is_qualified
+        order by points_per_game, player_id limit 1
+        """,
+        [season],
+    ).fetchone()
+    at = _app_with_player(season, pid)
+    a = at.selectbox(key=compare.A_KEY)
+    assert a.value == compare.pick_id(season, pid)
+    assert a.options[0].startswith(f"{name} · {season} · ")
+    # B opens on the season's top scorer, and the two are compared.
+    top_id = _top_two(con, season)[0][0]
+    assert at.selectbox(key=compare.B_KEY).value == compare.pick_id(season, top_id)
+    (radar,) = _radars(at)
+    assert radar["data"][0]["name"] == f"{name} {season}"
+
+
+def test_with_the_top_scorer_open_side_b_opens_on_the_next_one(con):
+    season = seasons.latest_season()
+    (a_id, _), (b_id, _) = _top_two(con, season)
+    at = _app_with_player(season, a_id)
+    assert at.selectbox(key=compare.A_KEY).value == compare.pick_id(season, a_id)
+    assert at.selectbox(key=compare.B_KEY).value == compare.pick_id(season, b_id)
+    # He is listed once on side A, not twice.
+    a_options = at.selectbox(key=compare.A_KEY).options
+    assert len(a_options) == len(set(a_options))
+
+
+def test_a_search_on_side_a_still_replaces_the_open_player(con):
+    season = seasons.latest_season()
+    (a_id, _), (b_id, b_name) = _top_two(con, season)
+    at = _app_with_player(season, a_id)
+    _pick(season, b_id, at, compare.A_KEY, b_name)
+    assert at.selectbox(key=compare.A_KEY).value == compare.pick_id(season, b_id)
 
 
 def _oklab(hex_color: str) -> tuple[float, float, float]:

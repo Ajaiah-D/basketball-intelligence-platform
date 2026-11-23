@@ -5,7 +5,9 @@ same footing) and the per-game line side by side.
 
 The tab shows numbers and never calls a winner. Each side is a name search
 plus a pick of that name's player-seasons; with the search empty the pick is
-the sidebar season's top scorers, and the tab opens on the top two.
+the sidebar season's top scorers. Side A opens on the player open in the
+Player tab, at his season there, and side B on the top scorer who isn't him;
+with nobody chosen the tab opens on the season's top two.
 """
 
 import html
@@ -19,7 +21,9 @@ from dashboard.lib import glossary, viz, viz_compare
 from dashboard.lib import state as shared_state
 from dashboard.lib import theme as T
 from dashboard.lib.data import diagnosis, players, seasons
+from dashboard.views.players.player import picked_player
 from dashboard.views.players.scatter import METRICS, format_value
+from dashboard.views.players.search import PLAYER_ID_KEY
 
 A_KEY = "players_compare_a"
 B_KEY = "players_compare_b"
@@ -122,9 +126,29 @@ def _label(row: pd.Series) -> str:
     return f"{row['player']} · {row['season']} · {row['team_label']}"
 
 
-def _picker(side: str, key: str, search_key: str, sidebar_season: str) -> tuple[str, int] | None:
+def scope_pick() -> tuple[str, int] | None:
+    """(season, player_id) of the player open in the Player tab, at his
+    season there; None when nobody has been chosen (the Player tab then
+    shows a default, which the Compare tab doesn't follow)."""
+    if st.session_state.get(PLAYER_ID_KEY) is None:
+        return None
+    sidebar = st.session_state.get(shared_state.SEASON_KEY) or seasons.seasons()[0]
+    picked = picked_player(None, sidebar)
+    return None if picked is None else (picked.season, picked.player_id)
+
+
+def _picker(
+    side: str,
+    key: str,
+    search_key: str,
+    sidebar_season: str,
+    scope: tuple[str, int] | None = None,
+) -> tuple[str, int] | None:
     """One side: the search box and the pick of matching player-seasons.
-    Returns (season, player_id), or None when nothing matches the search."""
+    With the search empty and a `scope` player-season (the Player tab's),
+    side A lists him first and opens on him, and side B opens on the first
+    top scorer who isn't him. Returns (season, player_id), or None when
+    nothing matches the search."""
     search = st.text_input(
         f"Player {side}",
         key=search_key,
@@ -136,6 +160,11 @@ def _picker(side: str, key: str, search_key: str, sidebar_season: str) -> tuple[
         if search
         else diagnosis.top_scorers(sidebar_season, TOP_SCORERS)
     )
+    scope_id = None
+    if scope is not None and not search:
+        scope_id = pick_id(*scope)
+        if side == "A":
+            rows = pd.concat([diagnosis.compare_pick(*scope), rows], ignore_index=True)
     labels = {pick_id(r["season"], r["player_id"]): _label(r) for _, r in rows.iterrows()}
     options = list(labels)
     # A pick the new search no longer lists goes back to the default.
@@ -144,9 +173,7 @@ def _picker(side: str, key: str, search_key: str, sidebar_season: str) -> tuple[
     if not options:
         st.caption(f'No player matches "{search}".')
         return None
-    # The tab opens on the season's top two: A the first, B the second.
-    default = 1 if side == "B" and not search and len(options) > 1 else 0
-    st.session_state.setdefault(key, options[default])
+    st.session_state.setdefault(key, options[_default_index(side, options, scope_id, search)])
     pick = st.selectbox(
         f"Player-season {side}",
         options,
@@ -157,6 +184,20 @@ def _picker(side: str, key: str, search_key: str, sidebar_season: str) -> tuple[
     if search and len(options) == MAX_MATCHES:
         st.caption(f"The newest {MAX_MATCHES} matches. Add more of the name to narrow it.")
     return parse_pick(pick)
+
+
+def _default_index(side: str, options: list[str], scope_id: str | None, search: str) -> int:
+    """Where a side opens. A search opens on its first match. Otherwise,
+    with a scope player, A opens on him (listed first when the mart has
+    him) and B on the first option that isn't him; with none, the season's
+    top two: A the first, B the second."""
+    if search:
+        return 0
+    if scope_id is not None:
+        if side == "A":
+            return 0
+        return next((i for i, o in enumerate(options) if o != scope_id), 0)
+    return 1 if side == "B" and len(options) > 1 else 0
 
 
 def _who(row: pd.Series, color: str) -> str:
@@ -248,12 +289,13 @@ def render_compare() -> None:
         st.info("The player compare arrives with the next data refresh.")
         return
     sidebar = st.session_state.get(shared_state.SEASON_KEY) or seasons.seasons()[0]
+    scope = scope_pick()
     left, right = st.columns(2)
     with left:
-        a_pick = _picker("A", A_KEY, A_SEARCH_KEY, sidebar)
+        a_pick = _picker("A", A_KEY, A_SEARCH_KEY, sidebar, scope)
         a_head = st.container()
     with right:
-        b_pick = _picker("B", B_KEY, B_SEARCH_KEY, sidebar)
+        b_pick = _picker("B", B_KEY, B_SEARCH_KEY, sidebar, scope)
         b_head = st.container()
     if a_pick is None or b_pick is None:
         st.info("Pick a player-season on each side to compare them.")
