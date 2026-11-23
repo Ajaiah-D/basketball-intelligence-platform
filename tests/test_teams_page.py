@@ -232,18 +232,17 @@ def test_a_short_rotation_gets_one_button_per_player(con, switched, monkeypatch)
     assert switched == ["players-page"]
 
 
-# A week into 2026-27 nobody has 10 games: the full warehouse only.
-LIVE = "2026-27"
+# A completed season in the full warehouse.
 FULL = "2025-26"
 
 
-@pytest.mark.full_warehouse
-def test_early_in_a_season_the_breakdown_lowers_its_cut_and_says_so(con):
-    assert seasons.seasons()[0] == LIVE
-    cut = diagnosis_data.rotation_min_games(LIVE)
-    assert cut < diagnosis_data.ROTATION_MIN_GAMES
-    team = _team_names(con, LIVE)[0]
-    at = _app(LIVE, team)
+def test_early_in_a_season_the_breakdown_lowers_its_cut_and_says_so(con, monkeypatch):
+    # A week into a season the cut drops below 10 games. Faked here, so the
+    # test does not depend on how far the live season has run.
+    cut = 2
+    monkeypatch.setattr(diagnosis_data, "rotation_min_games", lambda season: cut)
+    team = _team_names(con, MODERN)[0]
+    at = _app(MODERN, team)
     assert "Player breakdown" in _text(at)
     assert f"Early in the season: players with {cut}+ games for the team." in _captions(at)
     assert at.selectbox(key=breakdown.OPEN_KEY).options

@@ -115,7 +115,7 @@ not row counts that change every week.
 CI can't reach stats.nba.com, so it builds a small warehouse from
 `data/fixtures/` (real data, cut down to a few seasons; its
 [README](data/fixtures/README.md) says what each file is for) and
-deselects the 17 tests marked `full_warehouse`. It also sets `CI`, and then
+deselects the 18 tests marked `full_warehouse`. It also sets `CI`, and then
 any skipped test fails the run: a skip in CI means a gap in the fixtures is
 hiding a test.
 
