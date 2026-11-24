@@ -48,12 +48,26 @@ sources:
         description: >
           Hustle stats per season, 2016-17 on (LeagueHustleStatsPlayer,
           season totals): deflections, contested shots, charges drawn,
-          loose balls, box-outs.
+          loose balls, box-outs, screen assists.
       - name: player_on_off
         description: >
           Team defensive rating with each player on and off the floor, per
           team and season, 2007-08 on (TeamPlayerOnOffSummary, season
           totals). One row per team, player and court status (On or Off).
+      - name: player_shot_locations
+        description: >
+          Field goals by zone per season, 1996-97 on
+          (LeagueDashPlayerShotLocations, "By Zone", season totals). One row
+          per player, a traded player's teams already added up. The API's
+          two header rows (zone over FGM, FGA, FG_PCT) are flattened to
+          columns like RESTRICTED_AREA_FGA by the ingest.
+      - name: player_play_types
+        description: >
+          Offensive possessions by Synergy play type per season, 2015-16 on
+          (SynergyPlayTypes, player level, season totals, one call per play
+          type). One row per player, team and play type: a traded player has
+          a row per team, and a play type under 10 possessions for a team is
+          left out by the API.
       - name: teams
         description: The 30 NBA franchises (nba_api static data).
       - name: schedule

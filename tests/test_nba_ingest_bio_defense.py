@@ -109,6 +109,8 @@ def test_run_fetches_defense_only_for_tracked_seasons(tmp_path, monkeypatch):
     monkeypatch.setattr(ni, "fetch_player_defend", lambda s, c: frame(f"defend:{c}", s))
     monkeypatch.setattr(ni, "fetch_player_hustle", lambda s: frame("hustle", s))
     monkeypatch.setattr(ni, "fetch_player_on_off", lambda s: frame("on_off", s))
+    monkeypatch.setattr(ni, "fetch_player_shot_locations", lambda s: frame("shots", s))
+    monkeypatch.setattr(ni, "fetch_player_play_types", lambda s: frame("play_types", s))
     monkeypatch.setattr(
         ni,
         "fetch_player_bio",
@@ -139,6 +141,8 @@ def test_run_passes_the_birthdate_cap(tmp_path, monkeypatch):
         "fetch_players",
         "fetch_player_hustle",
         "fetch_player_on_off",
+        "fetch_player_shot_locations",
+        "fetch_player_play_types",
     ]:
         monkeypatch.setattr(ni, name, lambda *a: pd.DataFrame({"x": [1]}))
     monkeypatch.setattr(

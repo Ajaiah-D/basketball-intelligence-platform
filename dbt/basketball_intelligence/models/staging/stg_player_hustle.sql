@@ -10,6 +10,7 @@ select
     cast("CONTESTED_SHOTS" as double)              as contested_shots,
     cast("CHARGES_DRAWN" as double)                as charges_drawn,
     cast("DEF_LOOSE_BALLS_RECOVERED" as double)    as def_loose_balls,
-    cast("DEF_BOXOUTS" as double)                  as def_box_outs
+    cast("DEF_BOXOUTS" as double)                  as def_box_outs,
+    cast("SCREEN_ASSISTS" as double)               as screen_assists
 from {{ source('raw', 'player_hustle') }}
 qualify row_number() over (partition by season, "PLAYER_ID" order by "MIN" desc) = 1

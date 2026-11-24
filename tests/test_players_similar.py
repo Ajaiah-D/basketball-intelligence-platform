@@ -230,3 +230,17 @@ def test_the_caption_names_a_block_the_season_lacks():
     caption = similar.method_caption(used, 500, 300, "2005-06")
     assert "2005-06 has no data for Defense." in caption
     assert "Defense (weight" not in caption
+
+
+def test_the_play_type_block_gets_its_own_column():
+    assert similarity.block_column("Shot diet") in similar.BLOCK_COLUMNS
+    assert "play_type_match" in similar.BLOCK_COLUMNS
+
+
+def test_the_caption_says_small_play_type_samples_are_shrunk_only_when_used():
+    every = [f for b in similarity.BLOCKS for f in b.features]
+    assert "pulled toward" in similar.method_caption(every, 500, 300, "2025-26")
+    before = [f for f in every if f not in similarity.PLAY_TYPE_FEATURES]
+    caption = similar.method_caption(before, 500, 300, "2010-11")
+    assert "pulled toward" not in caption
+    assert "2010-11 has no data for Play type." in caption

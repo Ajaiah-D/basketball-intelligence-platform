@@ -35,17 +35,67 @@ def player_advanced(season: str, min_minutes: int = 0) -> pd.DataFrame:
     )
 
 
+def _columns(mart: str) -> set[str]:
+    """main_marts.`mart`'s columns: a warehouse published before a column
+    was added lacks it (and one without the mart has none)."""
+    found = q(
+        """
+        select column_name
+        from information_schema.columns
+        where table_catalog = current_database()
+          and table_schema = 'main_marts'
+          and table_name = ?
+        """,
+        (mart,),
+    )
+    return set(found["column_name"])
+
+
+def _has_column(mart: str, column: str) -> bool:
+    """Whether main_marts.`mart` has `column`."""
+    return column in _columns(mart)
+
+
+# What similarity_pool takes from mart_player_scoring: the shot diet (share
+# of field goal attempts by zone) and the play types (share of possessions).
+SCORING_COLUMNS = (
+    "restricted_area_share",
+    "paint_share",
+    "mid_range_share",
+    "corner_three_share",
+    "above_break_three_share",
+    "play_type_possessions",
+    "isolation_share",
+    "transition_share",
+    "pnr_handler_share",
+    "pnr_roll_share",
+    "post_up_share",
+    "spot_up_share",
+    "handoff_share",
+    "cut_share",
+    "off_screen_share",
+    "putback_share",
+    "misc_share",
+)
+
+
 def similarity_pool(season: str) -> pd.DataFrame:
     """player_advanced(season) plus the columns lib.similarity needs that
     the season mart doesn't hold: threes_per_36, height_inches (the bio
-    mart) and fouls_per_36, rim_share, contests_per_36 and
-    deflections_per_36 (the defense mart). rim_share is the share of the
-    shots he defended that came at the rim. A warehouse published before
-    the bio or defense mart gets those columns as nulls, and the model
-    leaves them out."""
+    mart) and fouls_per_36, rim_share, contests_per_36,
+    deflections_per_36 and screen_assists_per_36 (the defense mart), and
+    SCORING_COLUMNS (the scoring mart). rim_share is the share of the shots
+    he defended that came at the rim. A warehouse published before one of
+    those marts or columns gets them as nulls, and the model leaves them
+    out."""
     has_bio = objects_exist("main_marts.mart_player_bio")
     has_defense = objects_exist("main_marts.mart_player_defense")
     bio = "b.height_inches" if has_bio else "null::double"
+    screens = (
+        "d.screen_assists_per_36"
+        if has_defense and _has_column("mart_player_defense", "screen_assists_per_36")
+        else "null::double"
+    )
     defense = (
         """d.fouls_per_36,
             d.rim_fga / nullif(d.d_fga, 0)  as rim_share,
@@ -57,6 +107,11 @@ def similarity_pool(season: str) -> pd.DataFrame:
             null::double as contests_per_36,
             null::double as deflections_per_36"""
     )
+    scoring_has = _columns("mart_player_scoring")
+    scoring = ",\n            ".join(
+        f"{'c.' + col if col in scoring_has else 'null::double'} as {col}"
+        for col in SCORING_COLUMNS
+    )
     joins = ""
     if has_bio:
         joins += " left join main_marts.mart_player_bio b on b.player_id = s.player_id"
@@ -65,13 +120,20 @@ def similarity_pool(season: str) -> pd.DataFrame:
             " left join main_marts.mart_player_defense d"
             " on d.season = s.season and d.player_id = s.player_id"
         )
+    if scoring_has:
+        joins += (
+            " left join main_marts.mart_player_scoring c"
+            " on c.season = s.season and c.player_id = s.player_id"
+        )
     return q(
         f"""
         select
             s.*,
             36.0 * s.tpa_total / nullif(s.minutes, 0)  as threes_per_36,
             {bio} as height_inches,
-            {defense}
+            {defense},
+            {screens} as screen_assists_per_36,
+            {scoring}
         from main_marts.mart_player_season s{joins}
         where s.season = ?
         order by s.player_id

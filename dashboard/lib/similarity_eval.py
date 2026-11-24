@@ -14,8 +14,18 @@ changes and would win it outright, and role size (minutes, usage) is
 stable too. scripts/evaluate_similarity.py runs it with and without those
 and adds a sanity panel of named players to read by eye.
 
+Self-match can't see a wrong neighbour: a player can find himself first
+and still have the wrong players around him. The known-pairs check covers
+that: pairs of players who play the same way (one should rank in the
+other's top MATCH_TOP) and pairs who only share box-score output (one
+should rank outside the other's top AVOID_TOP). The pairs are judgement
+calls, so they count beside self-match, never instead of it: tuning to
+them alone would fit the model to our opinions.
+
 LEGACY is the first version (twelve box-score rates, capped z-scores,
-cosine similarity), kept here only as the baseline to beat.
+cosine similarity), kept here only as the baseline to beat, and
+BEFORE_SHOT_DATA the block model as it was before the shot diet and play
+types replaced its box-score Scoring block.
 
 Pure pandas and numpy, like lib.similarity.
 """
@@ -71,11 +81,25 @@ def _legacy_embed(pool: pd.DataFrame, only: Sequence[str] | None = None) -> S.Em
 LEGACY = Model("First version (cosine, 12 rates)", _legacy_embed, "cosine")
 
 
-def block_model(name: str, blocks: Sequence[S.Block] = S.BLOCKS) -> Model:
-    """A Model for lib.similarity's method with `blocks`."""
+# The blocks before shot data: Scoring was three box-score rates.
+BEFORE_SHOT_DATA: tuple[S.Block, ...] = (
+    S.Block(
+        "Scoring",
+        3.0,
+        {"three_point_attempt_rate": 1.0, "threes_per_36": 1.0, "free_throw_rate": 1.0},
+    ),
+    *(b for b in S.BLOCKS if b.name not in ("Shot diet", "Play type")),
+)
+
+
+def block_model(
+    name: str, blocks: Sequence[S.Block] = S.BLOCKS, prior: float = S.PLAY_TYPE_PRIOR
+) -> Model:
+    """A Model for lib.similarity's method with `blocks` and play types
+    shrunk by `prior` possessions (0 for none)."""
 
     def embed(pool: pd.DataFrame, only: Sequence[str] | None = None) -> S.Embedding:
-        return S.embed(pool, blocks, only)
+        return S.embed(pool, blocks, only, prior=prior)
 
     return Model(name, embed, "euclidean")
 
@@ -141,3 +165,38 @@ def summarize(ranks: pd.DataFrame, candidates: int) -> Summary:
     return Summary(
         len(r), candidates, float((r == 1).mean()), float((r <= 5).mean()), float(r.median())
     )
+
+
+# A "should match" pair holds when the other player ranks this high or
+# better; a "should not" pair when he ranks below AVOID_TOP.
+MATCH_TOP = 5
+AVOID_TOP = 10
+
+
+class Pair(NamedTuple):
+    """On `player`'s list, where `other` should (or should not) be."""
+
+    player: str
+    other: str
+    should_match: bool
+    why: str
+
+
+def rank_of(pool: pd.DataFrame, model: Model, player_id: int, other_id: int) -> int:
+    """Where `other_id` ranks (1 = closest) among everyone else in `pool`,
+    compared with `player_id` under `model`. Ties count against the pair."""
+    emb = model.embed(pool, None)
+    ids = list(emb.player_ids)
+    for pid in (player_id, other_id):
+        if pid not in ids:
+            raise S.NotInPoolError(f"player {pid} is not in the pool")
+    me, them = ids.index(player_id), ids.index(other_id)
+    scores = closeness(emb.matrix[[me]], emb.matrix, model.metric)[0]
+    others = np.delete(scores, me)
+    # Rank 1 + everyone strictly closer + anyone else exactly as close.
+    return int(1 + (others > scores[them]).sum() + (others == scores[them]).sum() - 1)
+
+
+def pair_holds(pair: Pair, rank: int) -> bool:
+    """Whether a pair's rank is where the pair says it should be."""
+    return rank <= MATCH_TOP if pair.should_match else rank > AVOID_TOP

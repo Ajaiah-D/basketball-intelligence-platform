@@ -21,6 +21,7 @@ team-seasons named below. Keep each file under about 2 MB.
 | `player_bio.parquet` | the whole PlayerIndex answer (every player ever): `mart_player_bio`, the bio line and the position filter |
 | `player_birthdates.parquet` | 30 players' CommonPlayerInfo birthdates: 8 from 1990-91 whose careers ended before 1996-97 (their age comes from the birthdate, `assert_player_age_fallback`), 7 more 1990-91 players and 15 from 2024-25, LeBron James among them |
 | `player_defend_overall/`, `player_defend_rim/`, `player_hustle/` `2024-25` | defender tracking and hustle stats beside the 2024-25 box scores: the Defense section and column set |
+| `player_shot_locations/`, `player_play_types/` `2024-25` | shot zones and Synergy play types beside the 2024-25 box scores: `mart_player_scoring` (a traded player's teams added up, the incomplete stints the NBA's answer leaves, e.g. Luka Dončić's LAL rows) and the Similar players Shot diet and Play type blocks |
 | `player_on_off/2024-25` | the NBA's on/off for all 30 teams in 2024-25: official on/off, including traded players (Zach LaVine, CHI then SAC) |
 | `play_by_play/2025-26.parquet` | shot charts and the play-by-play grain test |
 | `schedule/2026-27.parquet` | upcoming games for the predictions |

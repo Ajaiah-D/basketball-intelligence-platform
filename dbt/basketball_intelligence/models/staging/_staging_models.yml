@@ -69,6 +69,37 @@ models:
       - name: player_id
         tests: [not_null]
 
+  - name: stg_player_shot_locations
+    description: Field goal attempts by zone, one row per player per season (1996-97 on).
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: restricted_area_fga
+        tests: [not_null]
+
+  - name: stg_player_play_types
+    description: >
+      Offensive possessions by Synergy play type, one row per player, team,
+      season and play type (2015-16 on). A player traded mid-season has rows
+      for each team.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: play_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [isolation, transition, prballhandler, prrollman, postup, spotup,
+                       handoff, cut, offscreen, offrebound, misc]
+      - name: possessions
+        tests: [not_null]
+
   - name: stg_player_on_off
     description: >
       The team's defensive rating with a player on the floor and off it,

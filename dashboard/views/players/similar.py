@@ -193,12 +193,17 @@ def method_caption(features: list[str], floor: int, pool_size: int, season: str)
             parts.append(f"{b.name} (weight {b.weight:g}: {', '.join(mine)})")
     missing = [b.name for b in similarity.BLOCKS if not any(f in used for f in b.features)]
     gap = f" {season} has no data for {', '.join(missing)}." if missing else ""
+    shrunk = (
+        " Play-type shares from a small sample are pulled toward those players' average."
+        if used & set(similarity.PLAY_TYPE_FEATURES)
+        else ""
+    )
     return (
         f"Matched on how he plays, not how well. Compared with the {pool_size} players "
         f"who played {floor}+ minutes in {season}, in blocks: {'; '.join(parts)}.{gap} "
         f"Each stat is a z-score over those players (capped at ±{similarity.Z_CAP:g}), "
         "each block counts by its weight however many stats it has, and players are "
-        "ranked by how far apart their profiles are. Role weighs least, so stars "
+        f"ranked by how far apart their profiles are.{shrunk} Role weighs least, so stars "
         "aren't matched just for being stars. Positions play no part; height a small "
         "one. Click a row to open that player."
     )

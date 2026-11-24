@@ -8,6 +8,9 @@ Pulls, for a given season:
   - Player index and team dimension    (one API call + static data)
   - Defender tracking, overall and at the rim (one API call each, 2013-14 onward)
   - Hustle stats                       (one API call, 2016-17 onward)
+  - Shot locations: field goals by zone (one API call, 1996-97 onward)
+  - Play types: possessions by Synergy play type
+                                       (one API call PER PLAY TYPE, 2015-16 onward)
   - On/off: team ratings with each player on and off the floor
                                        (one API call PER TEAM, 2007-08 onward)
   - Player bio: position, height, weight, college, country, draft (one API call)
@@ -52,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -61,6 +65,7 @@ import requests
 from nba_api.stats.endpoints import (
     commonallplayers,
     commonplayerinfo,
+    leaguedashplayershotlocations,
     leaguedashplayerstats,
     leaguedashptdefend,
     leaguedashteamstats,
@@ -69,6 +74,7 @@ from nba_api.stats.endpoints import (
     playbyplayv3,
     playerindex,
     scheduleleaguev2,
+    synergyplaytypes,
     teamplayeronoffsummary,
 )
 from nba_api.stats.static import teams as static_teams
@@ -84,6 +90,8 @@ from core.constants import (
     HUSTLE_FIRST_SEASON,
     ON_OFF_FIRST_SEASON,
     PBP_MAX_NEW_GAMES_PER_RUN,
+    PLAY_TYPES_FIRST_SEASON,
+    SHOT_LOCATIONS_FIRST_SEASON,
 )
 from core.io import (
     TransientError,
@@ -132,6 +140,8 @@ SHRINK_GUARDED = frozenset(
         "player_defend_rim",
         "player_hustle",
         "player_on_off",
+        "player_shot_locations",
+        "player_play_types",
     }
 )
 
@@ -435,6 +445,88 @@ def fetch_player_hustle(season: str) -> pd.DataFrame:
     return df
 
 
+def has_shot_locations(season: str) -> bool:
+    """Whether the NBA publishes shot locations by zone for `season`."""
+    return int(season[:4]) >= int(SHOT_LOCATIONS_FIRST_SEASON[:4])
+
+
+def has_play_types(season: str) -> bool:
+    """Whether the NBA publishes Synergy play types for `season`."""
+    return int(season[:4]) >= int(PLAY_TYPES_FIRST_SEASON[:4])
+
+
+def flat_zone(label: str) -> str:
+    """A shot zone's header as a column prefix: "In The Paint (Non-RA)"
+    becomes "IN_THE_PAINT_NON_RA"."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").upper()
+
+
+def fetch_player_shot_locations(season: str) -> pd.DataFrame:
+    """Every player's field goals by zone for one season, as season totals:
+    one row per player (a traded player's teams already added up). The
+    answer has two header rows, the zone over FGM, FGA and FG_PCT; they are
+    flattened to RESTRICTED_AREA_FGA and so on, and the player columns
+    (under an empty zone) keep their own names. A zone he never shot from
+    is null."""
+    log.info("Fetching shot locations for %s ...", season)
+    df = call_endpoint(
+        leaguedashplayershotlocations.LeagueDashPlayerShotLocations,
+        season=season,
+        distance_range="By Zone",
+        per_mode_detailed="Totals",
+        season_type_all_star="Regular Season",
+    )
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [
+            "_".join(p for p in (flat_zone(str(zone)), str(stat)) if p) for zone, stat in df.columns
+        ]
+    df["season"] = season
+    log.info("  %d shot-location rows", len(df))
+    return df
+
+
+# The Synergy play types, as the endpoint names them. OffRebound is
+# putbacks; Misc is what fits nowhere else.
+PLAY_TYPES = (
+    "Isolation",
+    "Transition",
+    "PRBallHandler",
+    "PRRollman",
+    "Postup",
+    "Spotup",
+    "Handoff",
+    "Cut",
+    "OffScreen",
+    "OffRebound",
+    "Misc",
+)
+
+
+def fetch_player_play_types(season: str) -> pd.DataFrame:
+    """Every player's offensive possessions by play type for one season, as
+    season totals. One call per play type. The answer lists a player only in
+    play types where he had 10 or more possessions, and a traded player once
+    per team, so dbt adds the team rows up."""
+    log.info("Fetching play types for %s (one call per play type) ...", season)
+    frames = []
+    for play_type in PLAY_TYPES:
+        df = call_endpoint(
+            synergyplaytypes.SynergyPlayTypes,
+            season=season,
+            per_mode_simple="Totals",
+            player_or_team_abbreviation="P",
+            play_type_nullable=play_type,
+            type_grouping_nullable="offensive",
+            season_type_all_star="Regular Season",
+        )
+        if not df.empty:
+            frames.append(df)
+    out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    out["season"] = season
+    log.info("  %d play-type rows", len(out))
+    return out
+
+
 def has_on_off(season: str) -> bool:
     """Whether the NBA publishes lineup-based on/off for `season`."""
     return int(season[:4]) >= int(ON_OFF_FIRST_SEASON[:4])
@@ -647,6 +739,8 @@ def run(
         )
         wants_hustle = has_hustle(season) and needed("player_hustle")
         wants_on_off = has_on_off(season) and needed("player_on_off")
+        wants_shots = has_shot_locations(season) and needed("player_shot_locations")
+        wants_play_types = has_play_types(season) and needed("player_play_types")
         if not (
             needed("player_game_logs")
             or needed("team_game_logs")
@@ -655,6 +749,8 @@ def run(
             or wants_defend
             or wants_hustle
             or wants_on_off
+            or wants_shots
+            or wants_play_types
         ):
             log.info("[%d/%d] %s already ingested - skipping", i, len(seasons), season)
             continue
@@ -686,6 +782,10 @@ def run(
             save(fetch_player_hustle(season), "player_hustle", season)
         if wants_on_off:
             save(fetch_player_on_off(season), "player_on_off", season)
+        if wants_shots:
+            save(fetch_player_shot_locations(season), "player_shot_locations", season)
+        if wants_play_types:
+            save(fetch_player_play_types(season), "player_play_types", season)
         if season == latest and team_logs is not None:
             team_logs_latest = team_logs
 

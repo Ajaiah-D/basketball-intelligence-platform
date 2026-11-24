@@ -22,6 +22,15 @@ DEFENSE_TRACKING_FIRST_SEASON = "2013-14"
 # full season.
 HUSTLE_FIRST_SEASON = "2016-17"
 
+# Shot locations by zone (LeagueDashPlayerShotLocations: restricted area,
+# paint, mid-range, corner and above-the-break threes) start with the
+# play-by-play era.
+SHOT_LOCATIONS_FIRST_SEASON = "1996-97"
+
+# Play types (SynergyPlayTypes: isolation, pick-and-roll, post-ups, spot-ups
+# and the rest, as shares of a player's possessions) start here.
+PLAY_TYPES_FIRST_SEASON = "2015-16"
+
 # The NBA's lineup-based on/off (TeamPlayerOnOffSummary: each player's team
 # defensive rating with him on and off the floor) starts here. 2006-07 and
 # earlier return no rows.

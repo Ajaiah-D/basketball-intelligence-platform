@@ -1,13 +1,14 @@
 """dashboard/lib/similarity.py: the Similar players ranking, on synthetic
 pools (no warehouse), plus sanity checks on the real one."""
 
+import duckdb
 import numpy as np
 import pandas as pd
 import pytest
 
 from dashboard.lib import similarity as S
 from dashboard.lib.advanced_metrics import minutes_floor
-from dashboard.lib.data import advanced, seasons
+from dashboard.lib.data import advanced, core, seasons
 
 # Two blocks for the synthetic pools: "Style" (a, b) weighs 3, "Size" (c) 1.
 BLOCKS = (S.Block("Style", 3.0, {"a": 1.0, "b": 1.0}), S.Block("Size", 1.0, {"c": 1.0}))
@@ -73,6 +74,11 @@ def test_each_block_gets_its_own_score():
     # 3 matches 1's size exactly.
     three = result.ranked.set_index("player_id").loc[3]
     assert three[S.block_column("Size")] == pytest.approx(100.0)
+
+
+def test_a_block_name_with_a_space_makes_a_plain_column_name():
+    assert S.block_column("Shot diet") == "shot_diet_match"
+    assert S.block_column("Role") == "role_match"
 
 
 def test_he_is_not_on_his_own_list():
@@ -179,6 +185,63 @@ def test_every_feature_has_a_label():
     assert {f for b in S.BLOCKS for f in b.features} == set(S.FEATURE_LABELS)
 
 
+def test_scoring_is_split_into_shot_diet_and_play_type():
+    # How he scores, by where he shoots from and how he gets the shot; role
+    # still weighs least.
+    names = [b.name for b in S.BLOCKS]
+    assert names[:2] == ["Shot diet", "Play type"]
+    assert set(S.PLAY_TYPE_FEATURES) == set(S.BLOCKS[1].features)
+    assert "restricted_area_share" in S.BLOCKS[0].features
+    role = next(b for b in S.BLOCKS if b.name == "Role")
+    assert all(role.weight <= b.weight for b in S.BLOCKS)
+
+
+def _play_pool() -> pd.DataFrame:
+    """Four players: shares of one play type and their possessions."""
+    return pd.DataFrame(
+        {
+            "player_id": [1, 2, 3, 4],
+            "post_up_share": [0.5, 0.5, 0.1, None],
+            "play_type_possessions": [20.0, 2000.0, 1000.0, None],
+        }
+    )
+
+
+def test_a_small_play_type_sample_is_pulled_toward_the_pool_average():
+    pool = _play_pool()
+    out = S.shrink_play_types(pool, prior=100.0)
+    mean = pool["post_up_share"].mean()
+    small, big = out["post_up_share"].iloc[0], out["post_up_share"].iloc[1]
+    # (share * n + prior * mean) / (n + prior)
+    assert small == pytest.approx((0.5 * 20 + 100 * mean) / 120)
+    assert big == pytest.approx((0.5 * 2000 + 100 * mean) / 2100)
+    assert mean < small < big < 0.5
+    # A player without play types stays without; the input is not changed.
+    assert pd.isna(out["post_up_share"].iloc[3])
+    assert pool["post_up_share"].iloc[0] == 0.5
+
+
+def test_no_shrinking_without_a_prior_or_possessions():
+    pool = _play_pool()
+    pd.testing.assert_frame_equal(S.shrink_play_types(pool, prior=0.0), pool)
+    no_counts = pool.drop(columns="play_type_possessions")
+    pd.testing.assert_frame_equal(S.shrink_play_types(no_counts, prior=100.0), no_counts)
+
+
+def test_a_season_without_play_types_ranks_without_that_block():
+    # Before 2015-16 (or on a warehouse published before the play types):
+    # the Play type block is left out for everyone, the rest still ranks.
+    rng = np.random.default_rng(0)
+    features = {f for b in S.BLOCKS for f in b.features}
+    pool = pd.DataFrame(rng.normal(size=(30, len(features))), columns=sorted(features))
+    pool = pool.assign(player_id=range(1, 31), minutes=900.0)
+    for f in S.PLAY_TYPE_FEATURES:
+        pool[f] = None
+    result = S.rank_similar(pool, 1, 0)
+    assert "Play type" not in result.blocks
+    assert result.blocks == [b.name for b in S.BLOCKS if b.name != "Play type"]
+
+
 def _season() -> str:
     return next(s for s in seasons.seasons() if s in advanced.advanced_seasons())
 
@@ -205,3 +268,82 @@ def test_real_matches_share_a_role(con):
     big = pool.sort_values("block_pct", ascending=False).iloc[0]
     top = S.rank_similar(pool, int(big["player_id"]), 0, n=5).ranked
     assert (top["block_pct"] > pool["block_pct"].median()).all()
+
+
+def test_a_warehouse_without_screen_assists_gets_them_as_nulls(tmp_path):
+    # A warehouse published before the column existed: the pool still
+    # loads, and the model leaves the feature out.
+    path = tmp_path / "old.duckdb"
+    with duckdb.connect(str(path)) as con:
+        con.execute("create schema main_marts")
+        con.execute(
+            "create table main_marts.mart_player_season as select '2024-25' as season, "
+            "1 as player_id, 900.0 as minutes, 90.0 as tpa_total"
+        )
+        con.execute(
+            "create table main_marts.mart_player_defense as select '2024-25' as season, "
+            "1 as player_id, 2.0 as fouls_per_36, 10.0 as rim_fga, 40.0 as d_fga, "
+            "5.0 as contested_per_36, 2.0 as deflections_per_36"
+        )
+    with core.use_warehouse(path):
+        core.clear_caches()
+        pool = advanced.similarity_pool("2024-25")
+    core.clear_caches()
+    assert pool["screen_assists_per_36"].isna().all()
+    assert pool["rim_share"].tolist() == [0.25]
+
+
+def _old_warehouse(path, scoring: bool) -> None:
+    """A warehouse with the season mart, and the scoring mart only if asked."""
+    with duckdb.connect(str(path)) as con:
+        con.execute("create schema main_marts")
+        con.execute(
+            "create table main_marts.mart_player_season as select '2024-25' as season, "
+            "1 as player_id, 900.0 as minutes, 90.0 as tpa_total"
+        )
+        if scoring:
+            con.execute(
+                "create table main_marts.mart_player_scoring as select '2024-25' as season, "
+                "1 as player_id, 0.4 as restricted_area_share, 0.3 as post_up_share"
+            )
+
+
+def test_a_warehouse_without_the_scoring_mart_gets_the_shot_diet_as_nulls(tmp_path):
+    path = tmp_path / "old.duckdb"
+    _old_warehouse(path, scoring=False)
+    with core.use_warehouse(path):
+        core.clear_caches()
+        pool = advanced.similarity_pool("2024-25")
+    core.clear_caches()
+    assert len(pool) == 1
+    for column in advanced.SCORING_COLUMNS:
+        assert pool[column].isna().all(), column
+
+
+def test_the_scoring_mart_adds_the_shot_diet_and_play_types(tmp_path):
+    # A column the mart lacks (an older mart_player_scoring) comes as null.
+    path = tmp_path / "new.duckdb"
+    _old_warehouse(path, scoring=True)
+    with core.use_warehouse(path):
+        core.clear_caches()
+        pool = advanced.similarity_pool("2024-25")
+    core.clear_caches()
+    assert pool["restricted_area_share"].tolist() == [0.4]
+    assert pool["post_up_share"].tolist() == [0.3]
+    assert pool["isolation_share"].isna().all()
+
+
+def test_the_real_pool_has_a_shot_diet_and_play_types(con):
+    pool = _real_pool()
+    zones = pool[
+        [
+            "restricted_area_share",
+            "paint_share",
+            "mid_range_share",
+            "corner_three_share",
+            "above_break_three_share",
+        ]
+    ]
+    assert zones.notna().mean().min() >= S.MIN_COVERAGE
+    assert ((zones.dropna().sum(axis=1) - 1).abs() < 1e-6).all()
+    assert pool["post_up_share"].notna().mean() >= S.MIN_COVERAGE

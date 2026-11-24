@@ -4,13 +4,24 @@ The question is "plays like", not "plays as well as". So a player's profile
 is split into blocks, each about one part of how he plays, and each block
 carries a weight that says how much it decides a match:
 
-  Scoring     how he gets his shots and points: three-point share and
-              volume, trips to the line
-  Creation    how much he makes for others and how often he gives it away
+  Shot diet   where his shots come from: the share of his attempts at the
+              rim, in the paint, from mid-range, the corner three and
+              above the break, plus three-point volume and trips to the line
+  Play type   how he gets them: the share of his possessions in isolation,
+              transition, pick-and-roll (handling or rolling), post-ups,
+              spot-ups, handoffs, cuts, off screens and putbacks
+  Creation    how much he makes for others, by passing and by screening,
+              and how often he gives it away
   Rebounding  how much of the glass he takes, plus a little of his height
   Defense     what kind of defender the numbers say he is: steals, blocks,
               how much of what he guards is at the rim, how active he is
   Role        how big his job is: minutes, usage, points, efficiency
+
+Shot diet and Play type together are what Scoring used to be (box-score
+three-point and free-throw rates, weight 3), with the same weight: they
+describe how a player scores, so two players who score the same amount in
+different ways no longer look alike. Play types start in 2015-16 and shot
+zones in 1996-97; an earlier season simply goes without them (step 3).
 
 Role weighs least. A model that weighs role heavily matches every
 high-usage star with every other one, because stars all differ from the
@@ -22,19 +33,25 @@ The method:
 1. The pool is one season's players over a minutes floor (the caller
    passes it; the Players page uses advanced_metrics.minutes_floor), so a
    40-minute cameo with a freak shooting line can't match anyone.
-2. Each feature is z-scored over the pool and capped at +/-Z_CAP, so one
+2. A play-type share from a small sample is pulled toward the pool's
+   average: (share * possessions + PLAY_TYPE_PRIOR * average) /
+   (possessions + PLAY_TYPE_PRIOR). The prior is 100 possessions, ten for
+   each of the ten play types, the same 10 a play type needs before the
+   NBA lists it at all. Early in a season, with a low minutes floor, a
+   handful of possessions would otherwise decide a player's whole style.
+3. Each feature is z-scored over the pool and capped at +/-Z_CAP, so one
    extreme stat can't decide a match on its own. A feature most of the pool
    has (MIN_COVERAGE) is used, and a player without it counts as average on
    it; one the season lacks (tracking defense before 2013-14) is left out
    for everyone, and so is a block with no feature left.
-3. Each feature's weight is its block's weight split across the block's
+4. Each feature's weight is its block's weight split across the block's
    features (by the feature's own weight within the block), so a block
    counts the same however many stats it holds: four overlapping stats
    don't count four times.
-4. The distance between two players is the weighted Euclidean distance of
+5. The distance between two players is the weighted Euclidean distance of
    their z-scores. Unlike cosine similarity it sees how far apart two
    players are, not only whether they lean the same way.
-5. The match score is 100 * (1 - distance / the pool's median distance from
+6. The match score is 100 * (1 - distance / the pool's median distance from
    him), floored at 0: 100 is the same profile, 0 is as different as a
    typical player in the pool. Each block gets the same score on its own,
    so the page can show where a match is close and where it isn't.
@@ -63,17 +80,41 @@ class Block(NamedTuple):
     features: dict[str, float]
 
 
+# The play-type shares (mart_player_scoring), shrunk by shrink_play_types.
+# Misc is left out: it is what Synergy can't file anywhere else.
+PLAY_TYPE_FEATURES: tuple[str, ...] = (
+    "isolation_share",
+    "transition_share",
+    "pnr_handler_share",
+    "pnr_roll_share",
+    "post_up_share",
+    "spot_up_share",
+    "handoff_share",
+    "cut_share",
+    "off_screen_share",
+    "putback_share",
+)
+
 BLOCKS: tuple[Block, ...] = (
     Block(
-        "Scoring",
-        3.0,
+        "Shot diet",
+        1.5,
         {
-            "three_point_attempt_rate": 1.0,
+            "restricted_area_share": 1.0,
+            "paint_share": 1.0,
+            "mid_range_share": 1.0,
+            "corner_three_share": 1.0,
+            "above_break_three_share": 1.0,
             "threes_per_36": 1.0,
             "free_throw_rate": 1.0,
         },
     ),
-    Block("Creation", 2.0, {"assist_pct": 1.0, "turnover_pct": 1.0}),
+    Block("Play type", 1.5, dict.fromkeys(PLAY_TYPE_FEATURES, 1.0)),
+    Block(
+        "Creation",
+        2.0,
+        {"assist_pct": 1.0, "turnover_pct": 1.0, "screen_assists_per_36": 1.0},
+    ),
     Block(
         "Rebounding",
         1.5,
@@ -105,11 +146,26 @@ BLOCKS: tuple[Block, ...] = (
 
 # Each feature's short label, for the page's caption.
 FEATURE_LABELS: dict[str, str] = {
-    "three_point_attempt_rate": "3PA rate",
+    "restricted_area_share": "share of shots at the rim",
+    "paint_share": "in the paint",
+    "mid_range_share": "mid-range",
+    "corner_three_share": "corner 3",
+    "above_break_three_share": "above-the-break 3",
     "threes_per_36": "3PA/36",
     "free_throw_rate": "FT rate",
+    "isolation_share": "isolation",
+    "transition_share": "transition",
+    "pnr_handler_share": "pick-and-roll handler",
+    "pnr_roll_share": "roll man",
+    "post_up_share": "post-up",
+    "spot_up_share": "spot-up",
+    "handoff_share": "handoff",
+    "cut_share": "cut",
+    "off_screen_share": "off screen",
+    "putback_share": "putback",
     "assist_pct": "AST%",
     "turnover_pct": "TOV%",
+    "screen_assists_per_36": "screen assists/36",
     "offensive_rebound_pct": "OREB%",
     "defensive_rebound_pct": "DREB%",
     "height_inches": "height",
@@ -129,6 +185,9 @@ FEATURE_LABELS: dict[str, str] = {
 Z_CAP = 3.0
 # A feature is used when at least this share of the pool has it.
 MIN_COVERAGE = 0.9
+# How many possessions of the pool's average a play-type share is mixed
+# with (see the module docstring): 10 for each play type.
+PLAY_TYPE_PRIOR = 100.0
 
 
 class NotInPoolError(ValueError):
@@ -164,7 +223,7 @@ class Similar(NamedTuple):
 
 def block_column(block: str) -> str:
     """The ranked frame's column for one block's match score."""
-    return f"{block.lower()}_match"
+    return f"{block.lower().replace(' ', '_')}_match"
 
 
 def qualified(season: pd.DataFrame, min_minutes: int) -> pd.DataFrame:
@@ -178,6 +237,23 @@ def usable_features(pool: pd.DataFrame, features: Sequence[str]) -> list[str]:
     if pool.empty:
         return []
     return [c for c in features if c in pool.columns and pool[c].notna().mean() >= MIN_COVERAGE]
+
+
+def shrink_play_types(pool: pd.DataFrame, prior: float = PLAY_TYPE_PRIOR) -> pd.DataFrame:
+    """`pool` with each PLAY_TYPE_FEATURES share pulled toward the pool's
+    average by `prior` possessions of it, against his play_type_possessions:
+    a small sample moves a lot, a full season hardly at all. A player
+    without play types stays without. Unchanged when `prior` is 0 or the
+    pool has no possession counts."""
+    if prior <= 0 or "play_type_possessions" not in pool.columns:
+        return pool
+    out = pool.copy()
+    n = out["play_type_possessions"].astype(float)
+    for f in PLAY_TYPE_FEATURES:
+        if f in out.columns:
+            share = out[f].astype(float)
+            out[f] = (share * n + prior * share.mean()) / (n + prior)
+    return out
 
 
 def capped_zscores(pool: pd.DataFrame, features: list[str], cap: float = Z_CAP) -> np.ndarray:
@@ -214,18 +290,19 @@ def embed(
     blocks: Sequence[Block] = BLOCKS,
     only: Sequence[str] | None = None,
     cap: float = Z_CAP,
+    prior: float = PLAY_TYPE_PRIOR,
 ) -> Embedding:
     """`pool` as an Embedding: its usable block features (or only those in
-    `only`, e.g. the features two seasons share), z-scored over the pool,
-    capped, and scaled by the square root of their weights. Raises
-    ValueError when no feature is usable."""
+    `only`, e.g. the features two seasons share), play types shrunk by
+    `prior`, z-scored over the pool, capped, and scaled by the square root
+    of their weights. Raises ValueError when no feature is usable."""
     wanted = [f for b in blocks for f in b.features]
     if only is not None:
         wanted = [f for f in wanted if f in set(only)]
     features, names, weights = feature_weights(usable_features(pool, wanted), blocks)
     if not features:
         raise ValueError("no feature has a value for enough of the pool")
-    z = capped_zscores(pool, features, cap)
+    z = capped_zscores(shrink_play_types(pool, prior), features, cap)
     return Embedding(z * np.sqrt(weights), pool["player_id"].to_numpy(), features, names)
 
 

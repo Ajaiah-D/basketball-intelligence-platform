@@ -38,7 +38,9 @@
 -- null before it exists: defender tracking (d_*, rim_*) from 2013-14, hustle
 -- stats (*_per_36 other than fouls, steals, blocks) from 2016-17. Hustle
 -- rates use the minutes the hustle tracking covers, and are null under 100
--- of them.
+-- of them. screen_assists_per_36 is an offensive number (screens that led
+-- straight to a teammate's basket) kept here with the other hustle stats;
+-- the similar-players model uses it.
 
 with official as (
     select
@@ -96,6 +98,7 @@ joined as (
         h.charges_drawn,
         h.def_loose_balls,
         h.def_box_outs,
+        h.screen_assists,
         x.official_on_def_rating,
         x.official_off_def_rating
     from {{ ref('mart_player_season') }} p
@@ -195,5 +198,7 @@ select
     case when hustle_minutes >= 100 then
         round(36 * def_loose_balls / hustle_minutes, 2) end as loose_balls_per_36,
     case when hustle_minutes >= 100 then
-        round(36 * def_box_outs / hustle_minutes, 2) end    as box_outs_per_36
+        round(36 * def_box_outs / hustle_minutes, 2) end    as box_outs_per_36,
+    case when hustle_minutes >= 100 then
+        round(36 * screen_assists / hustle_minutes, 2) end  as screen_assists_per_36
 from off_court

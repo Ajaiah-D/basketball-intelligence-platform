@@ -74,3 +74,53 @@ def test_without_drops_features_and_blocks():
     assert "Role" not in [b.name for b in blocks]
     assert all("height_inches" not in b.features for b in blocks)
     assert len(blocks) == len(S.BLOCKS) - 1
+
+
+def test_rank_of_puts_the_closest_other_player_first():
+    # From 1 at (0, 0): 5 is closest, 2 and 3 tie behind it, 4 is farthest.
+    assert E.rank_of(ONE, MODEL, 1, 5) == 1
+    assert E.rank_of(ONE, MODEL, 1, 4) == 4
+
+
+def test_rank_of_counts_a_tie_against_the_pair():
+    assert E.rank_of(ONE, MODEL, 1, 2) == 3
+    assert E.rank_of(ONE, MODEL, 1, 3) == 3
+
+
+def test_rank_of_needs_both_players_in_the_pool():
+    with pytest.raises(S.NotInPoolError):
+        E.rank_of(ONE, MODEL, 1, 99)
+
+
+def test_a_pair_holds_by_its_kind():
+    match = E.Pair("A", "B", True, "same role")
+    avoid = E.Pair("A", "C", False, "different role")
+    assert E.pair_holds(match, E.MATCH_TOP)
+    assert not E.pair_holds(match, E.MATCH_TOP + 1)
+    assert E.pair_holds(avoid, E.AVOID_TOP + 1)
+    assert not E.pair_holds(avoid, E.AVOID_TOP)
+
+
+def test_the_model_before_shot_data_is_kept_for_comparison():
+    names = [b.name for b in E.BEFORE_SHOT_DATA]
+    assert names == ["Scoring", "Creation", "Rebounding", "Defense", "Role"]
+    scoring = E.BEFORE_SHOT_DATA[0]
+    assert scoring.weight == 3.0
+    assert set(scoring.features) == {"three_point_attempt_rate", "threes_per_36", "free_throw_rate"}
+    # The blocks it shares with the current model are the current ones.
+    current = {b.name: b for b in S.BLOCKS}
+    assert all(current[b.name] == b for b in E.BEFORE_SHOT_DATA[1:])
+
+
+def test_block_model_passes_the_play_type_prior():
+    pool = pd.DataFrame(
+        {
+            "player_id": [1, 2, 3],
+            "post_up_share": [0.5, 0.1, 0.2],
+            "play_type_possessions": [10.0, 1000.0, 1000.0],
+        }
+    )
+    blocks = (S.Block("Play type", 1.0, {"post_up_share": 1.0}),)
+    raw = E.block_model("raw", blocks, prior=0.0).embed(pool, None).matrix
+    shrunk = E.block_model("shrunk", blocks).embed(pool, None).matrix
+    assert raw[0, 0] > shrunk[0, 0]

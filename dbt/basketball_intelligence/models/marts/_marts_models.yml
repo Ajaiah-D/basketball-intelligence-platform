@@ -650,6 +650,65 @@ models:
         description: Defensive loose balls recovered per 36 tracked minutes.
       - name: box_outs_per_36
         description: Defensive box-outs per 36 tracked minutes.
+      - name: screen_assists_per_36
+        description: Screen assists (a screen that led straight to a teammate's basket) per 36 tracked minutes. An offensive number, kept with the other hustle stats.
+
+  - name: mart_player_scoring
+    description: >
+      One row per player per season: how he gets his shots, for the Similar
+      players model. The shot diet (1996-97 on) is the share of his field
+      goal attempts from each of five half-court zones, adding up to 1
+      (backcourt heaves left out). The play types (2015-16 on) are the share
+      of his offensive possessions in each Synergy play type. The API lists
+      only play types with 10+ possessions for a team, so the play-type
+      shares add up to a little under 1, and a traded player's teams are
+      added up. Each part is null in seasons its source doesn't cover.
+      Grain checked by assert_mart_grain_is_unique; share ranges and sums by
+      assert_player_scoring_shares.
+    columns:
+      - name: season
+        tests: [not_null]
+      - name: player_id
+        tests: [not_null]
+      - name: zone_fga
+        description: Field goal attempts from the five half-court zones (the shot-diet denominator).
+      - name: restricted_area_share
+        description: Share of his zone attempts in the restricted area.
+      - name: paint_share
+        description: Share in the paint outside the restricted area.
+      - name: mid_range_share
+        description: Share from mid-range.
+      - name: corner_three_share
+        description: Share from the corner three.
+      - name: above_break_three_share
+        description: Share from above-the-break three.
+      - name: play_type_possessions
+        description: >
+          His offensive possessions (the play-type denominator), from the
+          API's own share of his biggest play type with each team, added up
+          over his teams.
+      - name: isolation_share
+        description: Share of his possessions in isolation.
+      - name: transition_share
+        description: Share in transition.
+      - name: pnr_handler_share
+        description: Share as the pick-and-roll ball handler.
+      - name: pnr_roll_share
+        description: Share as the pick-and-roll roll (or pop) man.
+      - name: post_up_share
+        description: Share in post-ups.
+      - name: spot_up_share
+        description: Share in spot-ups.
+      - name: handoff_share
+        description: Share finishing off a handoff (the receiver, not the big who hands off).
+      - name: cut_share
+        description: Share on cuts.
+      - name: off_screen_share
+        description: Share coming off screens.
+      - name: putback_share
+        description: Share on putbacks (Synergy's OffRebound).
+      - name: misc_share
+        description: Share Synergy files under miscellaneous.
 
   - name: mart_player_bio
     description: >

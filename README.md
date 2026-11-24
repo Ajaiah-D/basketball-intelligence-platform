@@ -204,13 +204,19 @@ all drawn from one glossary (`dashboard/lib/glossary.py`).
   2016-17), and a game log tinted
   green or red against his own season average. *Similar players* ranks the
   players whose season plays most like his (5 to 25 of them). The profile is
-  split into weighted blocks (scoring 3, creation 2, rebounding 1.5, defense
-  1.5, role size 1), each stat z-scored over the season's players over a
-  minutes floor and capped at 3 standard deviations, and players are ranked
-  by weighted distance, with a 0-100 match score overall and per block.
-  Role weighs least so stars aren't matched just for being stars;
-  `scripts/evaluate_similarity.py` scores the model (a player's season
-  should find his own next season) and writes
+  split into weighted blocks: shot diet 1.5 (share of his shots at the rim,
+  in the paint, from mid-range, the corner and above the break, from the
+  NBA's shot locations, 1996-97 on), play type 1.5 (share of his
+  possessions in isolation, pick-and-roll, post-ups, spot-ups, cuts and the
+  rest, from Synergy, 2015-16 on), creation 2, rebounding 1.5, defense 1.5
+  and role size 1. Each stat is z-scored over the season's players over a
+  minutes floor and capped at 3 standard deviations, small play-type samples
+  are pulled toward the league average, and players are ranked by weighted
+  distance, with a 0-100 match score overall and per block. So players are
+  matched on how they score, not how much, and role weighs least so stars
+  aren't matched just for being stars; `scripts/evaluate_similarity.py`
+  scores the model (a player's season should find his own next season, and
+  a list of known pairs should hold) and writes
   [docs/similarity-evaluation.md](docs/similarity-evaluation.md). A click
   on a row opens that player. *Compare* opens on the player you have open,
   or the season's top scorers when nobody is. It sets two player-seasons from any era side by
@@ -317,6 +323,10 @@ python ingestion\nba_ingest.py --birthdate-backfill --pbp-games 0
 #     to the code reaches older seasons only through a backfill:
 python ingestion\nba_ingest.py --backfill 2007-08 --pbp-games 0
 
+# 2e. Shot locations (1996-97 on, one request per season) and play types
+#     (2015-16 on, one request per play type per season), for Similar players:
+python ingestion\nba_ingest.py --backfill 1996-97 --pbp-games 0
+
 # 3. Load raw parquet into DuckDB
 python scripts\load_to_duckdb.py
 
@@ -399,7 +409,7 @@ explains why it works this way.
       `data/raw/player_game_logs/` etc., so backfills resume where they left off
 - [x] DuckDB warehouse with `raw` schema
 - [x] dbt staging (16 models), intermediate (1) and marts (16), plus salary
-      cap history and team code seeds; 149 dbt tests and 1,084 pytest cases.
+      cap history and team code seeds; 161 dbt tests and 1,109 pytest cases.
       CI runs ruff, mypy, `dbt build` and pytest against small committed
       fixtures cut from the real data (`data/fixtures/`), which cover every
       era the tests check; the 18 tests that need all seasons are marked
